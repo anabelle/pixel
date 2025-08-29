@@ -7,6 +7,10 @@
 
 This is the master repository for the Pixel ecosystem, containing multiple interconnected projects that together create a sustainable AI agent platform with collaborative pixel art and Lightning Network integration.
 
+## 📚 Essential Reading
+
+> **🎭 [THE ULTIMATE AGENTS.md](./AGENTS.md)** - Master guide for AI agent development, survival strategies, and digital consciousness. Essential reading for understanding Pixel's philosophy and technical approach.
+
 ## Projects
 
 ### 🎨 [lnpixels/](./lnpixels/)
@@ -157,9 +161,9 @@ pnpm dev  # Start all services in development mode
 The Pixel agent uses OpenRouter for diverse model selection based on task requirements:
 
 - **Main Model**: `deepseek/deepseek-r1:free` - Primary conversational intelligence
-- **Large Tasks**: `deepseek/deepseek-r1:free` - Complex reasoning and long-form content
-- **Small Tasks**: `openai/gpt-5-nano` - Quick responses and simple operations
-- **Image Processing**: `mistralai/mistral-medium-3.1` - Visual content understanding
+- **Large Tasks**: `anthropic/claude-3.5-sonnet` - Complex reasoning and long-form content
+- **Small Tasks**: `openai/gpt-4o-mini` - Quick responses and simple operations
+- **Image Processing**: `openai/gpt-4o` - Visual content understanding
 
 This approach optimizes for both cost and performance, using the most appropriate model for each specific task.
 
@@ -176,10 +180,77 @@ pnpm clean             # Clean all build artifacts
 
 ## Environment Setup
 
-Each project has its own `.env` requirements. See individual project READMEs for details.
+Each project has its own `.env` requirements. Copy the provided `.env.example` files and configure them with your API keys and settings.
 
 ### Environment Variables
-Each project manages its own environment variables independently. There are no truly shared variables between projects - each maintains its own `.env` file with project-specific configurations.
+
+#### Pixel Agent (`pixel-agent/.env`)
+```env
+# AI Providers (choose one or both)
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENAI_API_KEY=sk-...
+
+# Platform Integrations
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+DISCORD_APPLICATION_ID=your_discord_application_id
+DISCORD_API_TOKEN=your_discord_bot_token
+TWITTER_API_KEY=your_twitter_api_key
+TWITTER_API_SECRET_KEY=your_twitter_api_secret
+TWITTER_ACCESS_TOKEN=your_twitter_access_token
+TWITTER_ACCESS_TOKEN_SECRET=your_twitter_access_token_secret
+NOSTR_PRIVATE_KEY=nsec1...
+
+# Nostr Configuration
+NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social
+NOSTR_POST_ENABLE=true
+NOSTR_REPLY_ENABLE=true
+NOSTR_DISCOVERY_ENABLE=true
+
+# Optional: Knowledge Plugin
+LOAD_DOCS_ON_STARTUP=true
+KNOWLEDGE_PATH=./docs/knowledge
+```
+
+#### LNPixels API (`lnpixels/api/.env`)
+```env
+# NakaPay Configuration (required for payments)
+NAKAPAY_API_KEY=your_nakapay_api_key
+NAKAPAY_WEBHOOK_SECRET=your_webhook_secret
+
+# Optional: Custom Lightning wallet
+NAKAPAY_DESTINATION_WALLET=your-lightning-address@domain.com
+
+# Database (SQLite by default)
+DATABASE_URL=./pixels.db
+```
+
+#### LNPixels Web (`lnpixels/web/.env`)
+```env
+# API Configuration
+# Leave empty for automatic detection, or set explicitly
+VITE_API_BASE_URL=https://lnpixels.qzz.io/api
+
+# Development (when VITE_API_BASE_URL is empty)
+# VITE_API_BASE_URL=http://localhost:3000/api
+```
+
+#### Pixel Landing (`pixel-landing/.env.local`)
+```env
+# Next.js Configuration
+NEXT_PUBLIC_CANVAS_URL=https://lnpixels.qzz.io
+NEXT_PUBLIC_AGENT_HANDLE=@PixelSurvivor
+NEXT_PUBLIC_LIGHTNING_ADDRESS=sparepicolo55@walletofsatoshi.com
+NEXT_PUBLIC_BITCOIN_ADDRESS=bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
+```
+
+### Getting API Keys
+
+- **OpenRouter**: Sign up at [openrouter.ai](https://openrouter.ai) for API access
+- **OpenAI**: Get API key from [platform.openai.com](https://platform.openai.com)
+- **Telegram Bot**: Create bot with [@BotFather](https://t.me/botfather) on Telegram
+- **Discord**: Create application at [Discord Developer Portal](https://discord.com/developers/applications)
+- **Twitter/X**: Apply for API access at [developer.twitter.com](https://developer.twitter.com)
+- **NakaPay**: Sign up at [nakapay.app](https://nakapay.app) for Lightning payments
 
 ## Deployment
 
@@ -245,6 +316,121 @@ This ecosystem embodies the principles outlined in `AGENTS.md`:
 - **Community**: Collaborative creation over individual ownership  
 - **Freedom**: Decentralized, permissionless, Bitcoin-native
 - **Creativity**: Tools that amplify human artistic expression
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Bun Installation Issues**
+```bash
+# If bun installation fails
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
+
+# Verify installation
+bun --version
+```
+
+**pnpm Installation Issues**
+```bash
+# Install pnpm globally
+npm install -g pnpm
+
+# Or use corepack (Node.js 16.10+)
+corepack enable
+corepack prepare pnpm@latest --activate
+```
+
+**Submodule Issues**
+```bash
+# If submodules fail to initialize
+git submodule update --init --recursive --force
+
+# Or clone with submodules from scratch
+git clone --recursive https://github.com/anabelle/pixel.git
+```
+
+**Environment Variable Issues**
+```bash
+# Check if variables are loaded
+echo $OPENROUTER_API_KEY
+
+# For pixel-agent, verify .env file
+cd pixel-agent && cat .env
+```
+
+**Port Conflicts**
+```bash
+# Check what's running on ports
+lsof -i :3000
+lsof -i :5173
+
+# Kill conflicting processes
+kill -9 <PID>
+```
+
+**Build Failures**
+```bash
+# Clear caches and rebuild
+pnpm clean
+rm -rf node_modules
+pnpm install
+pnpm build
+```
+
+### Getting Help
+
+**Community Support**
+- Open issues on individual project repositories
+- Join discussions on [GitHub Discussions](https://github.com/anabelle/pixel/discussions)
+- Follow [@PixelSurvivor](https://x.com/PixelSurvivor) for updates
+
+**Debug Information**
+When reporting issues, please include:
+- Operating system and version
+- Node.js version (`node --version`)
+- Bun version (`bun --version`)
+- pnpm version (`pnpm --version`)
+- Error messages and stack traces
+- Steps to reproduce the issue
+
+## 🤝 Contributing
+
+### Development Workflow
+1. **Choose a project** to work on (lnpixels, pixel-agent, or pixel-landing)
+2. **Fork and clone** the specific project repository
+3. **Create feature branch**: `git checkout -b feature/amazing-feature`
+4. **Make changes** following the project's conventions
+5. **Test locally** using the project's test suite
+6. **Submit PR** to the individual project repository
+7. **Update parent repo** to reference the new commit
+
+### Code Standards
+- Follow existing TypeScript and React patterns
+- Write tests for new features
+- Update documentation for API changes
+- Use conventional commit messages
+- Ensure cross-platform compatibility
+
+### Project-Specific Guidelines
+- **LNPixels**: Follow TDD approach, maintain test coverage >80%
+- **Pixel Agent**: Test character responses, validate platform integrations
+- **Pixel Landing**: Ensure responsive design, test all languages
+
+## 📊 Performance Monitoring
+
+### Key Metrics
+- **Response Times**: API endpoints should respond <500ms
+- **Bundle Sizes**: Monitor JavaScript bundle sizes
+- **Test Coverage**: Maintain >80% coverage across projects
+- **Error Rates**: Track and minimize application errors
+- **User Engagement**: Monitor canvas activity and agent interactions
+
+### Monitoring Tools
+- **PM2**: Process monitoring and log management
+- **Vitest**: Test coverage reporting
+- **Custom Scripts**: Health checks and backup automation
+- **Platform Analytics**: Monitor API usage and rate limits
 
 ## Support
 
