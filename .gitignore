@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+dist/
+build/
+.turbo/
+
+# Package managers
+pnpm-lock.yaml
+.pnpm/
+.pnpm-store/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.test
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime
+*.pid
+*.seed
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+
+# PM2
+.pm2/
+
+# Backup files
+*.bak
+backup.sql
