@@ -301,6 +301,19 @@ pm2 logs
 pm2 monit
 ```
 
+## Canvas Activity → Nostr delegation
+
+Pixel agent delegates canvas posting to the `@pixel/plugin-nostr` service:
+- Listener connects to the LNPixels Socket.IO stream and emits `pixel.bought` on an internal bridge.
+- Service dedupes events, takes a cross‑process lock, builds a character‑aware prompt, generates text via LLM with fallback, sanitizes, and posts once to Nostr.
+- Anti‑spam: posts at most once per hour by default; additional events are stored as memories without posting.
+- Memory: successful posts create `lnpixels_post` memories (coords, color, sats, metadata); throttled events are recorded as `lnpixels_event` with `throttled: true`.
+
+Environment variables:
+- `LNPIXELS_WS_URL` — WebSocket base URL for the activity stream (default `http://localhost:3000`)
+- `LNPIXELS_POST_MIN_INTERVAL_MS` — Minimum interval between canvas posts (default `3600000`)
+- `LNPIXELS_CREATE_DELEGATION_MEMORY` — When `true`, the listener also writes a small delegation memory (default `false`)
+
 ### Server Monitoring & Health Checks
 The ecosystem includes comprehensive server monitoring that tracks vital system metrics:
 
