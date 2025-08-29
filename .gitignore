@@ -3,6 +3,7 @@ node_modules/
 dist/
 build/
 .turbo/
+.lesshst
 
 # Package managers
 pnpm-lock.yaml
