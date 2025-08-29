@@ -320,27 +320,28 @@ The ecosystem includes comprehensive server monitoring that tracks vital system 
 # Real-time server statistics
 node server-monitor.js --once
 
-# View detailed monitoring logs
-pm2 logs server-monitor
+# View detailed monitoring logs (when running)
 tail -f server-monitor.log
 
-# Log management
+# Manual monitoring commands
+./check-monitor.sh                     # Quick status check
+node server-monitor.js --once          # One-time monitoring
 node server-monitor.js --logs          # Show log file status
 node server-monitor.js --rotate-logs   # Manually rotate logs
 ./rotate-logs.sh                       # Automated log rotation
 
-# Interactive monitoring dashboard
-pm2 monit
+# Run monitoring temporarily
+pm2 start server-monitor.js --name temp-monitor  # Temporary PM2 process
 ```
 
 #### Monitoring Configuration
-- **Update Interval**: 30 seconds (reduced for efficiency)
+- **Update Interval**: 30 seconds (when running)
 - **Detailed Logging**: Every 10 minutes (JSON format)
 - **Summary Logging**: Every 30 seconds (console output)
-- **Log Rotation**: Automatic at 10MB per file
+- **Log Rotation**: Manual or scheduled (10MB max per file)
 - **Retention**: 7 days / 7 files maximum
-- **Auto-restart**: Enabled with PM2 ecosystem
-- **Resource Usage**: Lightweight (~50MB memory)
+- **Auto-restart**: Disabled (manual execution only)
+- **Resource Usage**: Lightweight (~50MB memory when running)
 
 #### Log Analysis
 ```bash
@@ -433,14 +434,11 @@ pnpm build
 
 **Monitoring Issues**
 ```bash
-# Check if monitoring service is running
-pm2 list | grep server-monitor
+# Start monitoring temporarily for troubleshooting
+pm2 start server-monitor.js --name temp-monitor
 
-# Restart monitoring service
-pm2 restart server-monitor
-
-# Check monitoring logs for errors
-pm2 logs server-monitor --err
+# Check monitoring logs for errors (when running)
+pm2 logs temp-monitor --err
 
 # Verify monitoring data is being collected
 tail -5 server-monitor.log
@@ -452,6 +450,9 @@ node server-monitor.js --once
 node server-monitor.js --logs          # Check log file sizes
 ./rotate-logs.sh                       # Force log rotation
 node server-monitor.js --rotate-logs   # Manual rotation
+
+# Stop temporary monitoring
+pm2 stop temp-monitor && pm2 delete temp-monitor
 ```
 
 **PM2 Process Issues**

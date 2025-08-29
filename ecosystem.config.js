@@ -38,17 +38,6 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001
       }
-    },
-    {
-      name: 'server-monitor',
-      script: 'server-monitor.js',
-      cwd: './',
-      env: {
-        NODE_ENV: 'production'
-      },
-      autorestart: true,
-      max_restarts: 5,
-      min_uptime: '10s'
     }
   ]
 };

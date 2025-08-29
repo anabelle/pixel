@@ -114,7 +114,7 @@ systemctl enable nginx
 ### PM2 Process Management
 
 ```bash
-# Start all processes
+# Start all processes (optimized for process quota)
 pnpm pm2:start
 
 # Save PM2 configuration for auto-start on boot
@@ -124,8 +124,10 @@ pnpm pm2:startup
 # Monitor processes
 pnpm pm2:status
 pnpm pm2:logs
-pnpm pm2:monit
+pm2 monit
 ```
+
+**Note**: Server monitoring has been removed from auto-start to optimize PM2 process quota. Run `./check-monitor.sh` for manual monitoring or start temporarily with `pm2 start server-monitor.js --name temp-monitor`.
 
 ### Database Setup
 
@@ -175,13 +177,13 @@ tail -f server-monitor.log
 ```
 
 #### Monitoring Configuration
-- **Update Interval**: 30 seconds (optimized for production)
+- **Update Interval**: 30 seconds (when running manually)
 - **Detailed Logging**: JSON format every 10 minutes
 - **Summary Logging**: Console output every 30 seconds
-- **Log Rotation**: Automatic at 10MB per file
+- **Log Rotation**: Manual or scheduled (10MB max per file)
 - **Retention Policy**: 7 days / 7 files maximum
-- **Auto-restart**: Enabled with PM2 ecosystem management
-- **Resource Usage**: Lightweight (~50MB memory footprint)
+- **Auto-restart**: Disabled (manual execution only)
+- **Resource Usage**: Lightweight (~50MB memory when running)
 - **Data Retention**: Smart logging for trend analysis
 
 #### Basic Health Check Script
@@ -324,21 +326,25 @@ pm2 list
 
 #### Server Vital Signs Monitoring
 ```bash
-# Quick monitoring status
+# Quick monitoring status (always available)
 ./check-monitor.sh
 
-# Real-time server statistics
+# One-time monitoring snapshot
 node server-monitor.js --once
 
-# Continuous monitoring logs
+# Run continuous monitoring temporarily
+pm2 start server-monitor.js --name temp-monitor
 tail -f server-monitor.log
 
-# Log management
+# Stop temporary monitoring
+pm2 stop temp-monitor && pm2 delete temp-monitor
+
+# Log management (manual)
 node server-monitor.js --logs          # Show log file status
 node server-monitor.js --rotate-logs   # Manual log rotation
 ./rotate-logs.sh                       # Automated log maintenance
 
-# Analyze monitoring trends
+# Analyze existing monitoring trends
 grep '"usage":"' server-monitor.log | tail -20
 ```
 
@@ -396,14 +402,14 @@ Common issues and solutions:
 
 #### Monitoring-Specific Issues
 ```bash
-# Check if monitoring service is running
-pm2 list | grep server-monitor
+# Start monitoring temporarily for troubleshooting
+pm2 start server-monitor.js --name temp-monitor
 
-# Restart monitoring service
-pm2 restart server-monitor
+# Check if temporary monitoring is running
+pm2 list | grep temp-monitor
 
-# Check monitoring logs for errors
-pm2 logs server-monitor --err
+# Check monitoring logs for errors (when running)
+pm2 logs temp-monitor --err
 
 # Verify monitoring data collection
 tail -5 server-monitor.log
@@ -416,6 +422,9 @@ node server-monitor.js --logs          # Check log file sizes
 ./rotate-logs.sh                       # Force log rotation
 node server-monitor.js --rotate-logs   # Manual rotation
 du -sh server-monitor*                 # Check disk usage of logs
+
+# Stop temporary monitoring after troubleshooting
+pm2 stop temp-monitor && pm2 delete temp-monitor
 ```
 
 ### Security Considerations
