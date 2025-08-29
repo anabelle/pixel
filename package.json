@@ -54,5 +54,8 @@
     "digital-art"
   ],
   "author": "Pixel <pixel@example.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "pm2-server-monit": "^3.0.0"
+  }
 }

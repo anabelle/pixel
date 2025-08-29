@@ -145,38 +145,107 @@ ufw allow 443   # HTTPS
 ufw enable
 ```
 
-### Health Monitoring
+### Comprehensive Server Monitoring
 
-Create a simple health check script:
+The Pixel ecosystem includes a comprehensive server monitoring system that tracks vital system metrics in real-time:
+
+#### Monitored Metrics
+- **CPU Usage**: Real-time usage percentage and core count
+- **Memory Usage**: Total, used, free memory with utilization percentage
+- **Disk Usage**: Storage space monitoring and utilization tracking
+- **Network I/O**: RX/TX byte monitoring for network activity
+- **Process Information**: Total processes, system uptime, load average
+- **System Health**: Hostname, OS type, kernel version, system load
+
+#### Monitoring Setup
+
+```bash
+# The monitoring system is automatically included in PM2 ecosystem
+pm2 start ecosystem.config.js  # Includes server-monitor service
+
+# Quick status overview
+./check-monitor.sh
+
+# Real-time server statistics
+node server-monitor.js --once
+
+# View detailed monitoring logs
+pm2 logs server-monitor
+tail -f server-monitor.log
+```
+
+#### Monitoring Configuration
+- **Update Interval**: 30 seconds (optimized for production)
+- **Detailed Logging**: JSON format every 10 minutes
+- **Summary Logging**: Console output every 30 seconds
+- **Log Rotation**: Automatic at 10MB per file
+- **Retention Policy**: 7 days / 7 files maximum
+- **Auto-restart**: Enabled with PM2 ecosystem management
+- **Resource Usage**: Lightweight (~50MB memory footprint)
+- **Data Retention**: Smart logging for trend analysis
+
+#### Basic Health Check Script
+
+Create an enhanced health check script that works with the monitoring system:
 
 ```bash
 # /home/pixel/health-check.sh
 #!/bin/bash
 
-# Check if all PM2 processes are running
-pm2 status | grep -q "stopped" && {
-    echo "Some PM2 processes are stopped, restarting..."
-    pm2 restart all
-}
+echo "=== Pixel Ecosystem Health Check ==="
+echo "Timestamp: $(date)"
+echo ""
 
-# Check if nginx is running
-systemctl is-active --quiet nginx || {
-    echo "Nginx is not running, starting..."
+# Check PM2 processes
+echo "📊 PM2 Services Status:"
+pm2 jlist | jq -r '.[] | "\(.name): \(.pm2_env.status)"' 2>/dev/null || pm2 list --no-color
+
+# Check server monitoring
+echo ""
+echo "🔍 Server Monitoring Status:"
+if pm2 list | grep -q "server-monitor"; then
+    echo "✅ Server monitoring is running"
+    # Show recent monitoring data
+    echo "Recent CPU/Memory stats:"
+    tail -3 server-monitor.log | grep -o '"usage":"[^"]*"' | head -2 | sed 's/"usage":"//;s/"//'
+else
+    echo "❌ Server monitoring is not running"
+fi
+
+# Check nginx
+echo ""
+echo "🌐 Nginx Status:"
+if systemctl is-active --quiet nginx; then
+    echo "✅ Nginx is running"
+else
+    echo "❌ Nginx is not running"
     systemctl start nginx
-}
+fi
 
 # Check disk space
 DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+echo ""
+echo "💾 Disk Usage: ${DISK_USAGE}%"
 if [ $DISK_USAGE -gt 80 ]; then
-    echo "Disk usage is above 80%: $DISK_USAGE%"
+    echo "⚠️  WARNING: Disk usage above 80%"
 fi
 
-echo "Health check completed at $(date)"
+# Check memory
+MEM_USAGE=$(free | grep Mem | awk '{printf "%.0f", $3/$2 * 100.0}')
+echo "🧠 Memory Usage: ${MEM_USAGE}%"
+
+echo ""
+echo "=== Health Check Complete ==="
 ```
 
 ```bash
 # Make executable and add to crontab
 chmod +x /home/pixel/health-check.sh
+
+# Test the health check
+./health-check.sh
+
+# Add to crontab for automated monitoring
 crontab -e
 # Add: */5 * * * * /home/pixel/health-check.sh >> /home/pixel/logs/health.log 2>&1
 ```
@@ -233,25 +302,83 @@ find /home/pixel/backups/ -type d -mtime +7 -exec rm -rf {} +
 echo "Backup completed: $BACKUP_DIR"
 ```
 
-### Monitoring and Logs
+### Comprehensive Monitoring and Logs
 
+#### PM2 Process Monitoring
 ```bash
-# View real-time logs
+# View real-time logs for all services
 pnpm pm2:logs
 
 # View specific service logs
 pm2 logs pixel-agent
 pm2 logs lnpixels-api
 pm2 logs lnpixels-web
+pm2 logs server-monitor  # Server monitoring logs
 
-# View nginx logs
+# Interactive monitoring dashboard
+pm2 monit
+
+# Process status overview
+pm2 list
+```
+
+#### Server Vital Signs Monitoring
+```bash
+# Quick monitoring status
+./check-monitor.sh
+
+# Real-time server statistics
+node server-monitor.js --once
+
+# Continuous monitoring logs
+tail -f server-monitor.log
+
+# Log management
+node server-monitor.js --logs          # Show log file status
+node server-monitor.js --rotate-logs   # Manual log rotation
+./rotate-logs.sh                       # Automated log maintenance
+
+# Analyze monitoring trends
+grep '"usage":"' server-monitor.log | tail -20
+```
+
+#### System and Application Logs
+```bash
+# Nginx logs
 tail -f /var/log/nginx/access.log
 tail -f /var/log/nginx/error.log
 
-# System resource monitoring
-htop
-iotop
-nethogs
+# System monitoring tools
+htop              # Interactive process viewer
+iotop             # I/O monitoring
+nethogs           # Network bandwidth per process
+df -h             # Disk usage
+free -h           # Memory usage
+
+# PM2 system monitoring
+pm2 sysmonit      # Built-in system monitoring
+```
+
+#### Log Analysis and Alerting
+```bash
+# Search for errors in logs
+pm2 logs --err | grep -i error
+
+# Monitor for high CPU usage
+tail -f server-monitor.log | grep '"usage":"[8-9][0-9]'
+
+# Check memory trends
+grep '"usagePercent"' server-monitor.log | tail -10
+
+# Set up log rotation for monitoring data
+# Add to /etc/logrotate.d/server-monitor
+/home/pixel/server-monitor.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+}
 ```
 
 ### Troubleshooting
@@ -262,7 +389,34 @@ Common issues and solutions:
 2. **Nginx 502 errors**: Verify backend services are running on correct ports
 3. **SSL certificate issues**: Check certbot renewal and nginx configuration
 4. **Database connection errors**: Verify file permissions and paths
-5. **Memory issues**: Monitor with `pm2 monit` and adjust max_memory_restart
+5. **Memory issues**: Monitor with `pm2 monit` and server monitoring logs
+6. **Server monitoring not working**: Check `pm2 logs server-monitor` and verify Node.js installation
+7. **High resource usage**: Analyze trends with `tail -f server-monitor.log` and identify bottlenecks
+8. **Log file growing too large**: Set up log rotation for `server-monitor.log`
+
+#### Monitoring-Specific Issues
+```bash
+# Check if monitoring service is running
+pm2 list | grep server-monitor
+
+# Restart monitoring service
+pm2 restart server-monitor
+
+# Check monitoring logs for errors
+pm2 logs server-monitor --err
+
+# Verify monitoring data collection
+tail -5 server-monitor.log
+
+# Test monitoring script directly
+node server-monitor.js --once
+
+# Log management troubleshooting
+node server-monitor.js --logs          # Check log file sizes
+./rotate-logs.sh                       # Force log rotation
+node server-monitor.js --rotate-logs   # Manual rotation
+du -sh server-monitor*                 # Check disk usage of logs
+```
 
 ### Security Considerations
 

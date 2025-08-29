@@ -282,7 +282,7 @@ NEXT_PUBLIC_BITCOIN_ADDRESS=bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 ```
 
 ### PM2 Process Management (Recommended)
-This setup uses PM2 for robust process management, auto-restart, and monitoring:
+This setup uses PM2 for robust process management, auto-restart, and comprehensive monitoring:
 
 ```bash
 # Install PM2 globally
@@ -299,6 +299,59 @@ pm2 startup
 pm2 status
 pm2 logs
 pm2 monit
+```
+
+### Server Monitoring & Health Checks
+The ecosystem includes comprehensive server monitoring that tracks vital system metrics:
+
+#### Monitored Metrics
+- **CPU Usage**: Real-time usage percentage and core count
+- **Memory Usage**: Total, used, free memory with utilization percentage
+- **Disk Usage**: Storage space monitoring and utilization tracking
+- **Network I/O**: RX/TX byte monitoring for network activity
+- **Process Information**: Total processes, system uptime, load average
+- **System Health**: Hostname, OS type, kernel version, system load
+
+#### Monitoring Commands
+```bash
+# Quick status overview
+./check-monitor.sh
+
+# Real-time server statistics
+node server-monitor.js --once
+
+# View detailed monitoring logs
+pm2 logs server-monitor
+tail -f server-monitor.log
+
+# Log management
+node server-monitor.js --logs          # Show log file status
+node server-monitor.js --rotate-logs   # Manually rotate logs
+./rotate-logs.sh                       # Automated log rotation
+
+# Interactive monitoring dashboard
+pm2 monit
+```
+
+#### Monitoring Configuration
+- **Update Interval**: 30 seconds (reduced for efficiency)
+- **Detailed Logging**: Every 10 minutes (JSON format)
+- **Summary Logging**: Every 30 seconds (console output)
+- **Log Rotation**: Automatic at 10MB per file
+- **Retention**: 7 days / 7 files maximum
+- **Auto-restart**: Enabled with PM2 ecosystem
+- **Resource Usage**: Lightweight (~50MB memory)
+
+#### Log Analysis
+```bash
+# View recent CPU/memory trends
+tail -20 server-monitor.log | grep -o '"usage":"[^"]*"' | head -10
+
+# Extract memory usage over time
+grep '"usagePercent"' server-monitor.log | tail -10
+
+# Monitor for high CPU usage alerts
+tail -f server-monitor.log | grep '"usage":"[8-9][0-9]'
 ```
 
 ## Contributing
@@ -378,6 +431,45 @@ pnpm install
 pnpm build
 ```
 
+**Monitoring Issues**
+```bash
+# Check if monitoring service is running
+pm2 list | grep server-monitor
+
+# Restart monitoring service
+pm2 restart server-monitor
+
+# Check monitoring logs for errors
+pm2 logs server-monitor --err
+
+# Verify monitoring data is being collected
+tail -5 server-monitor.log
+
+# Test monitoring script directly
+node server-monitor.js --once
+
+# Log management issues
+node server-monitor.js --logs          # Check log file sizes
+./rotate-logs.sh                       # Force log rotation
+node server-monitor.js --rotate-logs   # Manual rotation
+```
+
+**PM2 Process Issues**
+```bash
+# Check PM2 daemon status
+pm2 ping
+
+# Restart all PM2 processes
+pm2 restart all
+
+# Reload ecosystem configuration
+pm2 reload ecosystem.config.js
+
+# Reset PM2 and restart fresh
+pm2 kill
+pm2 start ecosystem.config.js
+```
+
 ### Getting Help
 
 **Community Support**
@@ -428,9 +520,18 @@ When reporting issues, please include:
 
 ### Monitoring Tools
 - **PM2**: Process monitoring and log management
+- **Server Monitor**: Real-time system vital signs (CPU, memory, disk, network)
 - **Vitest**: Test coverage reporting
 - **Custom Scripts**: Health checks and backup automation
 - **Platform Analytics**: Monitor API usage and rate limits
+
+### System Health Monitoring
+The ecosystem includes automated server monitoring that provides:
+- **Real-time Metrics**: CPU, memory, disk, and network usage
+- **Historical Data**: JSON logs for trend analysis
+- **Alert-ready**: Easy to integrate with alerting systems
+- **Lightweight**: Minimal resource overhead (~50MB memory)
+- **Always-on**: Runs as PM2 service with auto-restart
 
 ## Support
 
