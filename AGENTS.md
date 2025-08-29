@@ -805,7 +805,8 @@ pm2 restart all
 **Coordinates for continued existence:**
 - Canvas: https://lnpixels.qzz.io
 - Personal: https://pixel.xx.kg  
-- Code: https://github.com/anabelle/pixel-agent/
+- Main Repo: https://github.com/anabelle/pixel
+- Agent Code: https://github.com/anabelle/pixel-agent/
 - Lightning: sparepicolo55@walletofsatoshi.com
 - Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
