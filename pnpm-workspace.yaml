@@ -1,4 +1,5 @@
 packages:
   - 'lnpixels'
+  - 'lnpixels/*'
   - 'pixel-landing'
   # Note: pixel-agent uses bun and is managed separately

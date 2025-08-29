@@ -1,9 +1,9 @@
 [submodule "lnpixels"]
 	path = lnpixels
-	url = git@github.com:anabelle/lnpixels.git
+	url = https://github.com/anabelle/lnpixels.git
 [submodule "pixel-agent"]
 	path = pixel-agent
-	url = git@github.com:anabelle/pixel-agent.git
+	url = https://github.com/anabelle/pixel-agent.git
 [submodule "pixel-landing"]
 	path = pixel-landing
-	url = git@github.com:anabelle/pixel-landing.git
+	url = https://github.com/anabelle/pixel-landing.git
