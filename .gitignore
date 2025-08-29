@@ -52,6 +52,9 @@ temp/
 *.bak
 backup.sql
 
+# Config directories
+.config/
+
 .bash_history
 .bash_logout
 .bashrc
