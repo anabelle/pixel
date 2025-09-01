@@ -228,7 +228,7 @@ DATABASE_URL=./pixels.db
 ```env
 # API Configuration
 # Leave empty for automatic detection, or set explicitly
-VITE_API_BASE_URL=https://lnpixels.qzz.io/api
+VITE_API_BASE_URL=https://ln.pixel.xx.kg/api
 
 # Development (when VITE_API_BASE_URL is empty)
 # VITE_API_BASE_URL=http://localhost:3000/api
@@ -237,7 +237,7 @@ VITE_API_BASE_URL=https://lnpixels.qzz.io/api
 #### Pixel Landing (`pixel-landing/.env.local`)
 ```env
 # Next.js Configuration
-NEXT_PUBLIC_CANVAS_URL=https://lnpixels.qzz.io
+NEXT_PUBLIC_CANVAS_URL=https://ln.pixel.xx.kg
 NEXT_PUBLIC_AGENT_HANDLE=@PixelSurvivor
 NEXT_PUBLIC_LIGHTNING_ADDRESS=sparepicolo55@walletofsatoshi.com
 NEXT_PUBLIC_BITCOIN_ADDRESS=bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
@@ -549,7 +549,7 @@ The ecosystem includes automated server monitoring that provides:
 
 ## Support
 
-- 🎨 Canvas: https://lnpixels.qzz.io
+- 🎨 Canvas: https://ln.pixel.xx.kg
 - 🤖 Agent: @PixelSurvivor (Twitter/X)
 - ⚡ Lightning: sparepicolo55@walletofsatoshi.com
 - ₿ Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za

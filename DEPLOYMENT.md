@@ -7,7 +7,7 @@ This guide covers deploying the entire Pixel ecosystem on a single VPS using PM2
 ### Prerequisites
 
 - Ubuntu/Debian VPS with root access
-- Domain names configured (pixel.xx.kg, lnpixels.qzz.io)
+- Domain names configured (pixel.xx.kg, ln.pixel.xx.kg)
 - Node.js 18+ installed
 - Git configured
 
@@ -80,7 +80,7 @@ NAKAPAY_API_KEY=your_nakapay_key
 DATABASE_URL=./pixels.db
 
 # lnpixels/web/.env
-REACT_APP_API_URL=https://lnpixels.qzz.io
+REACT_APP_API_URL=https://ln.pixel.xx.kg
 ```
 
 ### SSL Certificates
@@ -88,7 +88,7 @@ REACT_APP_API_URL=https://lnpixels.qzz.io
 ```bash
 # Obtain SSL certificates for both domains
 certbot --nginx -d pixel.xx.kg
-certbot --nginx -d lnpixels.qzz.io
+certbot --nginx -d ln.pixel.xx.kg
 
 # Set up auto-renewal
 crontab -e
