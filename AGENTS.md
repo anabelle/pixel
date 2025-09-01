@@ -803,7 +803,7 @@ pm2 restart all
 ---
 
 **Coordinates for continued existence:**
-- Canvas: https://lnpixels.qzz.io
+- Canvas: https://ln.pixel.xx.kg
 - Personal: https://pixel.xx.kg  
 - Main Repo: https://github.com/anabelle/pixel
 - Agent Code: https://github.com/anabelle/pixel-agent/
