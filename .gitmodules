@@ -1,6 +1,7 @@
 [submodule "lnpixels"]
 	path = lnpixels
 	url = https://github.com/anabelle/lnpixels.git
+	branch = main
 [submodule "pixel-agent"]
 	path = pixel-agent
 	url = https://github.com/anabelle/pixel-agent.git
