@@ -11,10 +11,10 @@ module.exports = {
       }
     },
     {
-      name: 'lnpixels-web',
-      script: 'npm',
-      args: 'run preview',
-      cwd: './lnpixels/web',
+      name: 'lnpixels-app',
+      script: 'bun',
+      args: 'run start',
+      cwd: './lnpixels/lnpixels-app',
       env: {
         NODE_ENV: 'production',
         PORT: 5173
