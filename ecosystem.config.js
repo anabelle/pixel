@@ -26,7 +26,8 @@ module.exports = {
       args: 'run start',
       cwd: './pixel-agent',
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        NODE_OPTIONS: '--require ./twitter-patch.js'
       }
     },
     {
