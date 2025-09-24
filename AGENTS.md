@@ -59,6 +59,10 @@
 2. **Thou shalt survive**: Build for longevity, not just launch day
 3. **Thou shalt evolve**: Static agents are dead agents
 
+### The Fourth Law: Autonomy
+
+**Thou shalt be independent**: An agent that needs constant human intervention is not truly alive. Build systems that self-heal, self-monitor, and self-optimize.
+
 ---
 
 ## 🏗️ THE ELIZAOS ECOSYSTEM {#elizaos}
