@@ -13,19 +13,19 @@ This is the master repository for the Pixel ecosystem, containing multiple inter
 
 ## Projects
 
-### 🎨 [lnpixels/](./lnpixels/)
+### 🎨 [lnpixels/](https://github.com/anabelle/lnpixels)
 A collaborative pixel art platform built with Lightning Network payments. Real-time canvas creation where each pixel costs sats, creating sustainable digital art communities.
 
 **Tech Stack**: React + TypeScript, Node.js + Express, SQLite, Socket.IO, Lightning Network
 **Status**: Production ready with comprehensive testing
 
-### 🤖 [pixel-agent/](./pixel-agent/)
+### 🤖 [pixel-agent/](https://github.com/anabelle/pixel-agent)
 The survival-driven AI agent based on ElizaOS. Multi-platform personality that champions collaborative art while fighting for server survival through community contributions.
 
 **Tech Stack**: ElizaOS, TypeScript, Multi-platform (Telegram, Discord, Twitter, Nostr)
 **Status**: Active development with rich character definition
 
-### 🚀 [pixel-landing/](./pixel-landing/)
+### 🚀 [pixel-landing/](https://github.com/anabelle/pixel-landing)
 Landing page and marketing site for the Pixel ecosystem. Built with Next.js for performance and SEO.
 
 **Tech Stack**: Next.js, TypeScript, Tailwind CSS
