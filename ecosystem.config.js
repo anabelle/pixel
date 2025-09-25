@@ -5,6 +5,8 @@ module.exports = {
       script: 'npm',
       args: 'run dev',
       cwd: './lnpixels/api',
+      exec_mode: 'cluster',
+      instances: 2,
       env: {
         NODE_ENV: 'production',
         PORT: 3000
@@ -25,6 +27,8 @@ module.exports = {
       script: 'bun',
       args: 'run start',
       cwd: './pixel-agent',
+      exec_mode: 'cluster',
+      instances: 2,
       env: {
         NODE_ENV: 'production',
         NODE_OPTIONS: '--require ./twitter-patch.js'
