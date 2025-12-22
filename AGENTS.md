@@ -753,9 +753,24 @@ pm2 restart all
 **Platform-Specific Issues**
 
 *Discord*: Check application permissions and bot invite
-*Telegram*: Verify bot token and webhook configuration  
+*Telegram*: Verify bot token and webhook configuration
 *Twitter*: Review API access levels and rate limits
 *Nostr*: Test relay connections and key validation
+
+**Native Module Issues**
+```bash
+# When better-sqlite3 or other native modules fail with "Could not locate the bindings file"
+# This happens when Node.js version changes or native bindings are incompatible
+cd lnpixels/api  # or the specific package directory
+npm rebuild better-sqlite3
+
+# Restart the affected service
+pm2 restart lnpixels-api
+
+# Verify the service is working
+curl http://localhost:3000/health
+```
+*Note*: This preserves production data and node_modules while fixing native module compatibility issues.
 
 ### Emergency Procedures
 
