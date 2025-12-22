@@ -23,9 +23,10 @@ To keep disk usage in check, run the log rotation script:
 ```
 
 ### Health Monitoring
-The `server-monitor.js` tracks CPU, RAM, and Disk.
-- **Start Monitor**: `pm2 start server-monitor.js --name monitor`
-- **Check Stats**: `node server-monitor.js --once`
+The monorepo includes tools for both system-level and ecosystem-wide monitoring.
+- **Full Status Report**: `./report-status.js` (Recommended for a complete overview)
+- **System Vitals**: `node server-monitor.js --once`
+- **Continuous Monitor**: `pm2 start server-monitor.js --name monitor`
 
 ## 🚨 Emergency Recovery
 If a service is behaving erratically:

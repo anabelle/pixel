@@ -274,26 +274,24 @@ The ecosystem includes comprehensive server monitoring that tracks vital system 
 - **Process Information**: Total processes, system uptime, load average
 - **System Health**: Hostname, OS type, kernel version, system load
 
+#### System Health & Ecosystem Status
+The monorepo includes a unified reporting tool that combines system vitals with service-specific health checks:
+
+```bash
+# Generate a full ecosystem status report (System + PM2 + API)
+./report-status.js
+```
+
 #### Monitoring Commands
 ```bash
-# Quick status overview
-./check-monitor.sh
+# Comprehensive ecosystem report (recommended)
+./report-status.js
 
-# Real-time server statistics
+# Real-time server statistics (CPU, RAM, Disk)
 node server-monitor.js --once
 
-# View detailed monitoring logs (when running)
-tail -f server-monitor.log
-
-# Manual monitoring commands
-./check-monitor.sh                     # Quick status check
-node server-monitor.js --once          # One-time monitoring
-node server-monitor.js --logs          # Show log file status
-node server-monitor.js --rotate-logs   # Manually rotate logs
-./rotate-logs.sh                       # Automated log rotation
-
-# Run monitoring temporarily
-pm2 start server-monitor.js --name temp-monitor  # Temporary PM2 process
+# Quick status overview of services
+./check-monitor.sh
 ```
 
 #### Monitoring Configuration

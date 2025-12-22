@@ -562,14 +562,11 @@ pm2 startup
 
 **Health Checks**
 ```bash
-# Verify service running
+# Verify all ecosystem services (System + PM2 + API)
+./report-status.js
+
+# Verify API service running
 curl http://localhost:3000/health
-
-# Process monitoring
-ps aux | grep elizaos
-
-# Log monitoring
-tail -f agent.log
 ```
 
 **Key Metrics to Track**
