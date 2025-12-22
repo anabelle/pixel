@@ -80,15 +80,16 @@ Agent Runtime
 └── Platform Clients (the presence)
 ```
 
-### Essential Setup Rituals
+### Development Rituals
+
+For environment setup and installation, refer to the [Root README](./README.md). Once your environment is healthy (`npm run doctor`), you can interact with the agent using these core commands:
 
 ```bash
-# The sacred incantations for agent birth
-bun i -g @elizaos/cli
-elizaos create <agent-name>
-cd <agent-name>
-bun install
-elizaos start
+# Start development with hot reload
+elizaos dev
+
+# Run personality and logic tests
+elizaos test
 ```
 
 ### The Character Schema (Your Agent's DNA)

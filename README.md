@@ -7,83 +7,38 @@
 
 This is the master repository for the Pixel ecosystem, containing multiple interconnected projects that together create a sustainable AI agent platform with collaborative pixel art and Lightning Network integration.
 
-## 📚 Essential Reading
+## 🚀 Quick Start (Cold Start)
 
-- 🎭 **[THE ULTIMATE AGENTS.md](./AGENTS.md)** - Master guide for AI agent development and philosophy.
-- 🎨 **[API Reference](./docs/API.md)** - Developer documentation for the LNPixels API.
-- 🚀 **[Deployment Guide](./DEPLOYMENT.md)** - Operations, backups, and production setup.
+To get the entire ecosystem running from scratch on a new machine:
 
-## Projects
+### 1. Prerequisites
+- Node.js 20+ & Bun 1.0+
+- `pnpm` (`npm install -g pnpm`)
+- `elizaos` CLI (`bun i -g @elizaos/cli`)
 
-### 🎨 [lnpixels/](https://github.com/anabelle/lnpixels)
-A collaborative pixel art platform built with Lightning Network payments. Real-time canvas creation where each pixel costs sats, creating sustainable digital art communities.
-
-**Tech Stack**: React + TypeScript, Node.js + Express, SQLite, Socket.IO, Lightning Network
-**Status**: Production ready with comprehensive testing
-
-### 🤖 [pixel-agent/](https://github.com/anabelle/pixel-agent)
-The survival-driven AI agent based on ElizaOS. Multi-platform personality that champions collaborative art while fighting for server survival through community contributions.
-
-**Tech Stack**: ElizaOS, TypeScript, Multi-platform (Telegram, Discord, Twitter, Nostr)
-**Status**: Active development with rich character definition
-
-### 🚀 [pixel-landing/](https://github.com/anabelle/pixel-landing)
-Landing page and marketing site for the Pixel ecosystem. Built with Next.js for performance and SEO.
-
-**Tech Stack**: Next.js, TypeScript, Tailwind CSS
-**Status**: In development
-
-## Architecture
-
-```
-pixel/ (this repo)
-├── AGENTS.md              # Master guide for AI agent development
-├── lnpixels/              # Collaborative pixel art platform
-├── pixel-agent/           # ElizaOS-based AI agent
-├── pixel-landing/         # Marketing and landing pages
-└── backup.sql             # Shared database backups
-```
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+ (20+ recommended)
-- **Bun runtime** (required for ElizaOS/elizaos CLI)
-- pnpm (for efficient monorepo dependency management)
-- Git with submodule support
-
-### Setup All Projects
+### 2. Setup
 ```bash
-# Clone with submodules
 git clone --recursive https://github.com/anabelle/pixel.git
 cd pixel
 
-# Install pnpm if not already installed
-npm install -g pnpm
+# Auto-install and build everything
+npm run deploy:setup
 
-# Install dependencies for all projects
-pnpm install
-cd pixel-agent && bun install
-
-# Build all projects
-cd ..
-npm run build
-
-# Start development environment
-pnpm dev
+# Verify environment
+npm run doctor
 ```
 
-### Individual Project Setup
+### 3. Development
 ```bash
-# LNPixels platform
-cd lnpixels && pnpm install && pnpm dev
-
-# Pixel agent (requires Bun)
-cd pixel-agent && bun install && bun run build && bun run dev
-
-# Landing page
-cd pixel-landing && pnpm install && pnpm dev
+# Start all services with hot-reload in PM2 dashboard
+npm run dev:full
 ```
+
+## 📚 Specialized Documentation
+
+- 🎨 **[API Reference](./docs/API.md)** - Endpoint and pricing specifications.
+- 🚀 **[Operations Guide](./DEPLOYMENT.md)** - Production maintenance and recovery.
+- 🎭 **[Agent Philosophy](./AGENTS.md)** - Pixel's character and evolution logic.
 
 ## Development Workflow
 
