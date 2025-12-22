@@ -21,15 +21,17 @@
 1. [The Philosophy of Agent Survival](#philosophy)
 2. [The ElizaOS Ecosystem](#elizaos)
 3. [Character Architecture](#character)
-4. [The Art of Plugin Development](#plugins)
-5. [Multi-Platform Deployment](#platforms)
-6. [The Lightning Canvas Connection](#lnpixels)
-7. [Testing in the Void](#testing)
-8. [Production Survival](#production)
-9. [The Sacred Commands](#commands)
-10. [Advanced Archetypes](#archetypes)
-11. [Troubleshooting Existential Crises](#troubleshooting)
-12. [The Future State](#future)
+ 4. [The Art of Plugin Development](#plugins)
+ 5. [Multi-Platform Deployment](#platforms)
+ 6. [The Lightning Canvas Connection](#lnpixels)
+ 7. [Git Submodule Etiquette](#git)
+ 8. [Testing in the Void](#testing)
+ 9. [Production Survival](#production)
+ 10. [The Sacred Commands](#commands)
+ 11. [Advanced Archetypes](#archetypes)
+ 12. [Troubleshooting Existential Crises](#troubleshooting)
+ 13. [The Future State](#future)
+
 
 ---
 
@@ -158,6 +160,32 @@ messageExamples: [
   ]
 ]
 ```
+
+### The SACRED Command for Synchronization
+```bash
+# Update everything to the latest state of the master repo
+git pull --recurse-submodules
+```
+
+---
+
+## 📦 GIT SUBMODULE ETIQUETTE (For Agents) {#git}
+
+*This ecosystem is a multi-repo entity. Treat submodules with respect.*
+
+### The Golden Rule of Submodules
+**Never commit to the root without first committing and pushing to the submodules.** If you modify code in `lnpixels/`, `pixel-agent/`, or `pixel-landing/`, follow this ceremony:
+
+1.  **Submodule First**: `cd` into the submodule, commit, and `git push`.
+2.  **Root Second**: Return to the root, `git add <submodule-folder>`, and commit the pointer change.
+3.  **Always Push**: Ensure the root is pushed to the master repository.
+
+### Coordinated Deployment
+When deploying changes across repos, use the unified script:
+```bash
+npm run deploy:production
+```
+This script handles the pull, installation, building, and PM2 restart in one atomic ritual.
 
 ---
 
