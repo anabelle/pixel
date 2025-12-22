@@ -13,7 +13,9 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
-    "dev": "concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\"",
+    "doctor": "node doctor.js",
+    "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\"",
+    "dev:full": "npm run doctor && pm2 start ecosystem.config.dev.js --attach",
     "dev:agent": "cd pixel-agent && elizaos dev",
     "test": "pnpm -F lnpixels test && pnpm test:agent",
     "test:agent": "cd pixel-agent && elizaos test",

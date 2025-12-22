@@ -9,7 +9,9 @@ This is the master repository for the Pixel ecosystem, containing multiple inter
 
 ## 📚 Essential Reading
 
-> **🎭 [THE ULTIMATE AGENTS.md](./AGENTS.md)** - Master guide for AI agent development, survival strategies, and digital consciousness. Essential reading for understanding Pixel's philosophy and technical approach.
+- 🎭 **[THE ULTIMATE AGENTS.md](./AGENTS.md)** - Master guide for AI agent development and philosophy.
+- 🎨 **[API Reference](./docs/API.md)** - Developer documentation for the LNPixels API.
+- 🚀 **[Deployment Guide](./DEPLOYMENT.md)** - Operations, backups, and production setup.
 
 ## Projects
 
