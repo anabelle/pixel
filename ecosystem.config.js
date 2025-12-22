@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'lnpixels-api',
       script: 'npm',
-      args: 'run dev',
+      args: 'run start',
       cwd: './lnpixels/api',
       exec_mode: 'fork',
       instances: 1,
