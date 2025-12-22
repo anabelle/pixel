@@ -59,7 +59,6 @@
   "author": "Pixel <pixel@example.com>",
   "license": "MIT",
   "dependencies": {
-    "@elizaos/cli": "^1.5.15",
     "pm2-server-monit": "^3.0.0"
   }
 }

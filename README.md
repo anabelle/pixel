@@ -16,17 +16,14 @@ To get the entire ecosystem running from scratch on a new machine:
 - `pnpm` (`npm install -g pnpm`)
 - `elizaos` CLI (`bun i -g @elizaos/cli`)
 
-### 2. Setup
-```bash
-git clone --recursive https://github.com/anabelle/pixel.git
-cd pixel
+### 📦 Package Architecture
 
-# Auto-install and build everything
-npm run deploy:setup
+The Pixel ecosystem uses a **Hybrid Manager Strategy** to accommodate specific project requirements:
 
-# Verify environment
-npm run doctor
-```
+- **Monorepo (pnpm)**: Most projects (`lnpixels`, `pixel-landing`) are managed by a single unified **pnpm workspace**. This ensures consistent dependencies and faster builds.
+- **Agent (Bun)**: The `pixel-agent` uses **Bun** exclusively. This is required by the underlying ElizaOS framework for runtime performance and CLI compatibility.
+
+**Avoid Redundancy**: Do not run `npm install` or `bun install` in projects that should be managed by `pnpm`. The root `pnpm-lock.yaml` is the source of truth for the entire ecosystem except the agent.
 
 ### 3. Development
 ```bash
