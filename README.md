@@ -58,21 +58,16 @@ pixel/ (this repo)
 git clone --recursive https://github.com/anabelle/pixel.git
 cd pixel
 
-# Or if already cloned, initialize submodules
-git submodule update --init --recursive
-
-# Install Bun (required for ElizaOS CLI)
-curl -fsSL https://bun.sh/install | bash
-# Windows: powershell -c "irm bun.sh/install.ps1 | iex"
-
-# Install ElizaOS CLI globally
-bun i -g @elizaos/cli
-
 # Install pnpm if not already installed
 npm install -g pnpm
 
-# Install dependencies for all projects (shared when possible)
+# Install dependencies for all projects
 pnpm install
+cd pixel-agent && bun install
+
+# Build all projects
+cd ..
+npm run build
 
 # Start development environment
 pnpm dev
@@ -83,8 +78,8 @@ pnpm dev
 # LNPixels platform
 cd lnpixels && pnpm install && pnpm dev
 
-# Pixel agent (requires Bun and ElizaOS CLI)
-cd pixel-agent && bun install && elizaos dev
+# Pixel agent (requires Bun)
+cd pixel-agent && bun install && bun run build && bun run dev
 
 # Landing page
 cd pixel-landing && pnpm install && pnpm dev

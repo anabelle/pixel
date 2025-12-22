@@ -19,7 +19,8 @@
     "dev:agent": "cd pixel-agent && elizaos dev",
     "test": "pnpm -F lnpixels test && pnpm test:agent",
     "test:agent": "cd pixel-agent && elizaos test",
-    "build": "pnpm -F lnpixels build && pnpm -F pixel-landing build",
+    "build": "pnpm -F lnpixels build && pnpm -F pixel-landing build && npm run build:agent",
+    "build:agent": "cd pixel-agent && bun run build",
     "lint": "pnpm -F lnpixels lint && pnpm -F pixel-landing lint",
     "clean": "pnpm -F lnpixels clean && pnpm clean:agent && pnpm -F pixel-landing clean",
     "clean:agent": "cd pixel-agent && rm -rf node_modules dist",
@@ -34,7 +35,7 @@
     "pm2:save": "pm2 save",
     "pm2:startup": "pm2 startup",
     "deploy:setup": "mkdir -p logs && pnpm install && pnpm install:agent && pnpm build",
-    "deploy:production": "pnpm build && pnpm pm2:reload"
+    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && pm2 restart all"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

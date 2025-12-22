@@ -5,9 +5,14 @@ This guide covers the procedures for deploying and maintaining the Pixel ecosyst
 ## 🚀 Deployment Checklist
 
 1.  **Environment Hygiene**: Run `npm run doctor` to ensure all `.env` files are correctly configured.
-2.  **Build**: Run `npm run build` from the root to compile all TypeScript and Next.js projects.
-3.  **Process Management**: Use `pm2 start ecosystem.config.js` to launch all services.
-4.  **Verification**: 
+2.  **Install Dependencies**:
+    - Root and monorepo: `pnpm install`
+    - Pixel Agent (requires bun): `cd pixel-agent && bun install`
+3.  **Build All Projects**:
+    - From root: `npm run build`
+    - Or specifically for the agent: `cd pixel-agent && bun run build`
+4.  **Process Management**: Use `pm2 restart all` (or `pm2 start ecosystem.config.js` if first time) to apply changes.
+5.  **Verification**: 
     - Check API health: `curl https://your-domain.com/api/`
     - Check logs: `pm2 logs`
 
@@ -36,10 +41,11 @@ If a service is behaving erratically:
 3. Complete reset: `pm2 kill && pm2 start ecosystem.config.js`
 
 ## 📦 Submodule Updates
-To update all components to their latest versions:
+To update all components to their latest versions and redeploy:
 ```bash
-git submodule update --remote --merge
+git pull --recurse-submodules
 pnpm install
-pnpm build
-pm2 reload all
+cd pixel-agent && bun install
+npm run build
+pm2 restart all
 ```
