@@ -65,8 +65,8 @@
     "pm2-server-monit": "^3.0.0"
   },
   "pnpm": {
-    "packageExtensions": {
-      "@elizaos/plugin-ollama@1.2.4": {
+    "overrides": {
+      "@elizaos/plugin-ollama": {
         "scripts": {
           "postinstall": "echo 'Skipping @elizaos/plugin-ollama postinstall'"
         }
