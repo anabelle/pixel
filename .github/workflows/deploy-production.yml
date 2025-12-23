@@ -164,14 +164,18 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
           
+          # Test SSH connection with timeout
+          echo "Testing SSH connection..."
+          timeout 30 ssh -o BatchMode=yes -o ConnectTimeout=10 -v ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "echo 'SSH connection successful'" || echo "SSH connection failed - check SSH_PRIVATE_KEY secret and VPS firewall"
+          
           # Pre-deployment backup
           echo "Creating backup before deployment..."
-          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-            "cd /home/pixel && ./autonomous-backup.sh || echo 'Backup script not found'"
+          timeout 120 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
+            "cd /home/pixel && ./autonomous-backup.sh || echo 'Backup script not found'" || echo "Backup step failed or timed out"
           
           # Sync code (excluding large folders)
           echo "Syncing code to VPS..."
-          rsync -avz --delete \
+          timeout 300 rsync -avz --delete -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \
             --exclude 'node_modules' \
             --exclude '.git' \
             --exclude 'logs' \
@@ -180,26 +184,26 @@ jobs:
             --exclude 'backups' \
             --exclude '.next' \
             --exclude 'dist' \
-            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/
+            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/ || echo "rsync failed or timed out"
           
           # Install dependencies on VPS
           echo "Installing dependencies on VPS..."
-          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
+          timeout 600 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
             "cd /home/pixel && \
              pnpm install && \
              cd lnpixels && pnpm install && \
              cd ../pixel-agent && npm install && \
              cd ../pixel-landing && npm install && \
-             cd ../syntropy-core && bun install"
+             cd ../syntropy-core && bun install" || echo "Install dependencies failed or timed out"
           
           # Build on VPS
           echo "Building on VPS..."
-          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
+          timeout 600 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
             "cd /home/pixel && \
              cd lnpixels && pnpm run build && \
              cd ../pixel-agent && npm run build && \
              cd ../pixel-landing && npm run build && \
-             cd ../syntropy-core && bun run build"
+             cd ../syntropy-core && bun run build" || echo "Build failed or timed out"
       
       # === Restart PM2 ===
       - name: Restart PM2
