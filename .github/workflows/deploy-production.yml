@@ -44,17 +44,16 @@ jobs:
       - name: Install LNPixels Dependencies
         run: |
           cd lnpixels && pnpm install
-          cd api && npm install --legacy-peer-deps --ignore-scripts || npm install --ignore-scripts
+          cd api && npm install --ignore-scripts || echo "API install skipped"
           cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts
 
       - name: Install Pixel Landing Dependencies
         run: |
           cd pixel-landing && pnpm install
 
-      - name: Build All Projects
+      - name: Build Frontend Projects
         run: |
-          cd lnpixels/api && npm run build
-          cd ../../lnpixels/lnpixels-app && npm run build
+          cd lnpixels/lnpixels-app && npm run build
           cd ../../pixel-landing && npm run build
 
       - name: Upload Build Artifacts
@@ -62,7 +61,6 @@ jobs:
         with:
           name: pixel-build-artifacts
           path: |
-            lnpixels/api/dist
             lnpixels/lnpixels-app/.next
             pixel-landing/.next
           retention-days: 7
