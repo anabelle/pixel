@@ -68,9 +68,8 @@ jobs:
            ${{ runner.os }}-node-
       
       # === Install Root Dependencies ===
-      - name: Install Root Dependencies
-        run: pnpm install
-        continue-on-error: true
+       - name: Install Root Dependencies
+         run: pnpm install
       
        # === Install Submodule Dependencies ===
       - name: Install LNPixels Dependencies
