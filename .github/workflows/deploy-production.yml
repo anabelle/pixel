@@ -83,7 +83,6 @@ jobs:
            fi
 
        - name: Install LNPixels Dependencies
-         if: steps.build_vars.outputs.should_build == 'true'
          run: |
            cd lnpixels
            pnpm install
@@ -152,7 +151,6 @@ jobs:
       
       # === Test Services ===
       - name: Test Services
-        if: ${{ !inputs.skip_tests }}
         run: |
           pnpm run test || echo "Tests completed with warnings"
         continue-on-error: true
