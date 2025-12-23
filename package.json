@@ -16,7 +16,7 @@
     "doctor": "node doctor.js",
     "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\" \"pnpm dev:syntropy\"",
     "dev:full": "npm run doctor && pm2 start ecosystem.config.dev.js --attach",
-    "dev:agent": "cd pixel-agent && elizaos dev",
+    "dev:agent": "cd pixel-agent && npx @elizaos/cli@latest dev",
     "dev:syntropy": "cd syntropy-core && bun run dev",
     "test": "pnpm -F lnpixels test && pnpm test:agent",
     "test:agent": "cd pixel-agent && elizaos test",
@@ -41,7 +41,6 @@
     "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && pm2 restart all"
   },
   "devDependencies": {
-    "@elizaos/cli": "^1.7.0",
     "concurrently": "^8.2.2",
     "pm2": "^5.3.0"
   },
