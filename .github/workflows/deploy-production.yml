@@ -8,7 +8,6 @@ env:
   VPS_USER: pixel
   VPS_HOST: pixel.xx.kg
   NODE_VERSION: '20'
-  BUN_VERSION: '1.1.0'
   PNPM_VERSION: '9'
 
 jobs:
@@ -36,11 +35,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-
       - name: Setup pnpm
         run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
@@ -49,55 +43,19 @@ jobs:
 
       - name: Install LNPixels Dependencies
         run: |
-          cd lnpixels
-          pnpm install
-
-      - name: Install LNPixels API Dependencies
-        run: |
-          cd lnpixels/api
-          npm install --ignore-scripts
-
-      - name: Install LNPixels App Dependencies
-        run: |
-          cd lnpixels/lnpixels-app
-          npm install --legacy-peer-deps
-
-      - name: Install Pixel Agent Dependencies
-        run: |
-          cd pixel-agent
-          npm install --legacy-peer-deps
+          cd lnpixels && pnpm install
+          cd api && npm install --ignore-scripts
+          cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts
 
       - name: Install Pixel Landing Dependencies
         run: |
-          cd pixel-landing
-          pnpm install
+          cd pixel-landing && pnpm install
 
-      - name: Install Syntropy Core Dependencies
+      - name: Build All Projects
         run: |
-          cd syntropy-core
-          bun install
-
-      - name: Build LNPixels (API + App)
-        run: |
-          cd lnpixels/api
-          npm run build
-          cd ../lnpixels-app
-          npm run build
-
-      - name: Build Pixel Agent
-        run: |
-          cd pixel-agent
-          npm run build
-
-      - name: Build Pixel Landing
-        run: |
-          cd pixel-landing
-          npm run build
-
-      - name: Build Syntropy Core
-        run: |
-          cd syntropy-core
-          bun run build
+          cd lnpixels/api && npm run build
+          cd ../../lnpixels/lnpixels-app && npm run build
+          cd ../../pixel-landing && npm run build
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -106,10 +64,7 @@ jobs:
           path: |
             lnpixels/api/dist
             lnpixels/lnpixels-app/.next
-            pixel-agent/dist
-            pixel-agent/character.json
             pixel-landing/.next
-            syntropy-core/dist
           retention-days: 7
 
       - name: Deploy to VPS
@@ -134,28 +89,16 @@ jobs:
             --exclude 'dist' \
             ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/
 
-          # Install dependencies on VPS
-          echo "Installing dependencies on VPS..."
+          # Install and build on VPS
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
             cd /home/pixel
             pnpm install
             cd lnpixels && pnpm install
-            cd api && npm install --ignore-scripts
-            cd ../lnpixels-app && npm install --legacy-peer-deps
-            cd ../../pixel-agent && npm install --legacy-peer-deps
-            cd ../pixel-landing && pnpm install
-            cd ../syntropy-core && bun install
-          ENDSSH
-
-          # Build on VPS
-          echo "Building on VPS..."
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
-            cd /home/pixel
-            cd lnpixels/api && npm run build
-            cd ../lnpixels-app && npm run build
-            cd ../../pixel-agent && npm run build
-            cd ../pixel-landing && npm run build
-            cd ../syntropy-core && bun run build
+            cd api && npm install --ignore-scripts && npm run build
+            cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts && npm run build
+            cd ../../pixel-landing && pnpm install && npm run build
+            cd ../pixel-agent && npm install --legacy-peer-deps && npm run build
+            cd ../syntropy-core && bun install && bun run build
           ENDSSH
 
       - name: Restart PM2
@@ -173,12 +116,7 @@ jobs:
         run: |
           echo "Checking API health (port 3000)..."
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3000/health || echo 'API not healthy'"
-
           echo "Checking landing page (port 3001)..."
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3001/ || echo 'Landing not healthy'"
-
-          echo "Checking app page (port 5173)..."
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:5173/ || echo 'App not healthy'"
-
           echo "Checking PM2 status..."
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "pm2 status"
