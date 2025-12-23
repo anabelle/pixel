@@ -24,7 +24,7 @@ env:
 jobs:
   build-and-deploy:
     name: Build All Services & Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
       # === Checkout with Submodules ===
@@ -38,7 +38,11 @@ jobs:
       # === Setup Runtimes ===
       - name: Install system dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y unzip curl
+          sudo apt-get update && sudo apt-get install -y \
+            unzip curl \
+            python3 make g++ \
+            build-essential \
+            libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
