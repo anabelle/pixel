@@ -67,12 +67,12 @@ jobs:
          restore-keys: |
            ${{ runner.os }}-node-
       
-      # === Install Root Dependencies ===
+       # === Install Root Dependencies ===
        - name: Install Root Dependencies
          run: pnpm install
-      
+
        # === Install Submodule Dependencies ===
-      - name: Install LNPixels Dependencies
+       - name: Install LNPixels Dependencies
         run: |
           cd lnpixels
           pnpm install
