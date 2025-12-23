@@ -55,6 +55,9 @@ temp/
 *.bak
 backup.sql
 
+# Ideas documentation
+docs/ideas/
+
 # Config directories
 .config/
 
