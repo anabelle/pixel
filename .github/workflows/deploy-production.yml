@@ -38,8 +38,8 @@ jobs:
       # === Setup Runtimes ===
       - name: Install system dependencies
         run: |
-          sudo rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
-          sudo apt-get update && sudo apt-get install -y unzip curl
+          rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+          apt-get update && apt-get install -y unzip curl
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
