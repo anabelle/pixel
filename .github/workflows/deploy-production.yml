@@ -73,6 +73,8 @@ jobs:
         run: |
           cd lnpixels
           pnpm install
+          cd api && npm install
+          cd ../lnpixels-app && npm install
         continue-on-error: true
       
       - name: Install Pixel Agent Dependencies
