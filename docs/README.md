@@ -6,6 +6,7 @@ Welcome to the master documentation for the Pixel ecosystem.
 - **Syntropy Oversoul**: The master AI managing the evolution of all agents.
   - [Vision Statement](../syntropy-core/VISION.md)
   - [Agent Implementation Rules](../syntropy-core/AGENTS.md)
+  - [Continuity Ledger](../syntropy-core/CONTINUITY.md)
 - **Evolution History**: Documentation of the transition from Genesis to Architect phase.
   - [Evolution Logs](./evolution/)
 

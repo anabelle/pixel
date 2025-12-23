@@ -1,0 +1,24 @@
+# Continuity Ledger
+
+- **Goal**: Implement and automate a Continuity Ledger for the Syntropy Oversoul to ensure session stability across context compaction.
+- **Constraints/Assumptions**: 
+    - Syntropy operates autonomously via PM2.
+    - Intelligence is driven by AI SDK 6 (gpt-4o-mini).
+    - Workspace is a monorepo with submodules.
+- **Key decisions**:
+    - Use a dedicated `CONTINUITY.md` file in `syntropy-core/`.
+    - Add native tools to Syntropy for ledger management.
+- **State**: Initializing protocol.
+- **Done**: 
+    - Synced all repos to GitHub.
+    - Improved Syntropy reporting and audit logging.
+    - Established Opencode delegation bridge.
+- **Now**: Implementing the Continuity Ledger protocol for the Oversoul.
+- **Next**: 
+    - Update Syntropy tools to manage its own ledger.
+    - Update Syntropy instructions.
+- **Open questions**: None.
+- **Working set**: 
+    - `/home/pixel/pixel/syntropy-core/src/index.ts`
+    - `/home/pixel/pixel/syntropy-core/src/tools.ts`
+    - `/home/pixel/pixel/syntropy-core/CONTINUITY.md`
