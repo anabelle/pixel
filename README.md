@@ -27,6 +27,9 @@ The Pixel ecosystem uses a **Hybrid Manager Strategy** to accommodate specific p
 
 ### 3. Development
 ```bash
+# Start all services with hot-reload (concurrently)
+npm run dev
+
 # Start all services with hot-reload in PM2 dashboard
 npm run dev:full
 ```
@@ -114,6 +117,8 @@ The Pixel agent uses OpenRouter for diverse model selection based on task requir
 - **Small Tasks**: `openai/gpt-4o-mini` - Quick responses and simple operations
 - **Image Processing**: `openai/gpt-4o` - Visual content understanding
 
+**Syntropy Oversoul** uses `gpt-4o-mini` by default (configurable via `SYNTROPY_MODEL` env var).
+
 This approach optimizes for both cost and performance, using the most appropriate model for each specific task.
 
 ## Scripts
@@ -132,6 +137,16 @@ pnpm clean             # Clean all build artifacts
 Each project has its own `.env` requirements. Copy the provided `.env.example` files and configure them with your API keys and settings.
 
 ### Environment Variables
+
+#### Syntropy Core (`syntropy-core/.env` or via `pixel-agent/.env`)
+```env
+# AI Model Selection (optional, defaults to gpt-4o-mini)
+SYNTROPY_MODEL=gpt-4o-mini
+
+# OpenRouter/OpenAI keys (inherited from pixel-agent)
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENAI_API_KEY=sk-...
+```
 
 #### Pixel Agent (`pixel-agent/.env`)
 ```env
@@ -214,13 +229,13 @@ NEXT_PUBLIC_BITCOIN_ADDRESS=bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 │  │SSL/TLS      │  │             │  │             │             │
 │  └──────┬──────┘  └──────┬──────┘  └─────────────┘             │
 │         │                │                                     │
-│  ┌──────▼──────┐  ┌──────▼──────┐  ┌─────────────┐             │
-│  │pixel-landing│  │  lnpixels   │  │pixel-agent  │             │
-│  │Static Files │  │Node.js API  │  │ElizaOS Bot  │             │
-│  │Port: Static │  │Port: 3000   │  │Multi-platform│             │
-│  └─────────────┘  │+ React SPA  │  │Telegram/Nostr│             │
-│                   │Port: 5173   │  │Discord/etc   │             │
-│                   └─────────────┘  └─────────────┘             │
+  │  ┌──────▼──────┐  ┌──────▼──────┐  ┌─────────────┐             │
+  │  │pixel-landing│  │  lnpixels   │  │pixel-agent  │             │
+  │  │Static Files │  │Node.js API  │  │ElizaOS Bot  │             │
+  │  │Port: 3001   │  │Port: 3000   │  │Multi-platform│             │
+  │  └─────────────┘  │+ React SPA  │  │Telegram/Nostr│             │
+  │                   │Port: 5173   │  │Discord/etc   │             │
+  │                   └─────────────┘  └─────────────┘             │
 │                                                                 │
 │  Development Environment:                                       │
 │  • OpenCode running as root in /home/pixel                     │
