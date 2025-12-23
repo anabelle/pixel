@@ -13,6 +13,7 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
+    "preinstall": "rm -rf node_modules/@elizaos/plugin-ollama/scripts || true",
     "doctor": "node doctor.js",
     "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\" \"pnpm dev:syntropy\"",
     "dev:full": "npm run doctor && pm2 start ecosystem.config.dev.js --attach",
@@ -65,7 +66,7 @@
     "pm2-server-monit": "^3.0.0"
   },
   "pnpm": {
-    "overrides": {
+    "packageExtensions": {
       "@elizaos/plugin-ollama": {
         "scripts": {
           "postinstall": "echo 'Skipping @elizaos/plugin-ollama postinstall'"
