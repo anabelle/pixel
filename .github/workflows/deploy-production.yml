@@ -36,6 +36,9 @@ jobs:
           fetch-depth: 0
       
       # === Setup Runtimes ===
+      - name: Install system dependencies
+        run: apt-get update && apt-get install -y unzip curl
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
