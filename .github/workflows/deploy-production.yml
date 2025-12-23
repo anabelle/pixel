@@ -102,7 +102,7 @@ jobs:
       # === Upload Artifacts ===
       - name: Upload Build Artifacts
         if: ${{ !inputs.skip_build }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pixel-build-artifacts
           path: |
