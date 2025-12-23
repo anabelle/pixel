@@ -44,6 +44,11 @@ jobs:
       - name: Setup pnpm
         run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
+      - name: Configure npm/pnpm to skip plugin-ollama postinstall
+        run: |
+          echo "@elizaos/plugin-ollama:scripts.postinstall=false" >> .npmrc
+          echo "@elizaos/plugin-ollama:scripts.install=false" >> .npmrc
+
       - name: Cache Dependencies
         uses: actions/cache@v3
         with:
@@ -61,17 +66,27 @@ jobs:
       - name: Install LNPixels Dependencies
         run: |
           cd lnpixels && pnpm install || echo "LNPixels install failed"
-          cd api && npm install || echo "LNPixels API install failed"
-          cd ../lnpixels-app && npm install || echo "LNPixels App install failed"
+        continue-on-error: true
+        timeout-minutes: 5
+
+      - name: Install LNPixels API Dependencies
+        run: |
+          cd lnpixels/api && npm install --legacy-peer-deps || echo "LNPixels API install failed"
+        continue-on-error: true
+        timeout-minutes: 5
+
+      - name: Install LNPixels App Dependencies
+        run: |
+          cd lnpixels/lnpixels-app && npm install --legacy-peer-deps || echo "LNPixels App install failed"
         continue-on-error: true
         timeout-minutes: 5
 
       - name: Install Pixel Agent Dependencies
         run: |
           cd pixel-agent
-          npm install || echo "Pixel Agent install failed"
+          npm install --legacy-peer-deps || echo "Pixel Agent install failed"
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 5
 
       - name: Install Pixel Landing Dependencies
         run: |
