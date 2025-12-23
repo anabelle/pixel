@@ -2,5 +2,4 @@ packages:
   - 'lnpixels/*'
   - 'pixel-agent'
   - 'pixel-landing'
-  - 'syntropy-core'
-  # Note: pixel-agent uses bun and is managed separately
+  # syntropy-core is managed independently via Bun to avoid workspace version conflicts
