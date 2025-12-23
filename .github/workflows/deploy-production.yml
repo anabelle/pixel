@@ -82,28 +82,28 @@ jobs:
           cd ../lnpixels-app && npm install
         continue-on-error: true
       
-      - name: Install Pixel Agent Dependencies
-        if: ${{ !inputs.skip_build }}
-        run: |
-          cd pixel-agent
-          npm install
-        continue-on-error: true
-      
-      - name: Install Pixel Landing Dependencies
-        if: ${{ !inputs.skip_build }}
-        run: |
-          cd pixel-landing
-          npm install
-        continue-on-error: true
-      
-      - name: Install Syntropy Core Dependencies
-        if: ${{ !inputs.skip_build }}
-        run: |
-          cd syntropy-core
-          bun install
-        continue-on-error: true
-      
-      # === Build All Services ===
+       - name: Install Pixel Agent Dependencies
+         if: ${{ !inputs.skip_build }}
+         run: |
+           cd pixel-agent
+           npm install
+         continue-on-error: true
+
+       - name: Install Pixel Landing Dependencies
+         if: ${{ !inputs.skip_build }}
+         run: |
+           cd pixel-landing
+           timeout 300 npm install || echo "Pixel Landing install failed or timed out"
+         continue-on-error: true
+
+       - name: Install Syntropy Core Dependencies
+         if: ${{ !inputs.skip_build }}
+         run: |
+           cd syntropy-core
+           bun install
+         continue-on-error: true
+
+       # === Build All Services ===
        - name: Build LNPixels (API + App)
          if: ${{ !inputs.skip_build }}
          run: |
