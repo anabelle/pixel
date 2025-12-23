@@ -104,12 +104,14 @@ jobs:
         continue-on-error: true
       
       # === Build All Services ===
-      - name: Build LNPixels (API + App)
-        if: ${{ !inputs.skip_build }}
-        run: |
-          cd lnpixels
-          pnpm run build || echo "LNPixels build failed"
-        continue-on-error: true
+       - name: Build LNPixels (API + App)
+         if: ${{ !inputs.skip_build }}
+         run: |
+           cd lnpixels/api
+           npm run build || echo "LNPixels API build failed"
+           cd ../lnpixels-app
+           npm run build || echo "LNPixels App build failed"
+         continue-on-error: true
       
       - name: Build Pixel Agent
         if: ${{ !inputs.skip_build }}
