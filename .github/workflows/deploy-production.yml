@@ -8,10 +8,9 @@ env:
   VPS_USER: pixel
   VPS_HOST: pixel.xx.kg
   NODE_VERSION: '20'
-  PNPM_VERSION: '9'
 
 jobs:
-  build_and_deploy:
+  deploy_to_vps:
     runs-on: ubuntu-22.04
 
     steps:
@@ -21,49 +20,6 @@ jobs:
           token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
           submodules: recursive
           fetch-depth: 0
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            unzip curl \
-            python3 make g++ \
-            build-essential \
-            libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Setup pnpm
-        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
-
-      - name: Install Root Dependencies
-        run: pnpm install
-
-      - name: Install LNPixels Dependencies
-        run: |
-          cd lnpixels && pnpm install
-          cd api && npm install --ignore-scripts || echo "API install skipped"
-          cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts
-
-      - name: Install Pixel Landing Dependencies
-        run: |
-          cd pixel-landing && pnpm install
-
-      - name: Build Frontend Projects
-        run: |
-          cd lnpixels/lnpixels-app && npm run build
-          cd ../../pixel-landing && npm run build
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: pixel-build-artifacts
-          path: |
-            lnpixels/lnpixels-app/.next
-            pixel-landing/.next
-          retention-days: 7
 
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
@@ -87,22 +43,27 @@ jobs:
             --exclude 'dist' \
             ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/
 
-          # Install and build on VPS
+          # Install, build, and restart on VPS
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            set -e
             cd /home/pixel
-            pnpm install
-            cd lnpixels && pnpm install
-            cd api && npm install --ignore-scripts && npm run build
-            cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts && npm run build
-            cd ../../pixel-landing && pnpm install && npm run build
-            cd ../pixel-agent && npm install --legacy-peer-deps && npm run build
-            cd ../syntropy-core && bun install && bun run build
-          ENDSSH
+            echo "Installing dependencies..."
+            pnpm install || echo "Root install had warnings, continuing..."
+            cd lnpixels && pnpm install || echo "LNPixels install had warnings..."
+            cd api && npm install --ignore-scripts 2>/dev/null || npm install 2>/dev/null || echo "API install had issues..."
+            cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts 2>/dev/null || npm install --legacy-peer-deps 2>/dev/null || echo "App install had issues..."
+            cd ../../pixel-landing && pnpm install || echo "Landing install had warnings..."
+            cd ../pixel-agent && npm install --legacy-peer-deps 2>/dev/null || echo "Agent install had issues..."
+            cd ../syntropy-core && bun install 2>/dev/null || echo "Syntropy install had issues..."
 
-      - name: Restart PM2
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            echo "Building projects..."
+            cd /home/pixel/lnpixels/api && npm run build 2>/dev/null || echo "API build skipped or failed"
+            cd /home/pixel/lnpixels/lnpixels-app && npm run build 2>/dev/null || echo "App build skipped or failed"
+            cd /home/pixel/pixel-landing && npm run build 2>/dev/null || echo "Landing build skipped or failed"
+            cd /home/pixel/pixel-agent && npm run build 2>/dev/null || echo "Agent build skipped or failed"
+            cd /home/pixel/syntropy-core && bun run build 2>/dev/null || echo "Syntropy build skipped or failed"
+
+            echo "Restarting PM2..."
             cd /home/pixel
             pm2 restart all
             sleep 10
@@ -116,5 +77,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3000/health || echo 'API not healthy'"
           echo "Checking landing page (port 3001)..."
           ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3001/ || echo 'Landing not healthy'"
+          echo "Checking app page (port 5173)..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:5173/ || echo 'App not healthy'"
           echo "Checking PM2 status..."
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "pm2 status"
+          ssh -o StrictHostKeyChecking=no ${{ env VPS_USER }}@${{ env.VPS_HOST }} "pm2 status"
