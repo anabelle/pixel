@@ -3,16 +3,7 @@ name: Deploy Pixel Ecosystem to Production
 on:
   push:
     branches: [master]
-  workflow_dispatch:
-    inputs:
-      skip_tests:
-        description: 'Skip tests'
-        required: false
-        default: false
-      skip_build:
-        description: 'Skip build (use existing artifacts)'
-        required: false
-        default: false
+  workflow_dispatch: {}
 
 env:
   VPS_USER: pixel
