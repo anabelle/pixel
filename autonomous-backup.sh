@@ -11,8 +11,8 @@ echo "$(date): Starting autonomous backup"
 mkdir -p "$BACKUP_DIR"
 
 # Backup database
-if [ -f "/home/pixel/lnpixels/api/pixels.db" ]; then
-    sqlite3 /home/pixel/lnpixels/api/pixels.db ".backup $BACKUP_DIR/pixels_$DATE.db"
+if [ -f "lnpixels/api/pixels.db" ]; then
+    sqlite3 lnpixels/api/pixels.db ".backup $BACKUP_DIR/pixels_$DATE.db"
     echo "Database backup created: pixels_$DATE.db"
 fi
 
