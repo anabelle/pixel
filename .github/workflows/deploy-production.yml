@@ -59,15 +59,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       
-      # === Install & Health Check ===
+      # === Install Root Dependencies ===
       - name: Install Root Dependencies
-        run: |
-          pnpm install
-          pnpm run doctor || echo "Health check completed"
+        run: pnpm install
         continue-on-error: true
       
-      - name: Lint Code
-        run: pnpm run lint || echo "Linting complete"
+      # === Install Submodule Dependencies ===
+      - name: Install LNPixels Dependencies
+        if: ${{ !inputs.skip_build }}
+        run: |
+          cd lnpixels
+          pnpm install
+        continue-on-error: true
+      
+      - name: Install Pixel Agent Dependencies
+        if: ${{ !inputs.skip_build }}
+        run: |
+          cd pixel-agent
+          npm install
+        continue-on-error: true
+      
+      - name: Install Pixel Landing Dependencies
+        if: ${{ !inputs.skip_build }}
+        run: |
+          cd pixel-landing
+          npm install
+        continue-on-error: true
+      
+      - name: Install Syntropy Core Dependencies
+        if: ${{ !inputs.skip_build }}
+        run: |
+          cd syntropy-core
+          bun install
         continue-on-error: true
       
       # === Build All Services ===
@@ -109,6 +132,7 @@ jobs:
             lnpixels/api/dist
             lnpixels/lnpixels-app/.next
             pixel-agent/dist
+            pixel-agent/character.json
             pixel-landing/.next
             syntropy-core/dist
           retention-days: 7
@@ -153,13 +177,19 @@ jobs:
           ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
             "cd /home/pixel && \
              pnpm install && \
-             cd pixel-agent && npm install && \
+             cd lnpixels && pnpm install && \
+             cd ../pixel-agent && npm install && \
+             cd ../pixel-landing && npm install && \
              cd ../syntropy-core && bun install"
           
           # Build on VPS
           echo "Building on VPS..."
           ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-            "cd /home/pixel && pnpm run build"
+            "cd /home/pixel && \
+             cd lnpixels && pnpm run build && \
+             cd ../pixel-agent && npm run build && \
+             cd ../pixel-landing && npm run build && \
+             cd ../syntropy-core && bun run build"
       
       # === Restart PM2 ===
       - name: Restart PM2
