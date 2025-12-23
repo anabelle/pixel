@@ -3,7 +3,6 @@ name: Deploy Pixel Ecosystem to Production
 on:
   push:
     branches: [master]
-  workflow_dispatch: {}
 
 env:
   VPS_USER: pixel
@@ -13,20 +12,17 @@ env:
   PNPM_VERSION: '9'
 
 jobs:
-  build-and-deploy:
-    name: Build All Services & Deploy to VPS
+  build_and_deploy:
     runs-on: ubuntu-22.04
-    
+
     steps:
-      # === Checkout with Submodules ===
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
          token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
          submodules: recursive
          fetch-depth: 0
-      
-      # === Setup Runtimes ===
+
       - name: Install system dependencies
         run: |
          sudo apt-get update && sudo apt-get install -y \
@@ -34,20 +30,20 @@ jobs:
            python3 make g++ \
            build-essential \
            libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
          node-version: ${{ env.NODE_VERSION }}
-      
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
          bun-version: ${{ env.BUN_VERSION }}
-      
+
       - name: Setup pnpm
         run: npm install -g pnpm@${{ env.PNPM_VERSION }}
-      
+
       - name: Cache Dependencies
         uses: actions/cache@v3
         with:
@@ -57,13 +53,11 @@ jobs:
          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
          restore-keys: |
            ${{ runner.os }}-node-
-      
-       # === Install Root Dependencies ===
-       - name: Install Root Dependencies
-         run: pnpm install
 
-       # === Install Submodule Dependencies ===
-       - name: Install LNPixels Dependencies
+      - name: Install Root Dependencies
+        run: pnpm install
+
+      - name: Install LNPixels Dependencies
         run: |
           cd lnpixels
           pnpm install
@@ -89,7 +83,6 @@ jobs:
           bun install
         continue-on-error: true
 
-       # === Build All Services ===
       - name: Build LNPixels (API + App)
         run: |
           cd lnpixels/api
@@ -115,8 +108,7 @@ jobs:
           cd syntropy-core
           bun run build || echo "Syntropy Core build failed"
         continue-on-error: true
-      
-      # === Upload Artifacts ===
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -129,14 +121,12 @@ jobs:
            pixel-landing/.next
            syntropy-core/dist
          retention-days: 7
-      
-      # === Test Services ===
+
       - name: Test Services
         run: |
          pnpm run test || echo "Tests completed with warnings"
         continue-on-error: true
-      
-      # === Deploy to VPS (only on master push) ===
+
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
@@ -186,8 +176,7 @@ jobs:
             cd ../pixel-agent && npm run build && \
             cd ../pixel-landing && npm run build && \
             cd ../syntropy-core && bun run build" || echo "Build failed or timed out"
-      
-      # === Restart PM2 ===
+
       - name: Restart PM2
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
@@ -202,8 +191,7 @@ jobs:
          echo "Checking PM2 status..."
          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
            "pm2 status"
-      
-      # === Health Verification ===
+
       - name: Verify Services Health
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
@@ -224,8 +212,7 @@ jobs:
            "pm2 status"
          
          echo "NOTE: Syntropy runs via PM2 (bun src/index.ts) - NO HTTP endpoint"
-      
-      # === Deployment Summary ===
+
       - name: Deployment Summary
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
