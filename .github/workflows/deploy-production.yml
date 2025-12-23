@@ -44,7 +44,7 @@ jobs:
       - name: Install LNPixels Dependencies
         run: |
           cd lnpixels && pnpm install
-          cd api && npm install --ignore-scripts
+          cd api && npm install --legacy-peer-deps --ignore-scripts || npm install --ignore-scripts
           cd ../lnpixels-app && npm install --legacy-peer-deps --ignore-scripts
 
       - name: Install Pixel Landing Dependencies
