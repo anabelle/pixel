@@ -92,21 +92,18 @@ jobs:
          continue-on-error: true
 
        - name: Install Pixel Agent Dependencies
-         if: true
          run: |
            cd pixel-agent
            npm install
          continue-on-error: true
 
        - name: Install Pixel Landing Dependencies
-         if: true
          run: |
            cd pixel-landing
            timeout 300 npm install || echo "Pixel Landing install failed or timed out"
          continue-on-error: true
 
        - name: Install Syntropy Core Dependencies
-         if: true
          run: |
            cd syntropy-core
            bun install
@@ -114,7 +111,6 @@ jobs:
 
        # === Build All Services ===
        - name: Build LNPixels (API + App)
-         if: true
          run: |
            cd lnpixels/api
            npm run build || echo "LNPixels API build failed"
@@ -123,21 +119,18 @@ jobs:
          continue-on-error: true
 
        - name: Build Pixel Agent
-         if: true
          run: |
            cd pixel-agent
            npm run build || echo "Pixel Agent build failed"
          continue-on-error: true
 
        - name: Build Pixel Landing
-         if: true
          run: |
           cd pixel-landing
           npm run build || echo "Pixel Landing build failed"
         continue-on-error: true
       
       - name: Build Syntropy Core
-         if: true
         run: |
           cd syntropy-core
           bun run build || echo "Syntropy Core build failed"
@@ -145,7 +138,6 @@ jobs:
       
       # === Upload Artifacts ===
       - name: Upload Build Artifacts
-         if: true
         uses: actions/upload-artifact@v4
         with:
           name: pixel-build-artifacts
