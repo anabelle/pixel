@@ -60,23 +60,25 @@ jobs:
 
       - name: Install LNPixels Dependencies
         run: |
-          cd lnpixels
-          pnpm install
-          cd api && npm install
-          cd ../lnpixels-app && npm install
+          cd lnpixels && pnpm install || echo "LNPixels install failed"
+          cd api && npm install --legacy-peer-deps || echo "LNPixels API install failed"
+          cd ../lnpixels-app && npm install --legacy-peer-deps || echo "LNPixels App install failed"
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Install Pixel Agent Dependencies
         run: |
           cd pixel-agent
-          npm install
+          npm install --legacy-peer-deps || echo "Pixel Agent install failed"
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Install Pixel Landing Dependencies
         run: |
           cd pixel-landing
-          timeout 300 npm install || echo "Pixel Landing install failed or timed out"
+          npm install --legacy-peer-deps || echo "Pixel Landing install failed"
         continue-on-error: true
+        timeout-minutes: 5
 
       - name: Install Syntropy Core Dependencies
         run: |
