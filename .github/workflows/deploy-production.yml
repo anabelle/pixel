@@ -72,9 +72,18 @@ jobs:
         run: pnpm install
         continue-on-error: true
       
-      # === Install Submodule Dependencies ===
+       # === Install Submodule Dependencies ===
+       - name: Set Build Variables
+         id: build_vars
+         run: |
+           if [ "${{ inputs.skip_build }}" == "true" ]; then
+             echo "should_build=false" >> $GITHUB_OUTPUT
+           else
+             echo "should_build=true" >> $GITHUB_OUTPUT
+           fi
+
        - name: Install LNPixels Dependencies
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: steps.build_vars.outputs.should_build == 'true'
          run: |
            cd lnpixels
            pnpm install
@@ -83,21 +92,21 @@ jobs:
          continue-on-error: true
 
        - name: Install Pixel Agent Dependencies
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
            cd pixel-agent
            npm install
          continue-on-error: true
 
        - name: Install Pixel Landing Dependencies
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
            cd pixel-landing
            timeout 300 npm install || echo "Pixel Landing install failed or timed out"
          continue-on-error: true
 
        - name: Install Syntropy Core Dependencies
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
            cd syntropy-core
            bun install
@@ -105,7 +114,7 @@ jobs:
 
        # === Build All Services ===
        - name: Build LNPixels (API + App)
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
            cd lnpixels/api
            npm run build || echo "LNPixels API build failed"
@@ -114,21 +123,21 @@ jobs:
          continue-on-error: true
 
        - name: Build Pixel Agent
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
            cd pixel-agent
            npm run build || echo "Pixel Agent build failed"
          continue-on-error: true
 
        - name: Build Pixel Landing
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
          run: |
           cd pixel-landing
           npm run build || echo "Pixel Landing build failed"
         continue-on-error: true
       
       - name: Build Syntropy Core
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
         run: |
           cd syntropy-core
           bun run build || echo "Syntropy Core build failed"
@@ -136,7 +145,7 @@ jobs:
       
       # === Upload Artifacts ===
       - name: Upload Build Artifacts
-         if: ${{ inputs.skip_build == null || !inputs.skip_build }}
+         if: true
         uses: actions/upload-artifact@v4
         with:
           name: pixel-build-artifacts
