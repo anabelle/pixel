@@ -43,6 +43,15 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001
       }
+    },
+    {
+      name: 'syntropy-core',
+      script: 'bun',
+      args: 'run start',
+      cwd: './syntropy-core',
+      env: {
+        NODE_ENV: 'production'
+      }
     }
   ]
 };

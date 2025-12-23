@@ -8,3 +8,7 @@
 [submodule "pixel-landing"]
 	path = pixel-landing
 	url = https://github.com/anabelle/pixel-landing.git
+[submodule "syntropy-core"]
+	path = syntropy-core
+	url = git@github.com:anabelle/syntropy-core.git
+	branch = main
