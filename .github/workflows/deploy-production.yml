@@ -19,224 +19,166 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-         token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
-         submodules: recursive
-         fetch-depth: 0
+          token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Install system dependencies
         run: |
-         sudo apt-get update && sudo apt-get install -y \
-           unzip curl \
-           python3 make g++ \
-           build-essential \
-           libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+          sudo apt-get update && sudo apt-get install -y \
+            unzip curl \
+            python3 make g++ \
+            build-essential \
+            libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-         node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
-         bun-version: ${{ env.BUN_VERSION }}
+          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup pnpm
         run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
-      - name: Configure npm/pnpm to skip plugin-ollama postinstall
-        run: |
-          echo "@elizaos/plugin-ollama:scripts.postinstall=false" >> .npmrc
-          echo "@elizaos/plugin-ollama:scripts.install=false" >> .npmrc
-
-      - name: Cache Dependencies
-        uses: actions/cache@v3
-        with:
-         path: |
-           node_modules
-           */node_modules
-         key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
-         restore-keys: |
-           ${{ runner.os }}-node-
-
       - name: Install Root Dependencies
         run: pnpm install
-        continue-on-error: true
 
       - name: Install LNPixels Dependencies
         run: |
-          cd lnpixels && pnpm install || echo "LNPixels install failed"
-        continue-on-error: true
-        timeout-minutes: 5
+          cd lnpixels
+          pnpm install
 
       - name: Install LNPixels API Dependencies
         run: |
-          cd lnpixels/api && npm install --legacy-peer-deps || echo "LNPixels API install failed"
-        continue-on-error: true
-        timeout-minutes: 5
+          cd lnpixels/api
+          npm install --ignore-scripts
 
       - name: Install LNPixels App Dependencies
         run: |
-          cd lnpixels/lnpixels-app && npm install --legacy-peer-deps || echo "LNPixels App install failed"
-        continue-on-error: true
-        timeout-minutes: 5
+          cd lnpixels/lnpixels-app
+          npm install --legacy-peer-deps
 
       - name: Install Pixel Agent Dependencies
         run: |
           cd pixel-agent
-          npm install --legacy-peer-deps || echo "Pixel Agent install failed"
-        continue-on-error: true
-        timeout-minutes: 5
+          npm install --legacy-peer-deps
 
       - name: Install Pixel Landing Dependencies
         run: |
           cd pixel-landing
-          pnpm install || echo "Pixel Landing install failed"
-        continue-on-error: true
-        timeout-minutes: 3
+          pnpm install
 
       - name: Install Syntropy Core Dependencies
         run: |
           cd syntropy-core
-          bun install || echo "Syntropy install failed"
-        continue-on-error: true
-        timeout-minutes: 3
+          bun install
 
       - name: Build LNPixels (API + App)
         run: |
           cd lnpixels/api
-          npm run build || echo "LNPixels API build failed"
+          npm run build
           cd ../lnpixels-app
-          npm run build || echo "LNPixels App build failed"
-        continue-on-error: true
+          npm run build
 
       - name: Build Pixel Agent
         run: |
           cd pixel-agent
-          npm run build || echo "Pixel Agent build failed"
-        continue-on-error: true
+          npm run build
 
       - name: Build Pixel Landing
         run: |
           cd pixel-landing
-          npm run build || echo "Pixel Landing build failed"
-        continue-on-error: true
+          npm run build
 
       - name: Build Syntropy Core
         run: |
           cd syntropy-core
-          bun run build || echo "Syntropy Core build failed"
-        continue-on-error: true
+          bun run build
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-         name: pixel-build-artifacts
-         path: |
-           lnpixels/api/dist
-           lnpixels/lnpixels-app/.next
-           pixel-agent/dist
-           pixel-agent/character.json
-           pixel-landing/.next
-           syntropy-core/dist
-         retention-days: 7
-
-      - name: Test Services
-        run: |
-         pnpm run test || echo "Tests completed with warnings"
-        continue-on-error: true
+          name: pixel-build-artifacts
+          path: |
+            lnpixels/api/dist
+            lnpixels/lnpixels-app/.next
+            pixel-agent/dist
+            pixel-agent/character.json
+            pixel-landing/.next
+            syntropy-core/dist
+          retention-days: 7
 
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
-         # Setup SSH
-         mkdir -p ~/.ssh
-         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-         chmod 600 ~/.ssh/id_rsa
-         ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
-         
-         # Test SSH connection with timeout
-         echo "Testing SSH connection..."
-         timeout 30 ssh -o BatchMode=yes -o ConnectTimeout=10 -v ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "echo 'SSH connection successful'" || echo "SSH connection failed - check SSH_PRIVATE_KEY secret and VPS firewall"
-         
-         # Pre-deployment backup
-         echo "Creating backup before deployment..."
-         timeout 120 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "cd /home/pixel && ./autonomous-backup.sh || echo 'Backup script not found'" || echo "Backup step failed or timed out"
-         
-         # Sync code (excluding large folders)
-         echo "Syncing code to VPS..."
-         timeout 300 rsync -avz --delete -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \
-           --exclude 'node_modules' \
-           --exclude '.git' \
-           --exclude 'logs' \
-           --exclude '*.log' \
-           --exclude '.env' \
-           --exclude 'backups' \
-           --exclude '.next' \
-           --exclude 'dist' \
-           ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/ || echo "rsync failed or timed out"
-         
-         # Install dependencies on VPS
-         echo "Installing dependencies on VPS..."
-         timeout 600 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "cd /home/pixel && \
-            pnpm install && \
-            cd lnpixels && pnpm install && \
-            cd ../pixel-agent && npm install && \
-            cd ../pixel-landing && npm install && \
-            cd ../syntropy-core && bun install" || echo "Install dependencies failed or timed out"
-         
-         # Build on VPS
-         echo "Building on VPS..."
-         timeout 600 ssh -o BatchMode=yes ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "cd /home/pixel && \
-            cd lnpixels && pnpm run build && \
-            cd ../pixel-agent && npm run build && \
-            cd ../pixel-landing && npm run build && \
-            cd ../syntropy-core && bun run build" || echo "Build failed or timed out"
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
+
+          # Sync code (excluding large folders)
+          echo "Syncing code to VPS..."
+          rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            --exclude 'logs' \
+            --exclude '*.log' \
+            --exclude '.env' \
+            --exclude 'backups' \
+            --exclude '.next' \
+            --exclude 'dist' \
+            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/
+
+          # Install dependencies on VPS
+          echo "Installing dependencies on VPS..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            cd /home/pixel
+            pnpm install
+            cd lnpixels && pnpm install
+            cd api && npm install --ignore-scripts
+            cd ../lnpixels-app && npm install --legacy-peer-deps
+            cd ../../pixel-agent && npm install --legacy-peer-deps
+            cd ../pixel-landing && pnpm install
+            cd ../syntropy-core && bun install
+          ENDSSH
+
+          # Build on VPS
+          echo "Building on VPS..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            cd /home/pixel
+            cd lnpixels/api && npm run build
+            cd ../lnpixels-app && npm run build
+            cd ../../pixel-agent && npm run build
+            cd ../pixel-landing && npm run build
+            cd ../syntropy-core && bun run build
+          ENDSSH
 
       - name: Restart PM2
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
-         echo "Restarting PM2 processes..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "cd /home/pixel && pm2 restart all"
-         
-         echo "Waiting for services to start..."
-         sleep 20
-         
-         # Check PM2 status
-         echo "Checking PM2 status..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "pm2 status"
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+            cd /home/pixel
+            pm2 restart all
+            sleep 10
+            pm2 status
+          ENDSSH
 
       - name: Verify Services Health
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
-         echo "Checking API health (port 3000)..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "curl -f http://localhost:3000/health || echo 'API not healthy'"
-         
-         echo "Checking landing page (port 3001)..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "curl -f http://localhost:3001/ || echo 'Landing not healthy'"
-         
-         echo "Checking app page (port 5173)..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "curl -f http://localhost:5173/ || echo 'App not healthy'"
-         
-         echo "Checking PM2 status (includes Syntropy)..."
-         ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-           "pm2 status"
-         
-         echo "NOTE: Syntropy runs via PM2 (bun src/index.ts) - NO HTTP endpoint"
+          echo "Checking API health (port 3000)..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3000/health || echo 'API not healthy'"
 
-      - name: Deployment Summary
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: |
-         echo "✅ Deployment Complete!"
-         echo "Commit: ${{ github.sha }}"
-         echo "Branch: ${{ github.ref }}"
-         echo "Actor: ${{ github.actor }}"
-         echo "Timestamp: ${{ github.event.head_commit.timestamp }}"
+          echo "Checking landing page (port 3001)..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:3001/ || echo 'Landing not healthy'"
+
+          echo "Checking app page (port 5173)..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "curl -f http://localhost:5173/ || echo 'App not healthy'"
+
+          echo "Checking PM2 status..."
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "pm2 status"
