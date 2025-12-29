@@ -3,9 +3,6 @@ services:
   api:
     build:
       context: ./lnpixels/api
-    # DO NOT expose to internet - only accessible via Nginx
-    # ports:
-    #   - "3000:3000"
     expose:
       - "3000"
     env_file:
@@ -19,6 +16,17 @@ services:
       - NODE_ENV=production
     networks:
       - pixel-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/stats" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # LNPixels Web App (Canvas)
   web:
@@ -26,9 +34,6 @@ services:
       context: ./lnpixels/lnpixels-app
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
-    # DO NOT expose to internet - only accessible via Nginx
-    # ports:
-    #   - "3002:3002"
     expose:
       - "3002"
     env_file:
@@ -38,7 +43,19 @@ services:
     networks:
       - pixel-net
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3002/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # Pixel Landing Page
   landing:
@@ -49,9 +66,6 @@ services:
         - NEXT_PUBLIC_AGENT_HANDLE=${NEXT_PUBLIC_AGENT_HANDLE:-@PixelSurvivor}
         - NEXT_PUBLIC_LIGHTNING_ADDRESS=${NEXT_PUBLIC_LIGHTNING_ADDRESS:-sparepicolo55@walletofsatoshi.com}
         - NEXT_PUBLIC_BITCOIN_ADDRESS=${NEXT_PUBLIC_BITCOIN_ADDRESS:-bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za}
-    # DO NOT expose to internet - only accessible via Nginx
-    # ports:
-    #   - "3001:3001"
     expose:
       - "3001"
     env_file:
@@ -60,14 +74,22 @@ services:
       - NODE_ENV=production
     networks:
       - pixel-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3001/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # Pixel Agent (Eliza)
   agent:
     build:
       context: ./pixel-agent
-    # DO NOT expose to internet - only accessible via Nginx
-    # ports:
-    #   - "3003:3003"
     expose:
       - "3003"
     env_file:
@@ -82,7 +104,13 @@ services:
     networks:
       - pixel-net
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   # Syntropy Core (AI Orchestration)
   syntropy:
@@ -103,8 +131,15 @@ services:
     networks:
       - pixel-net
     depends_on:
-      - api
-      - agent
+      api:
+        condition: service_healthy
+      agent:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   # Nginx Reverse Proxy
   nginx:
@@ -122,8 +157,12 @@ services:
       - api
       - web
       - landing
-      - agent
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Certbot for SSL
   certbot:
@@ -132,6 +171,27 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    restart: unless-stopped
+
+  # Database Backup Service (runs daily at 3 AM)
+  backup:
+    image: alpine:latest
+    volumes:
+      - ./data:/data:ro
+      - ./backups:/backups
+    entrypoint: |
+      /bin/sh -c '
+      while true; do
+        echo "[$(date)] Starting backup..."
+        cp /data/pixels.db /backups/pixels_$(date +%Y%m%d_%H%M%S).db
+        cp /data/db.sqlite /backups/agent_$(date +%Y%m%d_%H%M%S).db
+        # Keep only last 7 days of backups
+        find /backups -name "*.db" -mtime +7 -delete
+        echo "[$(date)] Backup complete. Sleeping 24h..."
+        sleep 86400
+      done
+      '
+    restart: unless-stopped
 
 networks:
   pixel-net:
