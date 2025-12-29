@@ -116,6 +116,8 @@ services:
   syntropy:
     build:
       context: ./syntropy-core
+    # Run as host user to avoid root-owned files
+    user: "1000:1000"
     env_file:
       - .env
     volumes:
@@ -128,6 +130,7 @@ services:
       - DB_PATH=/pixel/data/pixels.db
       - LOG_PATH=/pixel/logs/agent.log
       - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
+      - HOME=/tmp
     networks:
       - pixel-net
     depends_on:

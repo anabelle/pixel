@@ -36,8 +36,7 @@ jobs:
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
           # Stash any Syntropy changes on VPS before deploying
-          # Fix permissions first because Docker might have made file root-owned
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "cd /pixel && sudo chown \$(whoami) CONTINUITY.md && git stash push -m 'pre-deploy-stash' -- CONTINUITY.md 2>/dev/null || true"
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "cd /pixel && git stash push -m 'pre-deploy-stash' -- CONTINUITY.md 2>/dev/null || true"
           
           rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
             --exclude 'node_modules' \
