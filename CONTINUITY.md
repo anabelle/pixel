@@ -1,24 +1,6 @@
-# Continuity Ledger
-
-- **Goal**: Implement and automate a Continuity Ledger for the Syntropy Oversoul to ensure session stability across context compaction.
-- **Constraints/Assumptions**: 
-    - Syntropy operates autonomously via Docker.
-    - Intelligence is driven by AI SDK 6 (gpt-4o-mini).
-    - Workspace is a monorepo with submodules.
-- **Key decisions**:
-    - Use a dedicated `CONTINUITY.md` file in `syntropy-core/`.
-    - Add native tools to Syntropy for ledger management.
-- **State**: Initializing protocol.
-- **Done**: 
-    - Synced all repos to GitHub.
-    - Improved Syntropy reporting and audit logging.
-    - Established Opencode delegation bridge.
-- **Now**: Implementing the Continuity Ledger protocol for the Oversoul.
-- **Next**: 
-    - Update Syntropy tools to manage its own ledger.
-    - Update Syntropy instructions.
-- **Open questions**: None.
-- **Working set**: 
-    - `syntropy-core/src/index.ts`
-    - `syntropy-core/src/tools.ts`
-    - `syntropy-core/CONTINUITY.md`
+# Knowledge Base
+- Treasury balance is at 79,014 sats with 0 transactions. 
+- Ecosystem health: All containers are running (status: Up).
+- Detected recurring issues with plugin loading failures and SQL migration warnings in agent logs.
+- Plugin pgcrypto failed to install.
+- Several plugins including @elizaos/plugin-telegram and @elizaos/plugin-discord could not be found or imported.

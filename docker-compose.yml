@@ -79,15 +79,15 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/pixels.db:/app/pixels.db
-      - ./data/activity.db:/app/activity.db
-      - ./pixel-landing/public:/app/audit
-      - ./logs:/app/logs
-      - ./pixel-agent:/app/pixel-agent
+      - .:/pixel
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
-      - PIXEL_ROOT=/app
-      - PIXEL_AGENT_DIR=/app/pixel-agent
+      - PIXEL_ROOT=/pixel
+      - PIXEL_AGENT_DIR=/pixel/pixel-agent
+      - DB_PATH=/pixel/data/pixels.db
+      - LOG_PATH=/pixel/logs/agent.log
+      - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
     networks:
       - pixel-net
     depends_on:

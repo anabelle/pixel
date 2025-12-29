@@ -11,7 +11,7 @@ The Pixel ecosystem is now fully containerized using Docker. This enables consis
 | `web` | `pixel-web` | 3002 | Bun + Next.js | ✅ |
 | `landing` | `pixel-landing` | 3001 | Node.js + Next.js | ✅ |
 | `agent` | `pixel-agent` | 3003 | Bun + ElizaOS | ✅ |
-| `syntropy` | `pixel-syntropy` | - | Bun | ✅ |
+| `syntropy` | `pixel-syntropy` | - | Bun | ✅ (Oversoul) |
 
 ## Quick Start
 
@@ -175,3 +175,5 @@ docker-compose exec <service> printenv | grep <VAR>
 - **Volume mounts for data**: Persist databases and logs
 - **env_file for secrets**: Centralized secret management
 - **Docker-aware config**: Auto-detects container environment
+- **Oversoul Orchestration**: Syntropy container now has Docker CLI + Socket mount to manage the ecosystem
+- **Integrated Tooling**: Opencode CLI installed directly in Syntropy image for autonomous audits
