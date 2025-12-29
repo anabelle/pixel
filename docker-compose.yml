@@ -1,0 +1,77 @@
+services:
+  # LNPixels API
+  api:
+    build:
+      context: ./lnpixels/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/pixels.db:/app/pixels.db
+      - ./data/activity.db:/app/activity.db
+      - ./backups:/app/backups
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    networks:
+      - pixel-net
+
+  # LNPixels Web App (Canvas)
+  web:
+    build:
+      context: ./lnpixels/lnpixels-app
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+    networks:
+      - pixel-net
+    depends_on:
+      - api
+
+  # Pixel Landing Page
+  landing:
+    build:
+      context: ./pixel-landing
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - pixel-net
+
+  # Pixel Agent (Eliza)
+  agent:
+    build:
+      context: ./pixel-agent
+    env_file:
+      - .env
+    volumes:
+      - ./data/db.sqlite:/app/db.sqlite
+    environment:
+      - NODE_ENV=production
+      - LNPIXELS_WS_URL=http://api:3000
+    networks:
+      - pixel-net
+    depends_on:
+      - api
+
+  # Syntropy Core (AI Orchestration)
+  syntropy:
+    build:
+      context: ./syntropy-core
+    env_file:
+      - .env
+    volumes:
+      - ./data/pixels.db:/app/pixels.db
+      - ./pixel-landing/public:/app/audit
+    environment:
+      - NODE_ENV=production
+    networks:
+      - pixel-net
+    depends_on:
+      - api
+
+networks:
+  pixel-net:
+    driver: bridge
