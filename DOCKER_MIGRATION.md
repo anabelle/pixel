@@ -10,7 +10,7 @@ The Pixel ecosystem is now fully containerized using Docker. This enables consis
 | `api` | `pixel-api` | 3000 | Node.js | ✅ |
 | `web` | `pixel-web` | 3002 | Bun + Next.js | ✅ |
 | `landing` | `pixel-landing` | 3001 | Node.js + Next.js | ✅ |
-| `agent` | `pixel-agent` | - | Bun + ElizaOS | ✅ |
+| `agent` | `pixel-agent` | 3003 | Bun + ElizaOS | ✅ |
 | `syntropy` | `pixel-syntropy` | - | Bun | ✅ |
 
 ## Quick Start
@@ -49,6 +49,8 @@ pixel/
 │   ├── pixels.db               # Pixel database
 │   ├── activity.db             # Activity database
 │   └── db.sqlite               # ElizaOS database
+├── logs/                       # Shared service logs
+│   └── agent.log               # Pipe for Syntropy audit
 ├── lnpixels/
 │   ├── api/Dockerfile
 │   └── lnpixels-app/Dockerfile

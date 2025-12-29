@@ -13,12 +13,10 @@ This setup provides automated deployment for the Pixel multi-repo ecosystem usin
 - **Triggers**: Push to `pixel/master` branch
 - **Actions**:
   1. Checkout with all submodules recursively
-  2. Setup Node.js, Bun, pnpm
-  3. Build all services (LNPixels, Agent, Landing, Syntropy)
-  4. Upload build artifacts
-  5. Deploy to VPS via SSH/rsync
-  6. Restart PM2 processes
-  7. Verify health checks
+  2. SSH to VPS
+  3. Pull latest code and submodules
+  4. Run `docker compose up -d --build`
+  5. Verify health checks
 
 ### Submodule CI Workflows (Testing Only)
 
@@ -43,9 +41,9 @@ This setup provides automated deployment for the Pixel multi-repo ecosystem usin
 
 3. Developer pushes to pixel/master
    → deploy-production.yml triggers
-   → Builds ALL services together
-   → Deploys to VPS via SSH
-   → PM2 restarts all processes atomically
+   → SSH to VPS
+   → Updates repository and submodules
+   → Runs `docker-setup.sh` or `docker compose up -d --build`
 ```
 
 ## Required GitHub Secrets
@@ -77,11 +75,9 @@ env:
 The VPS at `pixel.xx.kg` must have:
 
 1. **SSH access** configured for `pixel@pixel.xx.kg`
-2. **PM2 installed** with services defined in `ecosystem.config.js`
-3. **rsync available** for file syncing
-4. **Node.js 20+** and **Bun 1.1+** installed
-5. **Backup script**: `autonomous-backup.sh` at `/home/pixel/`
-6. **Directory structure**: `/home/pixel/` containing all repos
+2. **Docker and Docker Compose** installed
+3. **Repository already cloned** at `/home/pixel/`
+4. **Backup script**: `autonomous-backup.sh` at `/home/pixel/`
 
 ## Manual Deployment Triggers
 
@@ -114,11 +110,10 @@ git push origin master  # Triggers deployment
 
 | Issue | Solution |
 |-------|----------|
-| SSH connection failed | Verify `SSH_PRIVATE_KEY` secret format (single line, no extra spaces) |
-| Submodules not checked out | Verify `GH_PAT_FOR_SUBMODULES` has `repo` scope |
-| Build failed | Run build locally first: `pnpm run build` |
-| PM2 restart failed | SSH to VPS manually and check `pm2 status` |
-| Health checks failing | Verify services are running: `curl http://pixel.xx.kg:3000/health` |
+| SSH connection failed | Verify `SSH_PRIVATE_KEY` secret format |
+| Build failed | Check Docker build logs on VPS |
+| Container failed | View logs: `docker compose logs <service>` |
+| Health checks failing | Verify services are running: `curl http://localhost:3000/api/stats` |
 
 ### Rollback
 
@@ -136,7 +131,7 @@ ls -lt
 ./restore-latest.sh
 
 # Restart services
-pm2 restart all
+docker compose up -d --build
 ```
 
 ## Deployment Safety Rules
@@ -192,16 +187,15 @@ If submodule CI shows failing tests:
 After deployment, verify:
 
 ```bash
-# PM2 status
-ssh pixel@pixel.xx.kg "pm2 status"
+# Docker status
+ssh pixel@pixel.xx.kg "docker compose ps"
 
 # Health endpoints
-curl https://ln.pixel.xx.kg/health
+curl https://ln.pixel.xx.kg/api/stats
 curl https://pixel.xx.kg/
-curl http://pixel.xx.kg:5173/
 
 # View logs
-ssh pixel@pixel.xx.kg "pm2 logs --lines 50"
+ssh pixel@pixel.xx.kg "docker compose logs --tail=50"
 ```
 
 ## Development Workflow

@@ -7,32 +7,60 @@
 
 This is the master repository for the Pixel ecosystem, containing multiple interconnected projects that together create a sustainable AI agent platform with collaborative pixel art and Lightning Network integration.
 
-## 🚀 Quick Start (Cold Start)
+## 🚀 Quick Start
 
-To get the entire ecosystem running from scratch on a new machine:
+### Option 1: Docker (Recommended)
 
-### 1. Prerequisites
+The easiest way to run the entire ecosystem:
+
+```bash
+# Clone with submodules
+git clone --recursive git@github.com:anabelle/pixel.git
+cd pixel
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, etc.)
+
+# Start all services
+docker compose up -d --build
+
+# Verify
+docker compose ps
+curl http://localhost:3000/api/stats
+```
+
+**Services available:**
+- **API**: http://localhost:3000
+- **Landing**: http://localhost:3001
+- **Canvas**: http://localhost:3002
+- **Agent**: http://localhost:3003 (API/UI)
+
+See [DOCKER_MIGRATION.md](./DOCKER_MIGRATION.md) for full Docker documentation.
+
+### Option 2: Local Development
+
+**Prerequisites:**
 - Node.js 20+ & Bun 1.0+
 - `pnpm` (`npm install -g pnpm`)
 - `elizaos` CLI (`bun i -g @elizaos/cli`)
 
+```bash
+# Install dependencies
+pnpm install
+cd pixel-agent && bun install
+
+# Start development servers
+npm run dev
+```
+
 ### 📦 Package Architecture
 
-The Pixel ecosystem uses a **Hybrid Manager Strategy** to accommodate specific project requirements:
+The Pixel ecosystem uses a **Hybrid Manager Strategy**:
 
-- **Monorepo (pnpm)**: Most projects (`lnpixels`, `pixel-landing`) are managed by a single unified **pnpm workspace**. This ensures consistent dependencies and faster builds.
-- **Agent (Bun)**: The `pixel-agent` uses **Bun** exclusively. This is required by the underlying ElizaOS framework for runtime performance and CLI compatibility.
-
-**Avoid Redundancy**: Do not run `npm install` or `bun install` in projects that should be managed by `pnpm`. The root `pnpm-lock.yaml` is the source of truth for the entire ecosystem except the agent.
-
-### 3. Development
-```bash
-# Start all services with hot-reload (concurrently)
-npm run dev
-
-# Start all services with hot-reload in PM2 dashboard
-npm run dev:full
-```
+- **Monorepo (pnpm)**: `lnpixels`, `pixel-landing` managed by pnpm workspace
+- **Agent (Bun)**: `pixel-agent` uses Bun exclusively (required by ElizaOS)
+- **Docker**: All services containerized for consistent deployment
 
 ## 📚 Specialized Documentation
 
@@ -218,29 +246,42 @@ NEXT_PUBLIC_BITCOIN_ADDRESS=bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ## Deployment
 
-### Production Architecture (Single VPS Setup)
+### Docker Deployment (Recommended)
+
+See [DOCKER_MIGRATION.md](./DOCKER_MIGRATION.md) for complete Docker setup.
+
+```bash
+# Production deployment
+docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Restart services
+docker compose restart
+```
+
+### Production Architecture (Docker)
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Single VPS Server                       │
+│                        VPS / Cloud Server                       │
 │                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │nginx (80/443│  │    PM2      │  │   SQLite    │             │
-│  │Reverse Proxy│  │Process Mgr  │  │  Database   │             │
-│  │SSL/TLS      │  │             │  │             │             │
-│  └──────┬──────┘  └──────┬──────┘  └─────────────┘             │
-│         │                │                                     │
-  │  ┌──────▼──────┐  ┌──────▼──────┐  ┌─────────────┐             │
-  │  │pixel-landing│  │  lnpixels   │  │pixel-agent  │             │
-  │  │Static Files │  │Node.js API  │  │ElizaOS Bot  │             │
-  │  │Port: 3001   │  │Port: 3000   │  │Multi-platform│             │
-  │  └─────────────┘  │+ React SPA  │  │Telegram/Nostr│             │
-  │                   │Port: 5173   │  │Discord/etc   │             │
-  │                   └─────────────┘  └─────────────┘             │
+│  ┌─────────────┐  ┌─────────────────────────────────────────┐  │
+│  │Caddy/nginx  │  │           Docker Compose               │  │
+│  │Reverse Proxy│  │                                         │  │
+│  │SSL/TLS      │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐   │  │
+│  └──────┬──────┘  │  │pixel-api│ │pixel-web│ │ landing │   │  │
+│         │         │  │  :3000  │ │  :3002  │ │  :3001  │   │  │
+│         │         │  └─────────┘ └─────────┘ └─────────┘   │  │
+│         │         │                                         │  │
+│         └─────────┤  ┌──────────┐ ┌─────────────┐          │  │
+│                   │  │pixel-    │ │  syntropy-  │          │  │
+│                   │  │agent     │ │  core       │          │  │
+│                   │  │(ElizaOS) │ │(AI Orch)    │          │  │
+│                   │  └──────────┘ └─────────────┘          │  │
+│                   └─────────────────────────────────────────┘  │
 │                                                                 │
-│  Development Environment:                                       │
-│  • OpenCode running as root in /home/pixel                     │
-│  • OpenRouter API with diverse model selection                 │
-│  • PM2 ecosystem configuration                                 │
+│  Data Volumes: ./data/pixels.db, ./data/db.sqlite              │
 │  • All projects in single workspace                            │
 └─────────────────────────────────────────────────────────────────┘
 ```

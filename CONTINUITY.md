@@ -2,7 +2,7 @@
 
 - **Goal**: Implement and automate a Continuity Ledger for the Syntropy Oversoul to ensure session stability across context compaction.
 - **Constraints/Assumptions**: 
-    - Syntropy operates autonomously via PM2.
+    - Syntropy operates autonomously via Docker.
     - Intelligence is driven by AI SDK 6 (gpt-4o-mini).
     - Workspace is a monorepo with submodules.
 - **Key decisions**:
@@ -19,6 +19,6 @@
     - Update Syntropy instructions.
 - **Open questions**: None.
 - **Working set**: 
-    - `/home/pixel/pixel/syntropy-core/src/index.ts`
-    - `/home/pixel/pixel/syntropy-core/src/tools.ts`
-    - `/home/pixel/pixel/syntropy-core/CONTINUITY.md`
+    - `syntropy-core/src/index.ts`
+    - `syntropy-core/src/tools.ts`
+    - `syntropy-core/CONTINUITY.md`

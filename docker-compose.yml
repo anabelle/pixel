@@ -44,13 +44,17 @@ services:
   agent:
     build:
       context: ./pixel-agent
+    ports:
+      - "3003:3003"
     env_file:
       - .env
     volumes:
       - ./data/db.sqlite:/app/db.sqlite
+      - ./logs:/app/logs
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
+      - PORT=3003
     networks:
       - pixel-net
     depends_on:
@@ -64,13 +68,19 @@ services:
       - .env
     volumes:
       - ./data/pixels.db:/app/pixels.db
+      - ./data/activity.db:/app/activity.db
       - ./pixel-landing/public:/app/audit
+      - ./logs:/app/logs
+      - ./pixel-agent:/app/pixel-agent
     environment:
       - NODE_ENV=production
+      - PIXEL_ROOT=/app
+      - PIXEL_AGENT_DIR=/app/pixel-agent
     networks:
       - pixel-net
     depends_on:
       - api
+      - agent
 
 networks:
   pixel-net:
