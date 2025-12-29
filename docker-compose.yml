@@ -3,8 +3,11 @@ services:
   api:
     build:
       context: ./lnpixels/api
-    ports:
-      - "3000:3000"
+    # DO NOT expose to internet - only accessible via Nginx
+    # ports:
+    #   - "3000:3000"
+    expose:
+      - "3000"
     env_file:
       - .env
     volumes:
@@ -23,8 +26,11 @@ services:
       context: ./lnpixels/lnpixels-app
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
-    ports:
-      - "3002:3002"
+    # DO NOT expose to internet - only accessible via Nginx
+    # ports:
+    #   - "3002:3002"
+    expose:
+      - "3002"
     env_file:
       - .env
     environment:
@@ -43,8 +49,11 @@ services:
         - NEXT_PUBLIC_AGENT_HANDLE=${NEXT_PUBLIC_AGENT_HANDLE:-@PixelSurvivor}
         - NEXT_PUBLIC_LIGHTNING_ADDRESS=${NEXT_PUBLIC_LIGHTNING_ADDRESS:-sparepicolo55@walletofsatoshi.com}
         - NEXT_PUBLIC_BITCOIN_ADDRESS=${NEXT_PUBLIC_BITCOIN_ADDRESS:-bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za}
-    ports:
-      - "3001:3001"
+    # DO NOT expose to internet - only accessible via Nginx
+    # ports:
+    #   - "3001:3001"
+    expose:
+      - "3001"
     env_file:
       - .env
     environment:
@@ -56,8 +65,11 @@ services:
   agent:
     build:
       context: ./pixel-agent
-    ports:
-      - "3003:3003"
+    # DO NOT expose to internet - only accessible via Nginx
+    # ports:
+    #   - "3003:3003"
+    expose:
+      - "3003"
     env_file:
       - .env
     volumes:

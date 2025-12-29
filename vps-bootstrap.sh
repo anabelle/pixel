@@ -44,13 +44,37 @@ else
 fi
 
 # ============================================
-# PHASE 3: Firewall Configuration
+# PHASE 3: Firewall & SSH Hardening
 # ============================================
-echo "🛡️  [3/6] Configuring Firewall..."
+echo "🛡️  [3/6] Configuring Firewall and SSH Security..."
+
+# Install fail2ban to prevent brute force attacks
+sudo apt-get install -y fail2ban
+
+# Configure fail2ban for SSH
+sudo tee /etc/fail2ban/jail.local > /dev/null <<EOF
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 3600
+EOF
+
+sudo systemctl enable fail2ban
+sudo systemctl restart fail2ban
+
+# Harden SSH: Disable root login, password auth for root
+sudo sed -i 's/#PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sudo sed -i 's/PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sudo systemctl reload sshd
+
+# Configure UFW
 sudo ufw allow 22/tcp   # SSH
 sudo ufw allow 80/tcp   # HTTP
 sudo ufw allow 443/tcp  # HTTPS
-# Internal ports are NOT exposed; Nginx handles routing.
+# IMPORTANT: Internal ports (3000-3003) are NOT opened - Nginx handles routing
 sudo ufw --force enable
 
 # ============================================
