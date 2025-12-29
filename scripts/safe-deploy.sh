@@ -5,10 +5,12 @@
 
 set -e
 
-PROJECT_ROOT="/pixel"
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd $PROJECT_ROOT
 
-echo "🚀 Starting Safe Deployment..."
+echo "🚀 Starting Safe Deployment from $PROJECT_ROOT..."
 
 # 1. Validate
 ./scripts/validate-build.sh
