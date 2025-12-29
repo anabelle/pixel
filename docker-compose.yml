@@ -18,7 +18,7 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/stats" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/stats" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -33,7 +33,7 @@ services:
     build:
       context: ./lnpixels/lnpixels-app
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://127.0.0.1:3000/api}
     expose:
       - "3002"
     env_file:
@@ -47,7 +47,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3002/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,7 +76,7 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3001/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -159,7 +159,7 @@ services:
       - landing
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1/" ]
       interval: 30s
       timeout: 10s
       retries: 3
