@@ -23,9 +23,15 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "Error: SSH_PRIVATE_KEY is not set"
+            exit 1
+          fi
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
+          # Skip ssh-keyscan as we use -o StrictHostKeyChecking=no
+          # This avoids issues with Cloudflare proxying
+          echo "SSH setup complete"
 
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'

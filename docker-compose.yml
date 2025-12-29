@@ -5,6 +5,8 @@ services:
       context: ./lnpixels/api
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     volumes:
       - ./data/pixels.db:/app/pixels.db
       - ./data/activity.db:/app/activity.db
@@ -19,11 +21,14 @@ services:
   web:
     build:
       context: ./lnpixels/lnpixels-app
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
     ports:
       - "3002:3002"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
     networks:
       - pixel-net
     depends_on:
@@ -33,8 +38,15 @@ services:
   landing:
     build:
       context: ./pixel-landing
+      args:
+        - NEXT_PUBLIC_CANVAS_URL=${NEXT_PUBLIC_CANVAS_URL:-https://ln.pixel.xx.kg}
+        - NEXT_PUBLIC_AGENT_HANDLE=${NEXT_PUBLIC_AGENT_HANDLE:-@PixelSurvivor}
+        - NEXT_PUBLIC_LIGHTNING_ADDRESS=${NEXT_PUBLIC_LIGHTNING_ADDRESS:-sparepicolo55@walletofsatoshi.com}
+        - NEXT_PUBLIC_BITCOIN_ADDRESS=${NEXT_PUBLIC_BITCOIN_ADDRESS:-bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za}
     ports:
       - "3001:3001"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
     networks:
