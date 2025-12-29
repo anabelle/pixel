@@ -27,9 +27,15 @@ echo "🩺 Running health checks..."
 # Give it a few seconds to breathe
 sleep 5
 
-# Simple health probes
-curl -f http://localhost:3000/api/health || echo "⚠️  API health check skipped (no /health endpoint)"
-curl -f http://localhost:3001/ || echo "⚠️  Landing page health check failed"
+# Simple health probes (using wget for alpine compatibility and 127.0.0.1)
+if command -v wget &> /dev/null; then
+    wget --spider -q http://127.0.0.1:3000/api/stats || echo "⚠️  API health check skipped or failed"
+    wget --spider -q http://127.0.0.1:3001/ || echo "⚠️  Landing page health check failed"
+else
+    # Fallback to curl if wget missing (host machine might have curl)
+    curl -f http://127.0.0.1:3000/api/stats || echo "⚠️  API health check skipped or failed"
+    curl -f http://127.0.0.1:3001/ || echo "⚠️  Landing page health check failed"
+fi
 
 # 4. Cleanup
 echo "🧹 Pruning old images..."
