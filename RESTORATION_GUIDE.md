@@ -13,87 +13,112 @@ Here is your step-by-step guide to getting **LNPixels** back online with all 9,0
 
 ---
 
-## 🚀 Speedrun to Recovery
+## 🚀 Speedrun to Recovery (Docker Method - Recommended)
 
 ### 1. Provision New Server
-Spin up a new VPS (Ubuntu 22.04/24.04 recommended). Set up your SSH key immediately so we don't repeat history! 😉
-**Requirement**: At least 2GB RAM is recommended for the build process.
+Spin up a new VPS (Ubuntu 22.04/24.04 recommended). Set up your SSH key immediately!
+**Requirements**: 2GB+ RAM, Docker installed
 
-### 2. Prepare the Environment
-SSH into your new server and run these commands to install the basics:
-
+### 2. Install Docker
 ```bash
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js (v20+), npm, and Python
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Install Docker Compose
+sudo apt install -y docker-compose-plugin
+
+# Verify
+docker --version
+docker compose version
+```
+
+### 3. Clone Repository
+```bash
+git clone --recursive git@github.com:anabelle/pixel.git
+cd pixel
+```
+
+### 4. Setup Environment
+```bash
+cp .env.example .env
+nano .env  # Add your API keys
+```
+
+### 5. Restore Database
+```bash
+# Create data directory
+mkdir -p data
+
+# Copy backup files to server (from local machine)
+scp pixels.json user@server:~/pixel/
+
+# Restore database using Docker
+docker compose up -d api  # Start API container temporarily
+docker compose exec api node /app/node_modules/.bin/restore_pixels.js /app/pixels.json /app/pixels.db
+# Or run locally if node is installed:
+# node restore_pixels.js pixels.json data/pixels.db
+```
+
+### 6. Launch! 🚀
+```bash
+docker compose up -d
+```
+
+### 7. Verify
+```bash
+docker compose ps
+curl http://localhost:3000/api/stats
+```
+
+---
+
+## 🔧 Alternative: Manual Method (PM2)
+
+If you prefer running without Docker:
+
+### 1. Install Dependencies
+```bash
+# Node.js v20+
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs python3 build-essential git
 npm install -g pm2 bun
-
-# Verify installations
-node -v
-bun -v
-pm2 -v
 ```
 
-### 3. Clone & Setup Code
-Clone your repository (or copy the files from your local machine).
-
+### 2. Install Packages
 ```bash
-# Example if using git
-git clone <your-repo-url> pixel
 cd pixel
-
-# Install dependencies
 npm install
 cd lnpixels && npm install
+cd ../pixel-agent && bun install
+cd ../pixel-landing && npm install
+cd ../syntropy-core && bun install
 ```
 
-### 4. Restore the Data
-This is the magic moment. 
-
-1.  **Upload `pixels.json` and `restore_pixels.js`** to the server. You can use `scp`:
-    ```bash
-    scp pixels.json restore_pixels.js user@your-new-server-ip:~/pixel/
-    ```
-
-2.  **Run the Restoration Script**:
-    Move the files to the root of your project (where you can run node) and execute:
-    ```bash
-    # Run the restoration script
-    # Usage: node restore_pixels.js <source_json> <target_db_path>
-    
-    # Example (assuming you are in project root and lnpixels/api exists)
-    node restore_pixels.js pixels.json lnpixels/api/pixels.db
-    ```
-
-3.  **Verify**: You should see a success message: `Restored 9041 pixels...`.
-
-### 5. Launch! 🚀
-Now that the database is in place (`lnpixels/api/pixels.db`), you can start the application.
-
+### 3. Restore Database
 ```bash
-# From the root directory
-npm run deploy:production
+node restore_pixels.js pixels.json lnpixels/api/pixels.db
 ```
 
-Or manually:
+### 4. Launch
 ```bash
-# Build
-npm run build -w lnpixels/api
-npm run build -w lnpixels/web
-
-# Start
 pm2 start ecosystem.config.js
 ```
 
 ---
 
 ## 🛡️ Future Proofing
-To avoid getting locked out again:
-1.  **Keep SSH Keys Safe**: Ensure you have multiple keys if possible.
-2.  **Disable Password Auth ONLY after** verifying SSH access works.
-3.  **Enable Backups**: Ensure `autonomous-backup.sh` is running in cron!
+1. **Docker Preferred**: Use `docker compose` for consistent deployments
+2. **Keep SSH Keys Safe**: Multiple keys if possible
+3. **Disable Password Auth ONLY after** verifying SSH access works
+4. **Enable Backups**: Run `autonomous-backup.sh` via cron
 
-Good luck! 
+---
+
+## 📚 Related Docs
+- [DOCKER_MIGRATION.md](./DOCKER_MIGRATION.md) - Full Docker setup details
+- [DEPLOYMENT.md](./DEPLOYMENT.md) - Production operations guide
