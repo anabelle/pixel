@@ -22,9 +22,10 @@ pnpm-lock.yaml
 *.log
 logs/
 
-# Database
+# Database and Data
 *.db
 *.sqlite
+data/
 
 # OS files
 .DS_Store
