@@ -35,11 +35,19 @@ jobs:
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
+          # Stash any Syntropy changes on VPS before deploying
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "cd /pixel && git stash push -m 'pre-deploy-stash' -- CONTINUITY.md 2>/dev/null || true"
+          
           rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
             --exclude 'node_modules' \
             --exclude '.git' \
             --exclude 'logs' \
             --exclude 'data' \
+            --exclude 'backups' \
+            --exclude 'certbot' \
+            --exclude 'CONTINUITY.md' \
+            --exclude 'pixel-landing/public/audit.json' \
+            --exclude 'pixel-landing/public/syntropy.json' \
             ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/pixel/
 
       - name: Atomic Blue/Green Deploy
