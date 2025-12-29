@@ -20,18 +20,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Build Validation (Local)
+        run: |
+          # Verify that the composition is valid and images compile
+          docker compose config
+          docker compose build --parallel
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
-            echo "Error: SSH_PRIVATE_KEY is not set"
-            exit 1
-          fi
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # Skip ssh-keyscan as we use -o StrictHostKeyChecking=no
-          # This avoids issues with Cloudflare proxying
-          echo "SSH setup complete"
 
       - name: Deploy to VPS
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
@@ -40,51 +39,10 @@ jobs:
             --exclude 'node_modules' \
             --exclude '.git' \
             --exclude 'logs' \
-            --exclude '*.log' \
-            --exclude '.env' \
             --exclude 'data' \
-            --exclude 'backups' \
-            --exclude '.next' \
-            --exclude 'dist' \
-            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/
+            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/pixel/
 
-      - name: Docker Build and Deploy
+      - name: Atomic Blue/Green Deploy
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSCRIPT'
-            set -e
-            cd /home/pixel
-            
-            echo "=== Starting Docker Services ==="
-            # Ensure database files exist (prevent docker from creating directories)
-            mkdir -p data
-            touch data/pixels.db data/activity.db data/db.sqlite
-            
-            # Rebuild and restart all containers
-            docker compose up -d --build
-            
-            echo "=== Pruning old images ==="
-            docker image prune -f
-            
-            echo "=== Deployment Status ==="
-            docker compose ps
-          ENDSCRIPT
-
-      - name: Verify Services Health
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: |
-          echo "Waiting for services to initialize..."
-          sleep 30
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSCRIPT'
-            set +e
-            echo "Checking API..."
-            curl -f http://localhost:3000/api/stats || exit 1
-            echo "Checking Landing..."
-            curl -f http://localhost:3001/ || exit 1
-            echo "Checking Canvas..."
-            curl -f http://localhost:3002/ || exit 1
-            echo "Checking Agent..."
-            curl -f http://localhost:3003/ || echo "Agent UI/API not responding, but may be active"
-            
-            docker compose ps
-          ENDSCRIPT
+          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "/pixel/scripts/safe-deploy.sh"
