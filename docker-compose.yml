@@ -136,7 +136,7 @@ services:
       - DB_PATH=/pixel/data/pixels.db
       - LOG_PATH=/pixel/logs/agent.log
       - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
-      - HOME=/tmp
+      - HOME=/pixel
       # Git authentication via Personal Access Token
       - GH_TOKEN=${GH_TOKEN}
     networks:
