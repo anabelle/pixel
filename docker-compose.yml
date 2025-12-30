@@ -109,8 +109,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      postgres:
-        condition: service_started
+      # NOTE: postgres service is unused - ElizaOS uses embedded PGLite
     restart: unless-stopped
     deploy:
       resources:
@@ -153,9 +152,12 @@ services:
         limits:
           memory: 1G
 
-  # Postgres Database
+  # Postgres Database (UNUSED - ElizaOS v1.6+ uses embedded PGLite)
+  # Kept for potential future use or external integrations
   postgres:
     image: postgres:15-alpine
+    profiles:
+      - unused  # Won't start by default, use: docker compose --profile unused up postgres
     ports:
       - "127.0.0.1:5432:5432"
     environment:

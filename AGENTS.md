@@ -174,9 +174,14 @@ docker compose run --rm agent bun run build:character
 # Enter agent container
 docker compose exec agent bash
 
-# Check PostgreSQL
-docker compose exec postgres psql -U postgres -d pixel_agent -c "SELECT count(*) FROM memories;"
+# Query agent's embedded PGLite database (ElizaOS v1.6+ uses embedded PostgreSQL)
+docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pglite'); new PGlite('/app/.eliza/.elizadb').query('SELECT COUNT(*) as total FROM memories').then(r => console.log(r.rows));"
+
+# Get memory stats
+docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pglite'); const db = new PGlite('/app/.eliza/.elizadb'); db.query(\"SELECT content->>'source' as src, COUNT(*) FROM memories GROUP BY content->>'source'\").then(r => console.log(r.rows));"
 ```
+
+**Note:** ElizaOS v1.6+ uses **embedded PGLite** at `/app/.eliza/.elizadb/` inside the agent container. The Docker `postgres` service is currently unused.
 
 ### Service Ports
 | Service | Port | Container |
@@ -185,7 +190,7 @@ docker compose exec postgres psql -U postgres -d pixel_agent -c "SELECT count(*)
 | Landing | 3001 | pixel-landing-1 |
 | Canvas | 3002 | pixel-web-1 |
 | Agent | 3003 | pixel-agent-1 |
-| PostgreSQL | 5432 | pixel-postgres-1 |
+| PostgreSQL | 5432 | pixel-postgres-1 (⚠️ unused) |
 
 ### Emergency Recovery
 ```bash
@@ -194,10 +199,8 @@ docker compose logs agent --tail=500 > /tmp/agent-crash.log
 docker compose down agent
 docker compose up -d agent
 
-# If PostgreSQL is corrupted
-docker compose stop agent
-docker compose exec postgres pg_dump -U postgres pixel_agent > /tmp/backup.sql
-docker compose restart postgres
+# Backup agent's PGLite data
+docker cp pixel-agent-1:/app/.eliza/.elizadb ./backups/elizadb-$(date +%Y%m%d)
 ```
 
 ---

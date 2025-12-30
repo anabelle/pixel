@@ -27,7 +27,7 @@ bun run start                  # Start agent (uses local CLI)
 bun run dev                    # Development mode
 ```
 
-**Note:** The agent uses PostgreSQL (configure `DATABASE_URL` in `.env`).
+**Note:** ElizaOS v1.6+ uses **embedded PGLite** (PostgreSQL 17) stored at `/app/.eliza/.elizadb/`. The `DATABASE_URL` env is currently ignored - the agent manages its own embedded database.
 
 ### Canvas Operations
 ```bash
@@ -67,7 +67,7 @@ Plugins enable agent capabilities. Configured in `pixel-agent/scripts/build-char
 - **Bun/Node Mix**: Ensure `pixel-agent` is always handled with `bun`.
 
 ### Runtime Issues
-- **Agent Memory**: Uses PostgreSQL now. Check `DATABASE_URL` and `docker compose logs postgres`.
+- **Agent Memory**: Uses embedded PGLite at `/app/.eliza/.elizadb/`. Query via: `docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pglite'); new PGlite('/app/.eliza/.elizadb').query('SELECT COUNT(*) FROM memories').then(r => console.log(r.rows));"`
 - **Port Conflicts**: API (3000), Landing (3001), Web/Canvas (3002), Agent (3003), PostgreSQL (5432).
 - **Twitter 401**: Twitter plugin is disabled by default. Enable in `scripts/build-character.ts` when credentials are ready.
 
