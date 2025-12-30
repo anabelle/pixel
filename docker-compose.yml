@@ -40,6 +40,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
     networks:
       - pixel-net
     depends_on:
@@ -47,7 +48,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3002/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,11 +73,12 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
     networks:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3001/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -166,7 +168,7 @@ services:
       - landing
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "--no-check-certificate", "https://127.0.0.1/" ]
       interval: 30s
       timeout: 10s
       retries: 3
