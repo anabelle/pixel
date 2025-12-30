@@ -48,7 +48,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3002/" ]
+      test: [ "CMD", "bun", "-e", "fetch('http://localhost:3002/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -78,7 +78,7 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3001/" ]
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3001/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,7 +157,7 @@ services:
   postgres:
     image: postgres:15-alpine
     profiles:
-      - unused  # Won't start by default, use: docker compose --profile unused up postgres
+      - unused # Won't start by default, use: docker compose --profile unused up postgres
     ports:
       - "127.0.0.1:5432:5432"
     environment:
