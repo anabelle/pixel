@@ -1,155 +1,85 @@
-# Production Operations Guide
+# Production Operations Guide (VPS)
 
-This guide covers the procedures for maintaining and recovering the Pixel ecosystem in production.
+This guide covers the procedures for deploying and maintaining the Pixel ecosystem on a VPS.
 
-## 🐳 Docker Deployment (Recommended)
+## 🚀 Rapid Deployment (Docker)
 
-### Initial Deployment
+### 1. Bootstrap the Host
 ```bash
-# Clone and setup
-git clone --recursive git@github.com:anabelle/pixel.git
+ssh pixel@your-vps
+git clone --recursive https://github.com/anabelle/pixel.git
+cd pixel
+./vps-bootstrap.sh  # Installs Docker, Node, Bun, and configures groups
+exit # Logout and login to apply group changes
+```
+
+### 2. Configure Environment
+```bash
 cd pixel
 cp .env.example .env
-nano .env  # Add your secrets
+nano .env 
+```
+**Required Production Keys:**
+- `GH_TOKEN`: GitHub PAT with repo scope (required for Syntropy self-evolution)
+- `OPENAI_API_KEY`: Core LLM
+- `NAKAPAY_API_KEY`: Lightning Network payments
+- `TELEGRAM_BOT_TOKEN` / `DISCORD_API_TOKEN`: Agent platforms
 
-# Restore database if needed
-node restore_pixels.js pixels.json data/pixels.db
+### 3. Launch
+```bash
+# Initial SSL setup (Certbot)
+./scripts/init-ssl.sh 
 
-# Start all services
+# Start services
 docker compose up -d --build
 ```
 
-### Redeployment (Update Code)
-```bash
-git pull --recurse-submodules
-docker compose up -d --build
-```
+## 🛠️ Maintenance & Monitoring
 
-### Common Commands
-```bash
-# View status
-docker compose ps
-
-# View logs (all or specific service)
-docker compose logs -f
-docker compose logs -f api
-
-# Restart a service
-docker compose restart <service>
-
-# Rebuild and restart a service
-docker compose up -d --build <service>
-
-# Stop all services
-docker compose down
-
-# Shell into container
-docker compose exec <service> sh
-```
-
-## 🛠️ Maintenance Tasks
-
-### Database Backups
-With Docker, databases are stored in `./data/`:
-```bash
-# Manual backup
-cp data/pixels.db backups/pixels-$(date +%Y%m%d).db
-
-# Automated backup (add to cron)
-./autonomous-backup.sh
-```
+### Common Operations
+- **Update Ecosystem**: `git pull --recurse-submodules && docker compose up -d --build`
+- **View Status**: `docker compose ps`
+- **Follow Logs**: `docker compose logs -f syntropy` (or `agent`, `api`, etc.)
+- **Restart Service**: `docker compose restart <service>`
 
 ### Health Monitoring
+The ecosystem includes a unified status tool:
 ```bash
-# Check container health
-docker compose ps
-
-# API stats
-curl http://localhost:3000/api/stats
-
-# Resource usage
-docker stats
+./report-status.js # Provides System stats + PM2 (if used) + API health
 ```
+
+### Automated Backups
+Databases are stored in `./data/`.
+- **Automated**: `./autonomous-backup.sh` (runs via cron or Syntropy)
+- **Manual**: `cp data/pixels.db backups/pixels-$(date +%Y%m%d).db`
+
+## 🛡️ Deployment Safety Rules
+
+1.  **Always Push Submodules First**: Never commit to the root without first pushing your submodule changes.
+2.  **Test Locally Before Deploy**: Run `npm run dev` or `docker compose up` locally to verify changes.
+3.  **Use Atomic Commits**: Update the root submodule pointer in the same commit as your documentation updates.
 
 ## 🚨 Emergency Recovery
 
-### Service won't start
-```bash
-# Check logs
-docker compose logs <service>
+### Container Loop/Crash
+1. **Check Logs**: `docker compose logs --tail 100 <service>`
+2. **Hard Rebuild**: `docker compose build --no-cache <service> && docker compose up -d <service>`
+3. **Wipe Volumes (CAUTION)**: `docker compose down -v` (Only if data is backed up!)
 
-# Rebuild from scratch
-docker compose build --no-cache <service>
-docker compose up -d <service>
-```
-
-### Database issues
-```bash
-# Restore from backup
-node restore_pixels.js pixels.json data/pixels.db
-
-# Or from a backup file
-cp backups/pixels-YYYYMMDD.db data/pixels.db
-docker compose restart api
-```
-
-### Complete reset
-```bash
-docker compose down
-docker compose up -d --build
-```
-
-## 📝 Services
-
-| Service | Container | Port | Runtime | Description |
-|---------|-----------|------|---------|-------------|
-| API | pixel-api | 3000 | Node.js | Express + Socket.IO |
-| Web App | pixel-web | 3002 | Bun + Next.js | Canvas UI |
-| Landing | pixel-landing | 3001 | Node.js + Next.js | Landing page |
-| Agent | pixel-agent | - | Bun + ElizaOS | AI Agent |
-| Syntropy | pixel-syntropy | - | Bun | AI Orchestration |
-
-## 🌐 Reverse Proxy (Caddy)
-
-```
-ln.pixel.xx.kg {
-    reverse_proxy localhost:3000
-}
-
-pixel.xx.kg {
-    reverse_proxy localhost:3001
-}
-
-app.pixel.xx.kg {
-    reverse_proxy localhost:3002
-}
-```
+### SSL Issues
+If Nginx fails to start due to SSL, verify the paths in `nginx/nginx.conf` and ensure `certbot/conf` contains the certificates. You can regenerate with `./scripts/init-ssl.sh`.
 
 ---
 
-## 📜 Legacy: PM2 Deployment
+## 🏗️ Production Services
 
-> **Note**: Docker is now the recommended deployment method. PM2 instructions kept for reference.
+| Service | Container | Port | Description |
+|---------|-----------|------|-------------|
+| **API** | `pixel-api` | 3000 | Core Lightning/Pixel engine |
+| **Landing** | `pixel-landing` | 3001 | Public entry point |
+| **Canvas** | `pixel-web` | 3002 | Collaborative art UI |
+| **Agent** | `pixel-agent` | 3003 | ElizaOS social intelligence |
+| **Syntropy**| `pixel-syntropy` | - | AI Orchestration & Self-Evolution |
+| **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
 
-### Start with PM2
-```bash
-npm run deploy:production
-# or
-pm2 start ecosystem.config.js
-```
-
-### PM2 Commands
-```bash
-pm2 restart <service>
-pm2 logs <service>
-pm2 status
-pm2 reload all
-```
-
-| Service | PM2 Name | Port |
-|---------|----------|------|
-| LNPixels API | lnpixels-api | 3000 |
-| LNPixels App | lnpixels-app | 3002 |
-| Pixel Agent | pixel-agent | - |
-| Pixel Landing | pixel-landing | 3001 |
-| Syntropy Core | syntropy-core | - |
+For deep technical details on plugin development or local builds, see the **[Technical Guide](./docs/TECH_GUIDE.md)**.
