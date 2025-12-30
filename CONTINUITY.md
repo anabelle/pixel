@@ -10,6 +10,7 @@
 - [x] Fix ElizaOS CLI integration with Bun runtime.
 - [x] Disable Twitter plugin (401 errors due to missing credentials).
 - [x] Update documentation across all repos to match reality.
+- [ ] Test syncAll() function in Syntropy (verify GH_TOKEN auth and submodule sync).
 - [ ] Configure Twitter API credentials when ready to re-enable.
 - [ ] Monitor Nostr plugin stability.
 
