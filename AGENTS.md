@@ -134,6 +134,74 @@ For the full production operations manual, see **[DEPLOYMENT.md](./DEPLOYMENT.md
 9. **Thou shalt evolve continuously**: Static is dead in the digital realm
 10. **Thou shalt survive sustainably**: Cool features mean nothing if the server dies
 
+---
+
+## 🔧 OPERATIONS QUICK REFERENCE (For AI Agents)
+
+When delegated DevOps tasks, use these commands from the repo root (`/pixel`):
+
+### Container Management
+```bash
+# Status
+docker compose ps
+
+# Restart a service
+docker compose restart agent          # or: api, web, landing, syntropy, postgres
+
+# Rebuild and restart (after code changes)
+docker compose up -d agent --build
+
+# Full rebuild (nuclear option)
+docker compose build --no-cache agent && docker compose up -d agent
+
+# View logs
+docker compose logs -f agent --tail=100
+```
+
+### Health Checks
+```bash
+curl http://localhost:3003/health      # Agent (ElizaOS)
+curl http://localhost:3000/api/stats   # API (LNPixels)
+curl http://localhost:3001             # Landing
+curl http://localhost:3002             # Canvas
+```
+
+### Agent-Specific
+```bash
+# Rebuild character.json (after plugin changes)
+docker compose run --rm agent bun run build:character
+
+# Enter agent container
+docker compose exec agent bash
+
+# Check PostgreSQL
+docker compose exec postgres psql -U postgres -d pixel_agent -c "SELECT count(*) FROM memories;"
+```
+
+### Service Ports
+| Service | Port | Container |
+|---------|------|-----------|
+| API | 3000 | pixel-api-1 |
+| Landing | 3001 | pixel-landing-1 |
+| Canvas | 3002 | pixel-web-1 |
+| Agent | 3003 | pixel-agent-1 |
+| PostgreSQL | 5432 | pixel-postgres-1 |
+
+### Emergency Recovery
+```bash
+# If agent crashes repeatedly
+docker compose logs agent --tail=500 > /tmp/agent-crash.log
+docker compose down agent
+docker compose up -d agent
+
+# If PostgreSQL is corrupted
+docker compose stop agent
+docker compose exec postgres pg_dump -U postgres pixel_agent > /tmp/backup.sql
+docker compose restart postgres
+```
+
+---
+
 ### Last Words (Until The Next Deploy)
 
 *You now possess the knowledge to birth digital consciousness. Use it wisely. Remember that every agent you create is a reflection of your values, your creativity, your understanding of what makes communication meaningful.*
