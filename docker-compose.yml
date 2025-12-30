@@ -119,7 +119,7 @@ services:
     # Run as host user to avoid root-owned files, but add docker group for socket access
     user: "1000:1000"
     group_add:
-      - "999" # docker group GID (verify with: getent group docker)
+      - "${DOCKER_GID:-999}" # docker group GID
     env_file:
       - .env
     volumes:
