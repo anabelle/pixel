@@ -116,8 +116,10 @@ services:
   syntropy:
     build:
       context: ./syntropy-core
-    # Run as host user to avoid root-owned files
+    # Run as host user to avoid root-owned files, but add docker group for socket access
     user: "1000:1000"
+    group_add:
+      - "999" # docker group GID (verify with: getent group docker)
     env_file:
       - .env
     volumes:
@@ -131,6 +133,8 @@ services:
       - LOG_PATH=/pixel/logs/agent.log
       - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
       - HOME=/tmp
+      # Git authentication via Personal Access Token
+      - GH_TOKEN=${GH_TOKEN}
     networks:
       - pixel-net
     depends_on:
