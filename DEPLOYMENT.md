@@ -21,9 +21,15 @@ nano .env
 ```
 **Required Production Keys:**
 - `GH_TOKEN`: GitHub PAT with repo scope (required for Syntropy self-evolution)
-- `OPENAI_API_KEY`: Core LLM
+- `OPENAI_API_KEY`: Core LLM (required for agent)
+- `OPENROUTER_API_KEY`: Multi-model AI routing
+- `DATABASE_URL`: PostgreSQL connection string (e.g., `postgresql://postgres:postgres@postgres:5432/pixel_agent`)
 - `NAKAPAY_API_KEY`: Lightning Network payments
-- `TELEGRAM_BOT_TOKEN` / `DISCORD_API_TOKEN`: Agent platforms
+- `TELEGRAM_BOT_TOKEN`: Telegram bot integration
+- `DISCORD_API_TOKEN` / `DISCORD_APPLICATION_ID`: Discord bot integration
+
+**Optional (disabled by default):**
+- `TWITTER_*`: Twitter API credentials (plugin disabled until configured)
 
 ### 3. Launch
 ```bash
@@ -79,7 +85,6 @@ If Nginx fails to start due to SSL, verify the paths in `nginx/nginx.conf` and e
 | **Landing** | `pixel-landing` | 3001 | Public entry point |
 | **Canvas** | `pixel-web` | 3002 | Collaborative art UI |
 | **Agent** | `pixel-agent` | 3003 | ElizaOS social intelligence |
-| **Syntropy**| `pixel-syntropy` | - | AI Orchestration & Self-Evolution |
-| **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
+| **Syntropy**| `pixel-syntropy` | - | AI Orchestration & Self-Evolution || **PostgreSQL** | `pixel-postgres` | 5432 | Agent database (replaced SQLite) || **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
 
 For deep technical details on plugin development or local builds, see the **[Technical Guide](./docs/TECH_GUIDE.md)**.

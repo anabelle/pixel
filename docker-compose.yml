@@ -97,17 +97,20 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/db.sqlite:/app/db.sqlite
       - ./logs:/app/logs
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
       - PORT=3003
+      - CI=true
+      - DATABASE_URL=${DATABASE_URL}
     networks:
       - pixel-net
     depends_on:
       api:
         condition: service_healthy
+      postgres:
+        condition: service_started
     restart: unless-stopped
     deploy:
       resources:
@@ -149,6 +152,25 @@ services:
       resources:
         limits:
           memory: 1G
+
+  # Postgres Database
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      - POSTGRES_DB=pixel_agent
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - pixel-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # Nginx Reverse Proxy
   nginx:

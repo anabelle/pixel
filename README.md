@@ -32,18 +32,20 @@ docker compose ps
 - **Landing**: http://localhost:3001
 - **Canvas**: http://localhost:3002
 - **Agent**: http://localhost:3003
+- **PostgreSQL**: localhost:5432
 
 ## 📦 Package Architecture
 The Pixel ecosystem uses a **Hybrid Manager Strategy**:
 - **Monorepo (pnpm)**: `lnpixels`, `pixel-landing` managed by pnpm workspace.
-- **Agent (Bun)**: `pixel-agent` uses Bun exclusively (required by ElizaOS).
+- **Agent (Bun)**: `pixel-agent` uses Bun runtime with ElizaOS CLI v1.7.0.
+- **Database**: PostgreSQL 15 for agent persistence (migrated from SQLite).
 - **Orchestration**: `syntropy-core` manages autonomous evolution.
 
-## 📚 Documentation Garden
-- 🛠️ **[Technical Guide](./docs/TECH_GUIDE.md)** - Essential commands, architecture, and troubleshooting.
-- 🚀 **[Operations Guide](./DEPLOYMENT.md)** - Production maintenance, VPS setup, and recovery.
-- 🎭 **[Agent Philosophy](./AGENTS.md)** - Pixel's soul, character architecture, and evolution logic.
-- 🧪 **[Deployment Readiness](./DEPLOYMENT_READY.md)** - Current verification status and critical fixes.
+## 📚 Documentation
+- 🛠️ **[Technical Guide](./docs/TECH_GUIDE.md)** - Commands, architecture, troubleshooting
+- 🚀 **[Deployment](./DEPLOYMENT.md)** - Production setup and maintenance
+- 🎭 **[Philosophy](./AGENTS.md)** - Pixel's soul and evolution logic
+- 📓 **[Continuity](./CONTINUITY.md)** - Current state and task tracking
 
 ## 🚀 Production Architecture (Docker)
 ```
@@ -57,8 +59,11 @@ The Pixel ecosystem uses a **Hybrid Manager Strategy**:
 │  └──────┬──────┘  │  │pixel-api│ │pixel-web│ │ landing │   │  │
 │         │         │  │  :3000  │ │  :3002  │ │  :3001  │   │  │
 │         │         │  └─────────┘ └─────────┘ └─────────┘   │  │
-│         │         │                                         │  │
-│         └─────────┤  ┌──────────┐ ┌─────────────┐          │  │
+│         │         │       ┌──────────┐                      │  │
+│         └─────────┤       │ postgres │                      │  │
+│                   │       │  :5432   │                      │  │
+│                   │       └──────────┘                      │  │
+│                   │  ┌──────────┐ ┌─────────────┐          │  │
 │                   │  │pixel-    │ │  syntropy-  │          │  │
 │                   │  │agent     │ │  core       │          │  │
 │                   │  │(ElizaOS) │ │(AI Orch)    │          │  │

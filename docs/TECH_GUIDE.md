@@ -20,10 +20,14 @@ npm run test          # Run all project tests
 ### Agent Operations
 ```bash
 cd pixel-agent
-bun install           # Bun is required for ElizaOS
-npx elizaos dev       # Run agent in development
-npx elizaos test      # Run agent character/logic tests
+bun install                    # Bun is required for ElizaOS
+bun run build                  # Compile TypeScript
+bun run build:character        # Generate character.json
+bun run start                  # Start agent (uses local CLI)
+bun run dev                    # Development mode
 ```
+
+**Note:** The agent uses PostgreSQL (configure `DATABASE_URL` in `.env`).
 
 ### Canvas Operations
 ```bash
@@ -32,10 +36,21 @@ pnpm run dev          # Start API + Web
 ```
 
 ## 🔌 Plugin System
-Plugins enable agent capabilities.
-- **Location**: `pixel-agent/src/plugins/` (or installed via npm)
-- **Essential**: `@elizaos/plugin-bootstrap`, `@elizaos/plugin-sql`, `@elizaos/plugin-openai`
-- **Custom**: `pixel-plugin-nostr` (handles canvas events)
+Plugins enable agent capabilities. Configured in `pixel-agent/scripts/build-character.ts`.
+
+**Active Plugins:**
+- `@elizaos/plugin-bootstrap` - Core agent bootstrapping
+- `@elizaos/adapter-postgres` - PostgreSQL database adapter
+- `@elizaos/plugin-sql` - SQL query support
+- `@elizaos/plugin-openai` - OpenAI API integration
+- `@elizaos/plugin-openrouter` - Multi-model AI routing
+- `@elizaos/plugin-telegram` - Telegram bot integration
+- `@elizaos/plugin-knowledge` - Knowledge management
+- `pixel-plugin-nostr` - Custom Nostr integration (canvas events)
+
+**Disabled:**
+- `@elizaos/plugin-discord` - Disabled until API credentials configured
+- `@elizaos/plugin-twitter` - Disabled until API credentials configured
 
 ## 📡 API Reference
 - **API Base**: `https://ln.pixel.xx.kg/api`
@@ -52,8 +67,9 @@ Plugins enable agent capabilities.
 - **Bun/Node Mix**: Ensure `pixel-agent` is always handled with `bun`.
 
 ### Runtime Issues
-- **Agent Memory**: If the agent "forgets", check `data/db.sqlite` volume mapping.
-- **Port Conflicts**: API (3000), Landing (3001), Web/Canvas (3002), Agent/Port (3003).
+- **Agent Memory**: Uses PostgreSQL now. Check `DATABASE_URL` and `docker compose logs postgres`.
+- **Port Conflicts**: API (3000), Landing (3001), Web/Canvas (3002), Agent (3003), PostgreSQL (5432).
+- **Twitter 401**: Twitter plugin is disabled by default. Enable in `scripts/build-character.ts` when credentials are ready.
 
 ### Permission Denied (Docker)
 If you can't run Docker without sudo:
