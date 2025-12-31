@@ -76,6 +76,8 @@ services:
       - HOSTNAME=0.0.0.0
     networks:
       - pixel-net
+    volumes:
+      - ./pixel-landing/public:/app/public
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/" ]
@@ -99,6 +101,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data/eliza:/app/.eliza
+      - ./pixel-landing/public:/app/public
     user: "1000:1000"
     environment:
       - NODE_ENV=production
