@@ -1757,7 +1757,7 @@ export async function POST(req: Request) {
       });
 
       const result = streamText({
-        model: openai('gpt-4o-mini'),
+        model: openai('gpt-5-mini'),
         messages: convertToModelMessages(messages),
       });
 
@@ -6517,7 +6517,7 @@ try {
   const tools = await client.tools();
 
   const response = await generateText({
-    model: openai('gpt-4o-mini'),
+    model: openai('gpt-5-mini'),
     tools,
     messages: [{ role: 'user', content: 'Query the data' }],
   });
@@ -14058,7 +14058,7 @@ import { createUIMessageStream } from "ai"
 
 Source: https://v6.ai-sdk.dev/docs/agents/configuring-call-options
 
-This snippet illustrates how to configure an AI agent to dynamically switch between different models (`gpt-4o-mini` or `o1-mini`) based on the `complexity` option passed at runtime. It optimizes performance by using faster models for simple queries and more capable ones for complex tasks.
+This snippet illustrates how to configure an AI agent to dynamically switch between different models (`gpt-5-mini` or `o1-mini`) based on the `complexity` option passed at runtime. It optimizes performance by using faster models for simple queries and more capable ones for complex tasks.
 
 ```ts
 import { ToolLoopAgent } from 'ai';
