@@ -99,6 +99,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data/eliza:/app/.eliza
+    user: "1000:1000"
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
