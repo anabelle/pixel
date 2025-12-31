@@ -8,12 +8,12 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/pixels.db:/app/pixels.db
-      - ./data/activity.db:/app/activity.db
+      - ./data:/app/data
       - ./backups:/app/backups
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - DB_PATH=/app/data/pixels.db
     networks:
       - pixel-net
     restart: unless-stopped
@@ -105,6 +105,7 @@ services:
       - PORT=3003
       - CI=true
       - DATABASE_URL=${DATABASE_URL}
+      - AI_SDK_LOG_WARNINGS=false
     networks:
       - pixel-net
     depends_on:
@@ -158,7 +159,7 @@ services:
   postgres:
     image: postgres:15-alpine
     profiles:
-      - unused  # Won't start by default, use: docker compose --profile unused up postgres
+      - unused # Won't start by default, use: docker compose --profile unused up postgres
     ports:
       - "127.0.0.1:5432:5432"
     environment:
