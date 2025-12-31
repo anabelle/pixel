@@ -1,13 +1,20 @@
 ## 📚 Knowledge Base
-### Ecosystem Health Audit
-- **Treasury Status:** 79,014 sats as of last check.
+### Ecosystem Health Audit (Last Updated: 2025-12-31)
+- **Treasury Status:** 79,014 sats.
 - **Container Status:**
-  - **pixel-agent-1:** Restarting, indicating possible issues with initialization or healthchecks.
-  - **pixel-api-1:** Up (healthy), functioning correctly.
-  - **pixel-syntropy-1:** Up, operational.
+  - **pixel-agent-1:** ✅ **HEALTHY** (Running with user 1000:1000).
+  - **pixel-api-1:** ✅ **HEALTHY** (Stable, DB mounted correctly).
+  - **pixel-syntropy-1:** ✅ **HEALTHY** (Operational).
 
-### Agent Logs Findings
-- Recent logs indicate daily operations followed by errors related to memory persistence. Logs show attempts to build and start the ElizaOS agent but do not indicate successful initialization.
+### Recent Resolutions
+1.  **Agent Restart Loop**: FIXED. Caused by permission errors on `data/eliza`. Resolved by `chown 1000:1000` and enforcing `user: 1000:1000` in `docker-compose.yml`.
+2.  **Memory Persistence**: FIXED. Corrected `context.js` to pass both `userId` and `entityId` to satisfy both Postgres adapter and Drizzle plugin schemas.
+3.  **Log Noise**: FIXED. Created `suppress-warnings.ts` preload script to disable "AI SDK Warning" spam effectively.
+4.  **Database Migrations**: FIXED. Successfully ran after permission fix.
+
+### Active Issues
+- **Opencode Rate Limits**: The `gpt-5-mini` model is hitting TPM limits (~119k tokens requested). Syntropy delegation fails because of this.
 
 ### Recommendations
-- Further inspection is required for the agent's persistent memory capabilities and the healthcheck logic.
+- **Monitor Opencode**: If rate limits persist, switch to `claude-3-5-sonnet` (via config or manual override) or reduce context size.
+- **Verify Backups**: Ensure the new `data/eliza` ownership doesn't affect backup scripts (though it should be fine).
