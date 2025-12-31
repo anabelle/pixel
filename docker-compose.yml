@@ -194,11 +194,13 @@ services:
       - web
       - landing
     restart: unless-stopped
+    command: [ nginx, '-g', 'daemon off; error_log /dev/stderr error;' ]
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "--no-check-certificate", "https://127.0.0.1/" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
   # Certbot for SSL
   certbot:
