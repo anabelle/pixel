@@ -8349,7 +8349,7 @@ async function handleCustomerQuery(query: string) {
   const { text: response } = await generateText({
     model:
       classification.complexity === 'simple'
-        ? 'openai/gpt-4o-mini'
+        ? 'openai/gpt-5-mini'
         : 'openai/o4-mini',
     system: {
       general:
@@ -13393,7 +13393,7 @@ Uses the prepareStep callback to dynamically switch to a more powerful model bas
 import { ToolLoopAgent } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o-mini', // Default model
+  model: 'openai/gpt-5-mini', // Default model
   tools: {
     // your tools
   },
@@ -14065,14 +14065,14 @@ import { ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o-mini', // Default model
+  model: 'openai/gpt-5-mini', // Default model
   callOptionsSchema: z.object({
     complexity: z.enum(['simple', 'complex']),
   }),
   prepareCall: ({ options, ...settings }) => ({
     ...settings,
     model:
-      options.complexity === 'simple' ? 'openai/gpt-4o-mini' : 'openai/o1-mini',
+      options.complexity === 'simple' ? 'openai/gpt-5-mini' : 'openai/o1-mini',
   }),
 });
 
