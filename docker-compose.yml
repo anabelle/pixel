@@ -98,6 +98,7 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ./data/eliza:/app/.eliza
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
@@ -218,8 +219,13 @@ services:
         echo "[$(date)] Starting backup..."
         cp /data/pixels.db /backups/pixels_$(date +%Y%m%d_%H%M%S).db
         cp /data/db.sqlite /backups/agent_$(date +%Y%m%d_%H%M%S).db
+        # Backup Eliza PGLite directory if present
+        if [ -d /data/eliza/.elizadb ]; then
+          tar -czf /backups/elizadb_$(date +%Y%m%d_%H%M%S).tar.gz -C /data eliza/.elizadb
+        fi
         # Keep only last 7 days of backups
         find /backups -name "*.db" -mtime +7 -delete
+        find /backups -name "elizadb_*.tar.gz" -mtime +7 -delete
         echo "[$(date)] Backup complete. Sleeping 24h..."
         sleep 86400
       done
