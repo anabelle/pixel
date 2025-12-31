@@ -30,7 +30,7 @@ This example provides instructions to guide an agent on how to effectively use i
 
 ```ts
 const researchAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: `You are a research assistant with access to search and document tools.
 
   When researching:
@@ -114,7 +114,7 @@ import { ToolLoopAgent, stepCountIs } from 'ai';
 import { weatherTool, calculatorTool } from './tools';
 
 const assistant = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a helpful assistant.',
   tools: {
     weather: weatherTool,
@@ -143,7 +143,7 @@ This TypeScript example configures a `ToolLoopAgent` to parse its output into a 
 import { z } from 'zod';
 
 const analysisAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   output: {
     schema: z.object({
       sentiment: z.enum(['positive', 'negative', 'neutral']),

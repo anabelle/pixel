@@ -30,7 +30,7 @@ This example provides instructions to guide an agent on how to effectively use i
 
 ```ts
 const researchAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: `You are a research assistant with access to search and document tools.
 
   When researching:
@@ -513,7 +513,7 @@ import { ToolLoopAgent, stepCountIs } from 'ai';
 import { weatherTool, calculatorTool } from './tools';
 
 const assistant = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a helpful assistant.',
   tools: {
     weather: weatherTool,
@@ -631,7 +631,7 @@ Instantiate a ToolLoopAgent with basic model configuration and system instructio
 import { ToolLoopAgent } from 'ai';
 
 const myAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a helpful assistant.',
   tools: {
     // Your tools here
@@ -1030,7 +1030,7 @@ This example illustrates how to provide specific, multi-line guidelines for an a
 
 ```ts
 const codeReviewAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: `You are a senior software engineer conducting code reviews.
 
   Your approach:
@@ -1530,7 +1530,7 @@ import { z } from 'zod';
 
 
 const weatherAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     weather: tool({
       description: 'Get the weather in a location (in Fahrenheit)',
@@ -2075,7 +2075,7 @@ import { z } from 'zod';
 import { generateText, tool } from 'ai';
 
 const result = await generateText({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
@@ -2122,7 +2122,7 @@ This TypeScript example shows how to create a `ToolLoopAgent` configured for sto
 
 ```typescript
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a creative storyteller.',
 });
 
@@ -2615,7 +2615,7 @@ This snippet demonstrates how to initialize a `ToolLoopAgent` and set its fundam
 
 ```ts
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions:
     'You are an expert data analyst. You provide clear insights from complex data.',
 });
@@ -3037,7 +3037,7 @@ const hasAnswer: StopCondition<typeof tools> = ({ steps }) => {
 };
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools,
   stopWhen: hasAnswer,
 });
@@ -3496,7 +3496,7 @@ import { ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 
 const ragAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   callOptionsSchema: z.object({
     query: z.string(),
   }),
@@ -3578,7 +3578,7 @@ import { z } from 'zod';
 
 
 const supportAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   callOptionsSchema: z.object({
     userId: z.string(),
     accountType: z.enum(['free', 'pro', 'enterprise']),
@@ -4217,7 +4217,7 @@ This code demonstrates how to initialize a `ToolLoopAgent` with a specified mode
 import { ToolLoopAgent } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a helpful assistant.',
   tools: {
     weather: weatherTool,
@@ -4267,7 +4267,7 @@ import { ToolLoopAgent, stepCountIs, tool } from 'ai';
 import { z } from 'zod';
 
 const weatherAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     weather: tool({
       description: 'Get the weather in a location (in Fahrenheit)',
@@ -4425,7 +4425,7 @@ This TypeScript example configures a `ToolLoopAgent` to parse its output into a 
 import { z } from 'zod';
 
 const analysisAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   output: {
     schema: z.object({
       sentiment: z.enum(['positive', 'negative', 'neutral']),
@@ -4760,7 +4760,7 @@ This TypeScript example shows how to use `InferAgentUIMessage` to infer the UI m
 import { ToolLoopAgent, InferAgentUIMessage } from 'ai';
 
 const weatherAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: { weather: weatherTool },
 });
 
@@ -4780,7 +4780,7 @@ import { ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 
 const supportAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   callOptionsSchema: z.object({
     userId: z.string(),
     accountType: z.enum(['free', 'pro', 'enterprise']),
@@ -4906,7 +4906,7 @@ This snippet demonstrates how to instruct an agent to adhere to specific formatt
 
 ```ts
 const technicalWriterAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: `You are a technical documentation writer.
 
   Writing style:
@@ -5753,7 +5753,7 @@ import { ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 
 const newsAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   callOptionsSchema: z.object({
     userCity: z.string().optional(),
     userRegion: z.string().optional(),
@@ -5818,7 +5818,7 @@ import { ToolLoopAgent } from 'ai';
 import { z } from 'zod';
 
 const supportAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   callOptionsSchema: z.object({
     userId: z.string(),
     accountType: z.enum(['free', 'pro', 'enterprise']),
@@ -6945,7 +6945,7 @@ import { z } from 'zod';
 import { generateText, tool } from 'ai';
 
 const result = await generateText({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
@@ -7799,7 +7799,7 @@ Shows how to modify messages before they are sent to the model using the `prepar
 import { ToolLoopAgent } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     // your tools
   },
@@ -8325,7 +8325,7 @@ import { generateObject, generateText } from 'ai';
 import { z } from 'zod';
 
 async function handleCustomerQuery(query: string) {
-  const model = 'openai/gpt-4o';
+  const model = 'openai/gpt-5-mini';
 
   // First step: Classify the query type
   const { object: classification } = await generateObject({
@@ -10337,7 +10337,7 @@ import { z } from 'zod';
 import { generateText, tool, stepCountIs } from 'ai';
 
 const { text, steps } = await generateText({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
@@ -10633,7 +10633,7 @@ const maxSteps = 10;
 
 while (step < maxSteps) {
   const result = await generateText({
-    model: 'openai/gpt-4o',
+    model: 'openai/gpt-5-mini',
     messages,
     tools: {
       // your tools here
@@ -11464,7 +11464,7 @@ Demonstrates how to instantiate a ToolLoopAgent with specific model, instruction
 import { ToolLoopAgent, createAgentUIStreamResponse } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: 'You are a helpful assistant.',
   tools: { weather: weatherTool, calculator: calculatorTool },
 });
@@ -11644,7 +11644,7 @@ This snippet shows how to set explicit boundaries and rules for an agent, ensuri
 
 ```ts
 const customerSupportAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   instructions: `You are a customer support specialist for an e-commerce platform.
 
   Rules:
@@ -12045,7 +12045,7 @@ import { ToolLoopAgent, tool } from 'ai';
 import { z } from 'zod';
 
 const codeAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     runCode: tool({
       description: 'Execute Python code',
@@ -12919,7 +12919,7 @@ import { ToolLoopAgent, Output, stepCountIs } from 'ai';
 import { z } from 'zod';
 
 const analysisAgent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   output: Output.object({
     schema: z.object({
       sentiment: z.enum(['positive', 'neutral', 'negative']),
@@ -13401,7 +13401,7 @@ const agent = new ToolLoopAgent({
     // Use a stronger model for complex reasoning after initial steps
     if (stepNumber > 2 && messages.length > 10) {
       return {
-        model: 'openai/gpt-4o',
+        model: 'openai/gpt-5-mini',
       };
     }
     // Continue with default settings
@@ -13536,7 +13536,7 @@ Configure stop conditions for agent loop execution using stepCountIs. Controls h
 import { ToolLoopAgent, stepCountIs } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   stopWhen: stepCountIs(20), // Allow up to 20 steps
 });
 ```
@@ -13545,7 +13545,7 @@ const agent = new ToolLoopAgent({
 import { ToolLoopAgent, stepCountIs } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   stopWhen: [
     stepCountIs(20), // Maximum 20 steps
     yourCustomCondition(), // Custom logic for when to stop
@@ -14444,7 +14444,7 @@ Shows how to use a global provider configuration in the AI SDK, allowing model s
 import { streamText } from 'ai';
 
 const result = await streamText({
-  model: 'openai/gpt-4o', // Uses the global provider (defaults to AI Gateway)
+  model: 'openai/gpt-5-mini', // Uses the global provider (defaults to AI Gateway)
   prompt: 'Invent a new holiday and describe its traditions.',
 });
 ```
@@ -14546,7 +14546,7 @@ Demonstrates how to dynamically control which tools are active and available to 
 import { ToolLoopAgent } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: 'openai/gpt-4o',
+  model: 'openai/gpt-5-mini',
   tools: {
     search: searchTool,
     analyze: analyzeTool,
