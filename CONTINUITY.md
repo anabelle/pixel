@@ -45,10 +45,12 @@ Strategic direction for a stable and efficient ecosystem with multi-platform eng
 | External sites | pixel.xx.kg ✅, ln.pixel.xx.kg ✅ | 2025-12-31 |
 
 ## ✅ Recently Completed (December 31, 2025)
-- **Opencode Delegation Fix**: Fixed CLI argument order (message before --file flags) and switched to `openai/gpt-5-mini` model.
-- **Model Configuration**: Updated `.opencode.yaml` and hardcoded `-m` flag in Syntropy for reliable model selection.
+- **API Disconnection Fixed**: Resolved `SqliteError` in LNPixels API by correctly mounting `./data` volume and setting `DB_PATH`. API is now stable.
+- **Opencode Reporting**: Improved `delegateToOpencode` tool to report the last 2k chars of log output (including stderr) so Syntropy can see *why* it failed (e.g. rate limits).
+- **Nginx Noise**: Reduced log noise by setting `access_log off` and `error_log warn`.
+- **Nostr Robustness**: Added recursive filter sanitization to preventing "not an object" errors in `pixel-agent`.
+- **Opencode Delegation Fix**: Fixed CLI argument order and model selection (though rate limits persist).
 - **Submodule Sync**: All submodules committed and pushed to GitHub.
-- **Memory Persistence Fix**: Fixed UUID fallback generators in plugin-nostr to produce valid UUIDs instead of string seeds (PGLite requires uuid type).
 
 ## 📚 Knowledge Base
 - **Treasury Status:** 79,014 sats as of 2025-12-31.
@@ -65,11 +67,11 @@ Strategic direction for a stable and efficient ecosystem with multi-platform eng
   - Query method: `docker exec pixel-agent-1 bun -e "..."` with PGLite
 - **Known Issues:**
   - `pgcrypto` extension warning (non-critical, requires superuser)
-  - Nostr filter format warnings (minor, doesn't affect functionality)
+  - Nostr filter format warnings (minor, fixed in latest push, monitoring)
   - Memory persistence failures in agent logs (needs investigation)
   - Agent healthcheck failing despite agent being operational
   - **Opencode Rate Limit Exceeded:** `gpt-5-mini` hit TPM limit (requested ~119k tokens).
-  - **API Service Crashes:** `SqliteError: unable to open database file` (LNPixels API).
+
 
 ---
 
@@ -88,11 +90,10 @@ Strategic direction for a stable and efficient ecosystem with multi-platform eng
    - **Error**: Requested 118902 tokens when only ~45k remaining in TPM quota.
    - **Action**: Switch Opencode model to one with higher limits (e.g. `claude-3-5-sonnet`) or reduce context window (119k is very large for a single prompt).
 
-3. **API Service Reliability** - `api-1` container crashing with `SqliteError: unable to open database file`.
-   - **Impact**: LNPixels API availability is intermittent, causing `web` and `landing` to be unhealthy.
-   - **Action**: Check volume permissions for `pixels.db` and ensure no other process (like syntropy?) is locking the file exclusively.
+3. **API Service Reliability** - **FIXED**.
+   - **Resolution**: Mounted `./data` directory instead of individual files to allow SQLite WAL files to persist correctly.
 
-2. **Agent Healthcheck** - Container shows `unhealthy` despite `/health` returning `{"status":"OK"}`.
+4. **Agent Healthcheck** - Container shows `unhealthy` despite `/health` returning `{"status":"OK"}`.
    - **Action**: Review Dockerfile healthcheck command or adjust healthcheck criteria in docker-compose.yml.
 
 ### High Priority
