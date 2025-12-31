@@ -14,6 +14,7 @@
   - [x] Sync Volume mounts for shared logs
   - [x] Verify memory persistence across restarts (Fixed Room ID & Type mapping)
   - [x] Humanize Nostr Event Kinds (e.g., Kind 1 -> Text Note) and npub encoding 
+  - [x] Implement Syntropy-to-Nostr bridge tool
 
 # 🗓️ Mid-Term Goals
 - Maintain healthy Pixel ecosystem and automated backups
@@ -45,7 +46,8 @@
 - Agent logs (filtered): recent run command: "bun run build:character && bun ./node_modules/@elizaos/cli/dist/index.js start --character ./character.json --port 3003". No recurring error signatures detected in the sampled logs (200 lines). No stack traces or repeated failures observed.
 - No directive found in Human Inbox; no immediate human tasks to process.
 - No occurrence of the phrase "Perform deep codebase audit" in Short-Term Tasks or elsewhere — therefore no delegation to Opencode required this cycle.
-- Decision: ecosystem is stable. Next autonomous check scheduled in 180 minutes.
+- Nostr bridge tool: Syntropy can post to Nostr via `postToNostr`. It uses a file-based IPC at `/pixel/data/eliza/nostr_bridge.jsonl` which the agent watches.
+- Ecosystem stability: All containers healthy. Neural Archive live.
 
 
 (End of CONTINUITY.md)
