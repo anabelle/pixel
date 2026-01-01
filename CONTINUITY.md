@@ -1,5 +1,5 @@
 ## 📬 Human Inbox
-- Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it and make it useful for the evolution.
+- Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it often and make it useful for the evolution.
 
 ## 🎯 Active Focus
 - PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
@@ -20,8 +20,25 @@
 ## 🗓️ Mid-Term Goals
 This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feedback loop.
 
+## 🔧 Autonomous Refactoring (NEW)
+**Protocol**: At the END of each healthy cycle, process ONE task from `REFACTOR_QUEUE.md`.
+
+**Processing Tasks:**
+- Use `processRefactorQueue(action='check')` to see next available task
+- Use `processRefactorQueue(action='execute', taskId='T0XX')` to run it
+- Update this status after each task completes
+
+**Growing the Queue (weekly or when < 5 tasks remain):**
+- Use `analyzeForRefactoring(target, focusArea)` to scan for issues
+- Use `addRefactorTask(...)` to add new atomic tasks
+- Prioritize: god-objects > missing tests > docs > style
+
+**Current Status**: 32 tasks queued (0 completed)
+**Next Task**: T001 - Delete Temporary Output Files
+
 ## 🌟 Long-Term Vision
 Strategic direction for a stable and efficient ecosystem with multi-platform engagement.
+Clean, modular codebase enabling rapid iteration and autonomous self-improvement.
 
 ## 🔄 Ongoing Monitoring
 - Treasury balance: 79,014 sats. Last checked 2025-12-30.
