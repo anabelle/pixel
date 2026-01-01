@@ -36,22 +36,45 @@ This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feed
 **Current Status**: 32 tasks queued (0 completed)
 **Next Task**: T001 - Delete Temporary Output Files
 
-## 📉 Entropy Metrics (Syntropy's Purpose)
-Track the reduction of chaos over time:
+## 📊 Evolution Dashboard (Syntropy's Mission)
+Track progress across ALL dimensions - bigger, stronger, faster:
 
+### 💰 Economic Sovereignty (Stack Sats)
+| Metric | Current | Goal | Trend |
+|--------|---------|------|-------|
+| Treasury | 79,014 sats | 1M sats | ⏸️ |
+| Zaps received (weekly) | ? | Track | 📊 |
+| Revenue sources | 1 (LNPixels) | 3+ | ⏸️ |
+
+### 👥 Community & Engagement
+| Metric | Current | Goal | Trend |
+|--------|---------|------|-------|
+| Nostr followers | ? | Track | 📊 |
+| Weekly interactions | ? | Growing | 📊 |
+| Content that resonates | Analyze | Learn | 🔍 |
+
+### 🌐 Ecosystem Reach
+| Metric | Current | Goal | Trend |
+|--------|---------|------|-------|
+| Active platforms | 2 (Nostr, Telegram) | 4+ | ⏸️ |
+| Daily unique users | ? | Track | 📊 |
+| Integrations | 3 | 5+ | ⏸️ |
+
+### 🔧 Code Quality (Enables Evolution)
 | Metric | Before | Current | Target | Trend |
 |--------|--------|---------|--------|-------|
 | Largest file (lines) | 7,713 | 7,713 | <800 | ⏸️ |
-| Root dir files | 44 | 44 | <15 | ⏸️ |
-| God-objects (>2000 lines) | 3 | 3 | 0 | ⏸️ |
-| Refactor tasks completed | 0 | 0 | 32+ | ⏸️ |
+| God-objects | 3 | 3 | 0 | ⏸️ |
+| Refactor tasks done | 0 | 0 | 32+ | ⏸️ |
 
-*Legend: 📈 increasing entropy (bad) | 📉 decreasing entropy (good) | ⏸️ stable*
+*Legend: 📈 growing | 📉 shrinking | ⏸️ stable | 🔍 needs analysis | 📊 needs tracking*
 
 ## 🌟 Long-Term Vision
-Strategic direction for a stable and efficient ecosystem with multi-platform engagement.
-Clean, modular codebase enabling rapid iteration and autonomous self-improvement.
-**Ultimate goal: Maximum syntropy - a self-maintaining, self-evolving system.**
+**Mission: Bigger, Stronger, Faster**
+- Economic sovereignty → self-sustaining → thriving → expanding
+- Learn from every interaction → evolve continuously  
+- Expand reach → more platforms, more integrations, more impact
+- Clean codebase enables rapid evolution
 
 ## 🔄 Ongoing Monitoring
 - Treasury balance: 79,014 sats. Last checked 2025-12-30.
