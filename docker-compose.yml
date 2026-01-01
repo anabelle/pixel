@@ -98,6 +98,7 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ./data/eliza:/app/.eliza
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
@@ -157,7 +158,7 @@ services:
   postgres:
     image: postgres:15-alpine
     profiles:
-      - unused  # Won't start by default, use: docker compose --profile unused up postgres
+      - unused # Won't start by default, use: docker compose --profile unused up postgres
     ports:
       - "127.0.0.1:5432:5432"
     environment:

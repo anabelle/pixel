@@ -1,5 +1,6 @@
 ## 📬 Human Inbox
-- Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it often and make it useful for the evolution.
+- [ ] Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it often and make it useful for the evolution.
+- [ ] Twitter Credentials have been added to .env file, use as you wish.
 
 ## 🎯 Active Focus
 - PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
@@ -104,6 +105,8 @@ Track progress across ALL dimensions - bigger, stronger, faster:
 - **Character Build Script**: Created `scripts/build-character.ts` to avoid circular dependencies.
 - **Twitter Disabled**: Commented out `@elizaos/plugin-twitter` until credentials configured.
 - **Documentation Updated**: README, TECH_GUIDE, DEPLOYMENT docs now reflect current architecture.
+- **Database Restoration**: Restored `elizadb_20251231_221157.tar.gz` to persistent volume `./data/eliza`.
+- **Migration Fix**: Temporarily removed `@elizaos/plugin-sql` to resolve `information_schema` migration failure on PGLite.
 
 ## 📚 Knowledge Base
 - **Treasury Status:** 79,014 sats as of 2025-12-30.
