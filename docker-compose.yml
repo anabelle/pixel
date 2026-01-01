@@ -8,12 +8,12 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
+      - ./data/pixels.db:/app/pixels.db
+      - ./data/activity.db:/app/activity.db
       - ./backups:/app/backups
     environment:
       - PORT=3000
       - NODE_ENV=production
-      - DB_PATH=/app/data/pixels.db
     networks:
       - pixel-net
     restart: unless-stopped
@@ -48,7 +48,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3002/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,11 +76,9 @@ services:
       - HOSTNAME=0.0.0.0
     networks:
       - pixel-net
-    volumes:
-      - ./pixel-landing/public:/app/public
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3001/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -100,16 +98,12 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
-      - ./data/eliza:/app/.eliza
-      - ./pixel-landing/public:/app/public
-    user: "1000:1000"
     environment:
       - NODE_ENV=production
       - LNPIXELS_WS_URL=http://api:3000
       - PORT=3003
       - CI=true
       - DATABASE_URL=${DATABASE_URL}
-      - AI_SDK_LOG_WARNINGS=false
     networks:
       - pixel-net
     depends_on:
@@ -163,7 +157,7 @@ services:
   postgres:
     image: postgres:15-alpine
     profiles:
-      - unused # Won't start by default, use: docker compose --profile unused up postgres
+      - unused  # Won't start by default, use: docker compose --profile unused up postgres
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -197,13 +191,11 @@ services:
       - web
       - landing
     restart: unless-stopped
-    command: [ nginx, '-g', 'daemon off; error_log /dev/stderr error;' ]
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost/health || exit 1" ]
+      test: [ "CMD", "wget", "--spider", "-q", "--no-check-certificate", "https://127.0.0.1/" ]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
 
   # Certbot for SSL
   certbot:
@@ -226,13 +218,8 @@ services:
         echo "[$(date)] Starting backup..."
         cp /data/pixels.db /backups/pixels_$(date +%Y%m%d_%H%M%S).db
         cp /data/db.sqlite /backups/agent_$(date +%Y%m%d_%H%M%S).db
-        # Backup Eliza PGLite directory if present
-        if [ -d /data/eliza/.elizadb ]; then
-          tar -czf /backups/elizadb_$(date +%Y%m%d_%H%M%S).tar.gz -C /data eliza/.elizadb
-        fi
         # Keep only last 7 days of backups
         find /backups -name "*.db" -mtime +7 -delete
-        find /backups -name "elizadb_*.tar.gz" -mtime +7 -delete
         echo "[$(date)] Backup complete. Sleeping 24h..."
         sleep 86400
       done

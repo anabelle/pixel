@@ -374,7 +374,7 @@ import { openai } from '@ai-sdk/openai';
 import { generateText, hasToolCall } from 'ai';
 
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   tools: {
     weather: weatherTool,
     finalAnswer: finalAnswerTool,
@@ -1117,7 +1117,7 @@ This example shows how to set the `temperature` parameter to `0` for AI model ca
 
 ```typescript
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   temperature: 0, // Recommended for tool calls
   tools: {
     myTool: tool({
@@ -1250,7 +1250,7 @@ This example shows how to access the raw HTTP request body sent to an AI model p
 
 ```typescript
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Hello, world!',
 });
 
@@ -2248,7 +2248,7 @@ import { generateText } from 'ai';
 async function sequentialActions() {
   // Generate blog post ideas
   const ideasGeneration = await generateText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     prompt: 'Generate 10 ideas for a blog post about making spaghetti.',
   });
 
@@ -2256,7 +2256,7 @@ async function sequentialActions() {
 
   // Pick the best idea
   const bestIdeaGeneration = await generateText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     prompt: `Here are some blog post ideas about making spaghetti:
 ${ideasGeneration}
 
@@ -2267,7 +2267,7 @@ Pick the best idea from the list above and explain why it's the best.`,
 
   // Generate an outline
   const outlineGeneration = await generateText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     prompt: `We've chosen the following blog post idea about making spaghetti:
 ${bestIdeaGeneration}
 
@@ -2993,7 +2993,7 @@ import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 const profileAgent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   instructions: 'Generate realistic person profiles.',
   output: Output.object({
     schema: z.object({
@@ -3060,7 +3060,7 @@ import { openai } from '@ai-sdk/openai';
 import { ToolLoopAgent } from 'ai';
 
 const agent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   instructions: 'You are an agent with access to a weather API.',
   tools: {
     weather: openai.tools.weather({
@@ -3535,7 +3535,7 @@ export async function POST(request: Request) {
   const { messages }: { messages: UIMessage[] } = await request.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     system: 'You are a friendly assistant!',
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(5),
@@ -4101,7 +4101,7 @@ import { z } from 'zod';
 
 
 const profileAgent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   instructions: 'Generate realistic person profiles.',
   output: Output.object({
     schema: z.object({
@@ -4346,7 +4346,7 @@ This code snippet demonstrates how to retrieve and inspect warnings associated w
 
 ```typescript
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Hello, world!',
 });
 
@@ -5005,14 +5005,14 @@ Model: Chicken shawarma has been deleted from your log.
 
 Source: https://v6.ai-sdk.dev/docs/reference/ai-sdk-core/generate-text
 
-Demonstrates how to use the `generateText` function from the `@ai-sdk/openai` and `ai` libraries to create text. It imports necessary modules, calls `generateText` with a specified `gpt-4o` model and a creative prompt, and logs the generated text to the console.
+Demonstrates how to use the `generateText` function from the `@ai-sdk/openai` and `ai` libraries to create text. It imports necessary modules, calls `generateText` with a specified `gpt-5-mini` model and a creative prompt, and logs the generated text to the console.
 
 ```ts
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 
 const { text } = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Invent a new holiday and describe its traditions.',
 });
 
@@ -5134,7 +5134,7 @@ const templates = await client.listResourceTemplates({
 
 Source: https://v6.ai-sdk.dev/docs/reference/ai-sdk-core/custom-provider
 
-This example demonstrates how to create a custom OpenAI provider using `customProvider`. It shows how to override default model settings for specific models like 'gpt-4' and create aliased models with custom configurations, such as 'gpt-4o-reasoning-high', by applying middleware. It also specifies a fallback provider.
+This example demonstrates how to create a custom OpenAI provider using `customProvider`. It shows how to override default model settings for specific models like 'gpt-4' and create aliased models with custom configurations, such as 'gpt-5-mini-reasoning-high', by applying middleware. It also specifies a fallback provider.
 
 ```typescript
 import {
@@ -5163,8 +5163,8 @@ export const myOpenAI = customProvider({
       }),
     }),
     // alias model with custom settings:
-    'gpt-4o-reasoning-high': wrapLanguageModel({
-      model: openai('gpt-4o'),
+    'gpt-5-mini-reasoning-high': wrapLanguageModel({
+      model: openai('gpt-5-mini'),
       middleware: defaultSettingsMiddleware({
         settings: {
           providerOptions: {
@@ -5265,7 +5265,7 @@ import { weatherTool } from '@/tool/weather';
 
 
 export const weatherAgent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   instructions: 'You are a helpful weather assistant.',
   tools: {
     weather: weatherTool,
@@ -5415,7 +5415,7 @@ N/A
 ### Request Example
 ```json
 {
-  "model": "gpt-4o",
+  "model": "gpt-5-mini",
   "provider": "openai",
   "messages": [
     { "role": "user", "content": "Hello!" }
@@ -6017,7 +6017,7 @@ try {
 
 Source: https://v6.ai-sdk.dev/docs/guides/rag-chatbot
 
-This TypeScript snippet updates the Next.js API route handler to include a system prompt for the AI model. The system prompt guides the gpt-4o model to behave as a helpful assistant, prioritize information from tool calls, and respond with 'Sorry, I don't know' if no relevant information is available, thereby refining its conversational behavior.
+This TypeScript snippet updates the Next.js API route handler to include a system prompt for the AI model. The system prompt guides the gpt-5-mini model to behave as a helpful assistant, prioritize information from tool calls, and respond with 'Sorry, I don't know' if no relevant information is available, thereby refining its conversational behavior.
 
 ```typescript
 import { openai } from '@ai-sdk/openai';
@@ -6033,7 +6033,7 @@ export async function POST(req: Request) {
 
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     system: `You are a helpful assistant. Check your knowledge base before answering any questions.
     Only respond to questions using information from tool calls.
     if no relevant information is found in the tool calls, respond, "Sorry, I don't know."`,
@@ -6096,7 +6096,7 @@ import { toDataStreamResponse } from '@ai-sdk/llamaindex';
 export async function POST(req: Request) {
   const { prompt } = await req.json();
 
-  const llm = new OpenAI({ model: 'gpt-4o' });
+  const llm = new OpenAI({ model: 'gpt-5-mini' });
   const chatEngine = new SimpleChatEngine({ llm });
 
   const stream = await chatEngine.chat({
@@ -6440,7 +6440,7 @@ import { openai } from '@ai-sdk/openai';
 import { streamUI } from '@ai-sdk/rsc';
 
 const { value: stream } = await streamUI({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   system: 'you are a friendly assistant!',
   messages,
   initial: <div>Loading...</div>,
@@ -7664,7 +7664,7 @@ Shows how to integrate a custom tool ('getWeather') with the streamUI function. 
 
 ```tsx
 const result = await streamUI({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Get the weather for San Francisco',
   text: ({ content }) => <div>{content}</div>,
   tools: {
@@ -7878,14 +7878,14 @@ const openai = createOpenAI({
 
 Source: https://v6.ai-sdk.dev/docs/ai-sdk-core/prompts
 
-Shows how to include MP3 audio file content for OpenAI GPT-4o audio-preview model processing
+Shows how to include MP3 audio file content for OpenAI gpt-5-mini audio-preview model processing
 
 ```typescript
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 
 const result = await generateText({
-  model: openai('gpt-4o-audio-preview'),
+  model: openai('gpt-5-mini-audio-preview'),
   messages: [
     {
       role: 'user',
@@ -8298,7 +8298,7 @@ const stream = createUIMessageStream({
 
     // Merge another stream from streamText
     const result = streamText({
-      model: openai('gpt-4o'),
+      model: openai('gpt-5-mini'),
       prompt: 'Write a haiku about AI',
     });
 
@@ -8395,7 +8395,7 @@ export async function POST(req: Request) {
   const { messages }: { messages: MyUIMessage[] } = await req.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages(messages),
   });
 
@@ -8592,7 +8592,7 @@ import { z } from 'zod';
 
 
 const agent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
@@ -8689,7 +8689,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages(messages),
   });
 
@@ -9357,7 +9357,7 @@ import { getWeather } from '@/utils/queries';
 import { Weather } from '@/components/weather';
 
 const { value: stream } = await streamUI({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   system: 'you are a friendly assistant!',
   messages,
   text: async function* ({ content, done }) {
@@ -9580,7 +9580,7 @@ import { ToolLoopAgent } from 'ai';
 import { weatherTool } from '@/tool/weather';
 
 export const weatherAgent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   instructions: 'You are a helpful weather assistant.',
   tools: {
     weather: weatherTool,
@@ -9619,7 +9619,7 @@ const { text } = await generateText({
 
 Source: https://v6.ai-sdk.dev/docs/guides/rag-chatbot
 
-This TypeScript code defines an API route handler that uses an AI model ('gpt-4o') to process messages, incorporating custom tools to extend its capabilities. It integrates the previously defined `findRelevantContent` function as a new `getInformation` tool, enabling the AI to query a knowledge base for answers. The handler also includes a `system` prompt to guide the AI's behavior and streams responses back to the user.
+This TypeScript code defines an API route handler that uses an AI model ('gpt-5-mini') to process messages, incorporating custom tools to extend its capabilities. It integrates the previously defined `findRelevantContent` function as a new `getInformation` tool, enabling the AI to query a knowledge base for answers. The handler also includes a `system` prompt to guide the AI's behavior and streams responses back to the user.
 
 ```typescript
 import { createResource } from '@/lib/actions/resources';
@@ -9644,7 +9644,7 @@ export async function POST(req: Request) {
 
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages(messages),
     stopWhen: stepCountIs(5),
     system: `You are a helpful assistant. Check your knowledge base before answering any questions.
@@ -9786,7 +9786,7 @@ export async function POST(req: Request) {
   const { messages }: { messages: MyUIMessage[] } = await req.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages(messages),
   });
 
@@ -9797,7 +9797,7 @@ export async function POST(req: Request) {
       if (part.type === 'start') {
         return {
           createdAt: Date.now(),
-          model: 'gpt-4o',
+          model: 'gpt-5-mini',
         };
       }
 
@@ -10717,7 +10717,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages<CustomUIMessage>(messages, {
       convertDataPart: part => {
         // Convert URL attachments to text
@@ -11099,7 +11099,7 @@ export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     messages: convertToModelMessages(messages),
     abortSignal: req.signal,
   });
@@ -12978,7 +12978,7 @@ import { generateText } from 'ai';
 import fs from 'fs';
 
 const result = await generateText({
-  model: openai('gpt-4o-audio-preview'),
+  model: openai('gpt-5-mini-audio-preview'),
   messages: [
     {
       role: 'user',
@@ -13030,7 +13030,7 @@ Defines the input parameters for configuring a language model or chat API reques
 
 ### Parameters
 #### Request Body
-- **model** (LanguageModel) - Required - The language model to use. Example: openai('gpt-4o')
+- **model** (LanguageModel) - Required - The language model to use. Example: openai('gpt-5-mini')
 - **system** (string) - Required - The system prompt to use that specifies the behavior of the model.
 - **prompt** (string | Array<SystemModelMessage | UserModelMessage | AssistantModelMessage | ToolModelMessage>) - Required - The input prompt to generate the text from.
 - **messages** (Array<SystemModelMessage | UserModelMessage | AssistantModelMessage | ToolModelMessage>) - Required - A list of messages that represent a conversation. Automatically converts UI messages from the useChat hook.
@@ -13328,7 +13328,7 @@ This snippet demonstrates how to use the `experimental_download` property in the
 
 ```javascript
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   experimental_download: async (
     requestedDownloads: Array<{
       url: URL;
@@ -13715,7 +13715,7 @@ const result = await generateText({
 ### `abortSignal` Example (Timeout)
 ```ts
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Invent a new holiday and describe its traditions.',
   abortSignal: AbortSignal.timeout(5000), // 5 seconds
 });
@@ -13727,7 +13727,7 @@ import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   prompt: 'Invent a new holiday and describe its traditions.',
   headers: {
     'Prompt-Id': 'my-prompt-id',
@@ -13788,7 +13788,7 @@ export async function sendMessage(message: string) {
   messages.update([...messages.get(), { role: 'user', content: message }]);
 
   const { value: stream } = await streamUI({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     system: 'you are a friendly assistant!',
     messages: messages.get(),
     text: async function* ({ content, done }) {
@@ -14193,7 +14193,7 @@ export async function POST(req: Request) {
 
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     system: `You are a helpful assistant. Check your knowledge base before answering any questions.
     Only respond to questions using information from tool calls.
     if no relevant information is found in the tool calls, respond, "Sorry, I don't know."`,
@@ -14597,7 +14597,7 @@ import { streamUI } from '@ai-sdk/rsc';
 
 export async function generateResponse(prompt: string) {
   const result = await streamUI({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     prompt,
     text: async function* ({ content }) {
       yield <div>loading...</div>;
@@ -14762,7 +14762,7 @@ import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 const agent = new ToolLoopAgent({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
@@ -15043,7 +15043,7 @@ export async function POST(request) {
   const { messages } = await request.json();
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-5-mini'),
     system: 'you are a friendly assistant!',
     messages,
     tools: {
@@ -15135,7 +15135,7 @@ Demonstrates how to use a custom download function with the `generateText` call.
 
 ```ts
 const result = await generateText({
-  model: openai('gpt-4o'),
+  model: openai('gpt-5-mini'),
   experimental_download: async (
     requestedDownloads: Array<{ url: URL;
       isUrlSupportedByModel: boolean;

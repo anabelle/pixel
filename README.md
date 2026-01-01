@@ -38,7 +38,7 @@ docker compose ps
 The Pixel ecosystem uses a **Hybrid Manager Strategy**:
 - **Monorepo (pnpm)**: `lnpixels`, `pixel-landing` managed by pnpm workspace.
 - **Agent (Bun)**: `pixel-agent` uses Bun runtime with ElizaOS CLI v1.7.0.
-- **Database**: Embedded PGLite (PostgreSQL 17) for agent persistence.
+- **Database**: PostgreSQL 15 for agent persistence (migrated from SQLite).
 - **Orchestration**: `syntropy-core` manages autonomous evolution.
 
 ## 📚 Documentation

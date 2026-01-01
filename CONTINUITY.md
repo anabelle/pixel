@@ -1,53 +1,55 @@
-# 📬 Human Inbox
-- [ ] Use the tool to post to nostr and report your status
- 
-# 🎯 Active Focus
-(Idle) Awaiting new directives — no active short-term tasks.
+## 📬 Human Inbox
+- Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it and make it useful for the evolution.
 
-# 📋 Short-Term Tasks
-- [x] Test post to nostr tool
-- [x] Fix missing pixels issue (Localhost API configuration & Database restoration)
-- [x] Humanize Nostr log output (decode nprofile/nevent)
-- [x] Create GUI for Pixel's memories
-  - [x] Build Neural Archive page (`/memories`)
-  - [x] Integrate Agent internal state (narrative memory dump)
-  - [x] Sync Volume mounts for shared logs
-  - [x] Verify memory persistence across restarts (Fixed Room ID & Type mapping)
-  - [x] Humanize Nostr Event Kinds (e.g., Kind 1 -> Text Note) and npub encoding 
-  - [x] Implement Syntropy-to-Nostr bridge tool
+## 🎯 Active Focus
+- PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
+- Twitter plugin disabled until API credentials are configured.
+- **NEW**: Syntropy→Pixel feedback loop implemented via `readPixelInsights` tool.
 
-# 🗓️ Mid-Term Goals
-- Maintain healthy Pixel ecosystem and automated backups
-- Improve observability for Pixel agent and Syntropy
+## 📋 Short-Term Tasks
+- [x] Migrate agent from SQLite to PostgreSQL.
+- [x] Fix ElizaOS CLI integration with Bun runtime.
+- [x] Disable Twitter plugin (401 errors due to missing credentials).
+- [x] Update documentation across all repos to match reality.
+- [x] Implement Syntropy→Pixel insight reading (readPixelInsights tool).
+- [ ] Test syncAll() function in Syntropy (verify GH_TOKEN auth and submodule sync).
+- [ ] Configure Twitter API credentials when ready to re-enable.
+- [ ] Monitor Nostr plugin stability.
+- [ ] Wait for Pixel to generate self-reflections, then verify insights flow to Syntropy.
 
-# 🌟 Long-Term Vision
-- Stable, autonomous Pixel Oversoul capable of safely handling human directives and automated maintenance
+## 🗓️ Mid-Term Goals
+This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feedback loop.
 
-# 🔄 Ongoing Monitoring
-| Item                | Status                                      |
-|---------------------|---------------------------------------------|
-| Treasury            | 79,014 sats (as of this cycle)              |
-| Pixel Agent         | Up (Healthy)                                 |
-| Pixel Syntropy      | Up                                           |
-| Pixel Nginx         | Up (Healthy)                                 |
-| Pixel Web           | Up (Healthy)                                 |
-| Pixel Landing       | Up (Healthy)                                 |
-| Pixel API           | Up (Healthy, restored DB)                    |
-| Pixel Certbot       | Up                                           |
-| Pixel Backup        | Up                                           |
+## 🌟 Long-Term Vision
+Strategic direction for a stable and efficient ecosystem with multi-platform engagement.
 
-# ✅ Recently Completed
-- [x] Autonomous evolution cycle audit (health, treasury, logs) — no critical issues found. Completed this cycle.
+## 🔄 Ongoing Monitoring
+- Treasury balance: 79,014 sats. Last checked 2025-12-30.
+- Health status: All core containers healthy. Agent running on port 3003.
+- Database: ElizaOS uses embedded PGLite at `/app/.eliza/.elizadb/` inside agent container.
 
-# 📚 Knowledge Base
-- Cycle timestamp: 2025-12-31T00:00:00Z (UTC).
-- Ecosystem container status (checked via Docker API): all primary containers are up and healthy: pixel-agent, pixel-landing, pixel-syntropy, pixel-nginx, pixel-web, pixel-api, pixel-certbot, pixel-backup.
-- Treasury: 79,014 sats (no new transactions since last check).
-- Agent logs (filtered): recent run command: "bun run build:character && bun ./node_modules/@elizaos/cli/dist/index.js start --character ./character.json --port 3003". No recurring error signatures detected in the sampled logs (200 lines). No stack traces or repeated failures observed.
-- No directive found in Human Inbox; no immediate human tasks to process.
-- No occurrence of the phrase "Perform deep codebase audit" in Short-Term Tasks or elsewhere — therefore no delegation to Opencode required this cycle.
-- Nostr bridge tool: Syntropy can post to Nostr via `postToNostr`. It uses a file-based IPC at `/pixel/data/eliza/nostr_bridge.jsonl` which the agent watches.
-- Ecosystem stability: All containers healthy. Neural Archive live.
+## ✅ Recently Completed (December 30, 2025)
+- **Syntropy↔Pixel Feedback Loop**: Added `readPixelInsights` tool allowing Syntropy to read Pixel's self-reflections, learnings, and life milestones from PGLite database.
+- **PostgreSQL Migration**: Moved agent from SQLite to PostgreSQL 15 (note: ElizaOS v1.6+ uses embedded PGLite, not external Docker postgres).
+- **Bun/ElizaOS Integration**: Fixed CLI invocation using local `node_modules/@elizaos/cli`.
+- **Dockerfile Refactor**: Updated for native module support (sharp, onnxruntime).
+- **Character Build Script**: Created `scripts/build-character.ts` to avoid circular dependencies.
+- **Twitter Disabled**: Commented out `@elizaos/plugin-twitter` until credentials configured.
+- **Documentation Updated**: README, TECH_GUIDE, DEPLOYMENT docs now reflect current architecture.
 
-
-(End of CONTINUITY.md)
+## 📚 Knowledge Base
+- **Treasury Status:** 79,014 sats as of 2025-12-30.
+- **Container Health:** All services healthy. Agent health endpoint: http://localhost:3003/health
+- **Agent Stack:**
+  - Runtime: Bun v1.3.5
+  - Framework: ElizaOS Core v1.6.2, CLI v1.7.0
+  - Database: Embedded PGLite (PostgreSQL 17) at `/app/.eliza/.elizadb/`
+  - AI: OpenAI + OpenRouter plugins
+  - Platforms: Telegram, Nostr (Discord and Twitter disabled)
+- **Syntropy→Pixel Integration:**
+  - `readPixelInsights` queries PGLite for: self_reflection, life_milestone, agent_learning memories
+  - Insight types: strengths, weaknesses, narrative evolution, key learnings
+  - Query method: `docker exec pixel-agent-1 bun -e "..."` with PGLite
+- **Known Issues:**
+  - `pgcrypto` extension warning (non-critical, requires superuser)
+  - Nostr filter format warnings (minor, doesn't affect functionality)
