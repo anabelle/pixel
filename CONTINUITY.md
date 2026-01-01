@@ -36,9 +36,22 @@ This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feed
 **Current Status**: 32 tasks queued (0 completed)
 **Next Task**: T001 - Delete Temporary Output Files
 
+## 📉 Entropy Metrics (Syntropy's Purpose)
+Track the reduction of chaos over time:
+
+| Metric | Before | Current | Target | Trend |
+|--------|--------|---------|--------|-------|
+| Largest file (lines) | 7,713 | 7,713 | <800 | ⏸️ |
+| Root dir files | 44 | 44 | <15 | ⏸️ |
+| God-objects (>2000 lines) | 3 | 3 | 0 | ⏸️ |
+| Refactor tasks completed | 0 | 0 | 32+ | ⏸️ |
+
+*Legend: 📈 increasing entropy (bad) | 📉 decreasing entropy (good) | ⏸️ stable*
+
 ## 🌟 Long-Term Vision
 Strategic direction for a stable and efficient ecosystem with multi-platform engagement.
 Clean, modular codebase enabling rapid iteration and autonomous self-improvement.
+**Ultimate goal: Maximum syntropy - a self-maintaining, self-evolving system.**
 
 ## 🔄 Ongoing Monitoring
 - Treasury balance: 79,014 sats. Last checked 2025-12-30.
