@@ -151,7 +151,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 4G
 
   # Postgres Database (UNUSED - ElizaOS v1.6+ uses embedded PGLite)
   # Kept for potential future use or external integrations

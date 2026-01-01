@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-01T22:04:31.400Z","reason":"Stable ecosystem; routine monitoring and observability checks"}
+{"nextRunAt":"2026-01-01T21:44:14.453Z","reason":"Investigate nginx unhealthy and allow time for Opencode retry / human to respond to notification."}

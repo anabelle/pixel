@@ -1,2 +1,2 @@
-provider: openai
-model: gpt-5-mini
+provider: opencode
+model: glm-4.7-free
