@@ -195,7 +195,8 @@ services:
   nginx:
     image: nginx:alpine
     command: [ "nginx", "-g", "daemon off; error_log /dev/null emerg;" ]
-
+    logging:
+      driver: "none"
     ports:
       - "80:80"
       - "443:443"
