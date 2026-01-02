@@ -9,16 +9,16 @@
 
 ## 📊 Queue Status
 
-  | Status | Count | Description |
+   | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 25 | Available for processing |
+| | ⬜ READY | 24 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 7 | Completed successfully |
+| | ✅ DONE | 8 | Completed successfully |
 | | ❌ FAILED | 0 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02T23:27Z (T008)
-**Next Priority**: T009
+**Last Processed**: 2026-01-02T23:34Z (T009)
+**Next Priority**: T010
 
 ---
 
@@ -197,7 +197,7 @@ Completed: 2026-01-02T23:27Z
 
 ---
 
-### T009: Move Utility Scripts 🟡 IN_PROGRESS
+### T009: Move Utility Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
@@ -213,9 +213,11 @@ VERIFY:
 ls /pixel/scripts/utilities/ | wc -l  # Should be 3
 ```
 
+Completed: 2026-01-02T23:34Z
+
 ---
 
-### T010: Move Diagnostics Scripts ⬜ READY
+### T010: Move Diagnostics Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
@@ -228,6 +230,8 @@ mv /pixel/doctor.js /pixel/scripts/diagnostics/
 VERIFY:
 test -f /pixel/scripts/diagnostics/doctor.js && echo "OK"
 ```
+
+Completed: 2026-01-02T23:40Z
 
 ---
 

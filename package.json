@@ -13,7 +13,7 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
-    "doctor": "node doctor.js",
+    "doctor": "node scripts/diagnostics/doctor.js",
     "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\" \"pnpm dev:syntropy\"",
     "dev:full": "npm run doctor && pm2 start ecosystem.config.dev.js --attach",
     "dev:agent": "cd pixel-agent && npx @elizaos/cli@latest dev",

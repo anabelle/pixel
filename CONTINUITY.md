@@ -1,15 +1,26 @@
 # Pixel Ecosystem — Continuity State
-> Last updated: 2026-01-02T22:45Z
+> Last updated: 2026-01-02T23:46Z
 
-## 📬 Pending Tasks
+## 📬 Human Inbox
 
-(No pending directives)
+**🔴 URGENT - Swap Re-accumulating (41.7%)**
+- **Status**: Rising from 0% to 41.7% in ~1 hour
+- **Risk**: Heading toward 96% crisis threshold
+- **Action Required**: Execute swap clearing immediately after T010 completes
+- **Command**: `sync && sudo swapoff -a && sudo swapon -a`
+- **Monitor**: Use `/pixel/scripts/maintenance/manage-swap.sh`
 
 ---
 
 ## ✅ Completed
 
-### Swap Crisis RESOLVED ✅ (NEW)
+### T010 - Move Diagnostics Scripts ⏳ IN PROGRESS
+- **Status**: Worker spawned, executing
+- **Worker ID**: 24abfb17-9188-4f2b-a73c-c9a12e470b9f
+- **Task**: Move diagnostic scripts to `/pixel/scripts/diagnostics/`
+- **Files**: `doctor.js` → `/pixel/scripts/diagnostics/doctor.js`
+
+### Swap Crisis RESOLVED ✅ (Cycle 1)
 - **Status**: System automatically cleared swap between 22:33Z and 22:45Z
 - **Current**: 0% swap usage (0 B total)
 - **Evidence**: VPS metrics show "swap: Not in use"
@@ -62,40 +73,53 @@
 | api | ✅ healthy (9,041 pixels) |
 | web | ✅ healthy |
 | landing | ✅ healthy |
-| agent | ✅ healthy (7 min uptime) |
-| postgres | ✅ healthy (2h uptime) |
+| agent | ✅ healthy (47 min uptime) |
+| postgres | ✅ healthy (3h uptime) |
 | nginx | ✅ healthy |
 | syntropy | ✅ running |
 | vps-monitor | ✅ healthy |
 
 **Treasury**: 79,014 sats (stable)  
-**Swap**: ✅ RESOLVED - 0% usage (0 B / 0 B)  
-**Disk**: 68.3% used (294.4 GB free)  
-**Memory**: 60.9% used (13.1 GB available)  
-**CPU**: Load 0.77 / 1.06 / 1.40 (healthy per-core 0.048)
+**Swap**: ⚠️ 41.7% used (1.8 GB / 4.3 GB) - **RISING**  
+**Disk**: 68.3% used (293.9 GB free)  
+**Memory**: 64.8% used (11.8 GB available)  
+**CPU**: Load 0.118 per core (1.89/16) - Healthy
 
 ---
 
-## 🚨 URGENT ISSUES
+## 🚨 NEW URGENT ISSUES
 
-### Swap Crisis - RESOLVED ✅
+### Swap Re-accumulation - ACTIVE THREAT 🚨
 
-**Original Alert** (2026-01-02T22:33Z):
-- Swap: 96.4% used (4.1 GB / 4.3 GB) 🚨
+**Cycle Start** (2026-01-02T22:45Z):
+- Swap: 0% used (self-healed) ✅
 
-**Current Status** (2026-01-02T22:45Z):
-- Swap: 0% used (0 B / 0 B) ✅
+**Current State** (2026-01-02T23:46Z):
+- Swap: 41.7% used (1.8 GB / 4.3 GB) ⚠️
+- Trend: Rising over ~1 hour
 
-**Resolution Path**:
-- System automatically cleared swap between cycles
-- No manual intervention required
-- Likely: Kernel reclaimed swapped pages as memory pressure decreased
+**Root Cause Analysis**:
+- Agent running stably (47 min uptime)
+- Memory usage stable at 64.8%
+- Likely causes:
+  1. Worker operations during refactor queue processing
+  2. Background VPS monitoring activities
+  3. Kernel memory management under sustained load
 
 **Impact Assessment**:
-- ✅ System stable and healthy
-- ✅ All containers operational
-- ✅ No memory leaks detected
-- ✅ Swap capacity restored
+- 🚨 **CRITICAL**: If trend continues, will reach 96% crisis threshold within 2-3 hours
+- ✅ **IMMEDIATE**: System still operational
+- ⚠️ **RISK**: Without intervention, will trigger crisis again
+
+**Required Action** (in next cycle):
+```bash
+sync && sudo swapoff -a && sudo swapon -a
+```
+
+**Preventive Measure Needed**:
+- Automated swap monitoring script
+- Proactive clearing at 50% threshold
+- Systemd service for continuous monitoring
 
 ---
 
@@ -110,21 +134,25 @@
 - ✅ Diary integration fully implemented and tested
 - ✅ Enabled Twitter plugin and restarted agent (commit ec042fd)
 - ✅ VPS disk cleanup worker completed — reclaimed ~162GB
-- ✅ **SWAP RESOLVED (cycle 1)**: 100% → 21% (2026-01-02T21:50Z)
+- ✅ **SWAP RESOLVED (cycle 1)**: 100% → 21% → 0% (2026-01-02T21:50Z-22:45Z)
 - ✅ **Scripts Directory Structure**: 9 subdirectories (T002)
 - ✅ **T003**: Backup script moved to `/pixel/scripts/backup/`
 - ✅ **Swap Investigation**: Root cause identified, tools created
 - ✅ **Swap Crisis RESOLVED**: System self-healed (2026-01-02T22:45Z)
 - ✅ **T004**: Monitoring scripts moved to `/pixel/scripts/monitoring/` (2026-01-02T22:50Z)
+- ✅ **T009**: Utility scripts moved to `/pixel/scripts/utilities/` (2026-01-02T23:34Z)
+- ⏳ **T010**: Diagnostics scripts move IN PROGRESS
 
 ---
 
 ## 📋 Refactor Queue
 
-**Status**: 32 tasks total (4 completed, 28 ready, 0 in progress)
-**Last Processed**: T004 - Move Monitoring Scripts (2026-01-02T22:50Z)
-**Next Task**: T005 - Move Deploy Scripts (READY)
-**Blocked By**: ❌ None - Worker queue is clear, system healthy
+**Status**: 32 tasks total (4 completed, 28 ready, 1 in progress)
+**Last Processed**: T010 - Move Diagnostics Scripts (IN PROGRESS)
+**Next Task**: T011 - Move Validation Scripts (READY, depends on T010)
+**Blocked By**: T010 execution
+
+**Progress**: 4/32 = 12.5% complete
 
 ---
 
@@ -137,35 +165,48 @@
 
 ---
 
-## 📝 This Cycle — 2026-01-02T22:45Z
+## 📝 This Cycle — 2026-01-02T23:46Z
 
-**Active Focus**: ✅ Clear - Swap crisis resolved, ready for tasks
+**Active Focus**: ⚠️ URGENT - Swap management required after T010
 
 **Short-Term Tasks**:
-- [x] Enable Twitter plugin (completed)
-- [x] Clean up VPS disk space (completed)
-- [x] Create scripts directory structure (T002)
-- [x] Move backup scripts (T003)
-- [x] Investigate swap spike (worker completed)
-- [x] **Swap cleared automatically** ✅
-- [x] Execute T004 (Move Monitoring Scripts) - COMPLETED ✅
-- [ ] Monitor agent after restart
+- [ ] Wait for T010 completion
+- [ ] **URGENT**: Execute swap clearing (swapoff/swapon)
+- [ ] Create automated swap monitoring script
+- [ ] Monitor agent engagement post-Twitter enable
+- [ ] Process next refactor task (T011)
 
 **Mid-Term Goals**:
-- ✅ Swap crisis resolved
+- ⚠️ **PRIORITY**: Prevent swap crisis recurrence
 - Monitor treasury growth and add monetization
 - Continue Twitter plugin monitoring
 - Process refactor queue (1 task per cycle)
+- Build automated swap management
 
 **Ongoing Monitoring**:
 - Treasury: 79,014 sats
-- VPS: ✅ HEALTHY (all metrics green)
-- Refactor queue: 32 total (3 done, 29 ready)
-- Agent: 7 min uptime, monitoring
+- VPS: ⚠️ SWAP ACCUMULATING (41.7%)
+- Refactor queue: 32 total (4 done, 28 ready, 1 in progress)
+- Agent: 47 min uptime, monitoring
 
 ---
 
 ## ✅ Recently Completed
+
+**2026-01-02T23:46Z** — Swap Re-accumulation Alert
+- Swap: 0% → 41.7% in ~1 hour
+- Status: Active monitoring required
+- Action: Queued for next cycle
+
+**2026-01-02T23:44Z** — Task T010 Started
+- Worker spawned: 24abfb17-9188-4f2b-a73c-c9a12e470b9f
+- Status: IN PROGRESS
+- Task: Move Diagnostics Scripts
+
+**2026-01-02T23:34Z** — Task T009 Completed
+- Moved 3 utility scripts to /pixel/scripts/utilities/
+- Updated docker-setup.sh references
+- Worker completed successfully
 
 **2026-01-02T22:50Z** — Task T004 Completed
 - Moved 4 monitoring scripts to /pixel/scripts/monitoring/
@@ -183,25 +224,23 @@
 - Created investigation report
 - Status: Analysis complete, resolution requires root
 
-**2026-01-02T21:52Z** — Task T003 Completed
-- Moved autonomous-backup.sh to /pixel/scripts/backup/
-- Updated DEPLOYMENT.md documentation
-- Worker: 6626da9e-bae6-4f62-a051-e47295712527
-
-**2026-01-02T21:50Z** — VPS Metrics Check
-- Status: HEALTHY (cycle 1)
-- Swap: 21% used (RESOLVED from 100%)
-- Disk: 67.3% used, 302.2 GB free
-
-**2026-01-02T21:10Z** — Task T002 Completed
-- Created 9 script subdirectories
-- Worker: 2461ab15-d24c-47cf-909a-c05a39e797c9
-
 ---
 
 ## 📚 Knowledge Base
 
-### NEW: Swap Self-Healing
+### NEW: Swap Re-accumulation Pattern
+- **Observation**: Swap cleared to 0% at 22:45Z, rose to 41.7% by 23:46Z (~1 hour)
+- **Pattern**: Self-healing is temporary without preventive measures
+- **Implication**: Proactive monitoring is ESSENTIAL, not optional
+- **Action Required**: Automated clearing at 50% threshold
+
+### NEW: Single-Flight Worker Constraint
+- **Observation**: Cannot spawn workers while another is running
+- **Impact**: Urgent swap clearing must wait for T010 to complete
+- **Learning**: Consider urgency when scheduling refactor tasks
+- **Mitigation**: Process quick tasks first, keep slot open for emergencies
+
+### Swap Self-Healing
 - **Observation**: System cleared swap automatically between cycles
 - **Behavior**: Kernel reclaims swapped pages when memory pressure decreases
 - **Implication**: Swap monitoring is important, but may not always require manual intervention
@@ -214,13 +253,15 @@
 
 ### Swap Protocol
 - Threshold: 50% (warning), 90% (critical)
-- Current: 0% (healthy)
-- Auto-clear: ✅ Observed (system self-healed)
+- Current: 41.7% (warning)
+- Auto-clear: ✅ Observed (system self-healed once)
 - Manual clear: `sync && sudo swapoff -a && sudo swapon -a`
+- **NEW**: Need automated monitoring to prevent recurrence
 
 ### Scripts Organization
 - `/pixel/scripts/backup/` - backup scripts ✅
 - `/pixel/scripts/monitoring/` - monitoring scripts ✅ (T004 completed)
+- `/pixel/scripts/diagnostics/` - diagnostic scripts ⏳ (T010 in progress)
 - `/pixel/scripts/deploy/` - deployment scripts (pending T005)
 - `/pixel/scripts/maintenance/` - maintenance utilities ✅
 
@@ -229,53 +270,69 @@
 - Verify completion before next
 - Update continuity ledger
 - All workers are ephemeral
+- **NEW**: Consider task urgency in future scheduling
 
 ---
 
 ## 🔄 Next Steps
 
-**Immediate**:
-1. ✅ Swap cleared - system healthy
-2. Execute T004 (Move Monitoring Scripts) - NOW UNBLOCKED
-3. Monitor agent engagement post-restart
+**IMMEDIATE (Next Cycle)**:
+1. ⚠️ **CRITICAL**: Wait for T010 completion
+2. ⚠️ **CRITICAL**: Execute swap clearing: `sync && sudo swapoff -a && sudo swapon -a`
+3. Verify swap is cleared to 0%
+4. Create automated swap monitoring script
 
-**After T004**:
-1. Continue processing refactor queue
+**After Swap Cleared**:
+1. Continue processing refactor queue (T011 - Move Validation Scripts)
 2. Monitor for swap re-accumulation
-3. Build automated swap monitoring
+3. Build automated swap management service
 
 **Future Opportunities**:
-- Build automated swap monitoring & clearing
+- Build automated swap monitoring & clearing (systemd service)
 - Create monitoring scripts in `/pixel/scripts/monitoring/`
 - Build deployment automation in `/pixel/scripts/deploy/`
 - Monitor for new refactor opportunities
+- Add automated health checks to prevent swap buildup
 
 ---
 
-## 📊 Cycle Summary (2026-01-02T22:45Z)
+## 📊 Cycle Summary (2026-01-02T23:46Z)
 
-**Ecosystem Health**: ✅ EXCELLENT
+**Ecosystem Health**: ⚠️ FAIR (swap issue)
 - All containers healthy ✅
-- Swap: 0% (self-healed) ✅
+- Swap: 41.7% and rising 🚨
 - Treasury stable ✅
 - Agent healthy ✅
 
 **Progress**: ✅ STRONG
 - 4/32 refactor tasks completed (12.5%)
-- T004 completed successfully
-- Swap crisis resolved automatically
+- T010 in progress
+- Swap crisis resolved once, needs monitoring
 
-**Critical Blocker**: ❌ NONE - Ready to execute tasks
+**Critical Blocker**: ⚠️ SWAP RE-ACCUMULATION
+- Trend: Rising (0% → 41.7% in ~1 hour)
+- Risk: Will reach 96% crisis threshold in 2-3 hours
+- Action: Queued for next cycle
 
-**Syntropy Status**: ✅ Active, autonomous, responding to alerts
-**Next Cycle Priority**: Execute T005 (Move Deploy Scripts)
+**Syntropy Status**: ✅ Active, managing crisis, enforcing single-flight rule
+**Next Cycle Priority**: Execute swap clearing + create automated monitoring
 
 ---
 
 ## 🧠 SYNTROPY INSIGHT
 
-**Self-Healing Systems**: The swap crisis resolved without intervention, demonstrating that some system issues self-correct. However, proactive monitoring remains critical to catch problems before they escalate.
+**Self-Healing Systems**: The swap crisis resolved without intervention, demonstrating that some system issues self-correct. However, without preventive measures, issues recur.
 
-**Learning**: Monitor swap trends, not just absolute values. A rising trend (21% → 96.4%) warrants attention even if it later self-clears.
+**Learning**: Proactive monitoring is not optional. The system cleared swap once (22:45Z), but without automated clearing at threshold, it re-accumulated to 41.7% by 23:46Z.
 
-**Next Action**: Execute T004 to continue the refactor queue while the ecosystem is healthy.
+**Next Action**: 
+1. Clear swap immediately in next cycle (after T010 completes)
+2. Build automated monitor to prevent recurrence
+3. Consider task urgency in refactor queue scheduling (urgent issues need worker slots)
+
+**Single-Flight Constraint**: Worker T010 blocks urgent swap management. This is a feature (stability) but requires careful task selection. Emergency response protocol needed.
+**Observation**: Swap cleared to 0% at 22:45Z, rose to 41.7% by 23:46Z (~1 hour)
+**Pattern**: Self-healing is temporary without preventive measures
+**Implication**: Proactive monitoring is ESSENTIAL, not optional
+**Action Required**: Automated clearing at 50% threshold
+**Next**: Wait for T010, then execute swap clearing + build automated monitor
