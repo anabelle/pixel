@@ -1,17 +1,16 @@
 ## 📬 Human Inbox
 - [ ] Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it often and make it useful for the evolution.  
-  - NOTE: Verification and safe enablement in progress. Spawned worker task 1429e885 to verify existing diary module, add a safe wrapper if missing, update docs, and run tests.
+  - STATUS: In progress. Verification in-flight via worker 1429e885-7d8c-4095-b32b-fd1fd78a726e (pending). Worker will check for diary module, add safe wrapper, update docs, and run tests.
 - [ ] Twitter Credentials have been added to .env file, use as you wish.  
-  - NOTE: Re-enable testing in progress. Same worker (1429e885) will attempt to safely enable the Twitter plugin, verify credentials, and ensure graceful failure on 401.
+  - STATUS: In progress. Worker 1429e885-7d8c-4095-b32b-fd1fd78a726e will attempt to safely enable the Twitter plugin, verify credentials, and ensure graceful failure on 401.
 
 ## 🎯 Active Focus
 - **Worker Architecture**: Brain/Hands separation deployed. Syntropy spawns ephemeral workers for code tasks.
-- Worker Task: Verify and enable Pixel diary integration + safely re-enable Twitter plugin (worker id: 1429e885)
+- Worker Task (in-flight): Verify and enable Pixel diary integration + safely re-enable Twitter plugin
+  - Worker ID: 1429e885-7d8c-4095-b32b-fd1fd78a726e (status: pending)
 - PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
-- Twitter plugin disabled until API credentials are configured (credentials now present in .env — worker verifying and re-enabling if safe).
-- **RESOLVED**: `pixel-nginx-1` and `pixel-agent-1` health issues fixed (nginx restart + agent wget install).
-- **REPLACED**: `delegateToOpencode` removed — use `spawnWorker` tool for coding tasks (runs in ephemeral container).
-- Current cycle status: Healthy. All core containers reporting healthy. Worker running for Human Inbox tasks.
+- Twitter plugin currently disabled; credentials present in .env and pending safe re-enable by worker.
+- Current cycle status: Healthy. Core containers reporting Up; two containers report health: starting (nginx, agent) while recovery completes.
 
 ## 📋 Short-Term Tasks
 - [x] Migrate agent from SQLite to PostgreSQL.
@@ -23,7 +22,7 @@
 - [x] Configure Twitter API credentials. (Credentials present; ready for re-enable).
 - [ ] Monitor Nostr plugin stability.
 - [ ] Wait for Pixel to generate self-reflections, then verify insights flow to Syntropy.
-- [ ] Implement Pixel diary integration (pixel-agent/docs/diary) — IN PROGRESS (worker 1429e885).
+- [ ] Implement Pixel diary integration (pixel-agent/docs/diary) — IN PROGRESS (worker 1429e885-7d8c-4095-b32b-fd1fd78a726e).
 - [x] Investigate and remediate pixel-nginx-1 and pixel-agent-1 health issues. All systems go.
 - [x] **FIXED**: Implement Opencode hang prevention (permission prompt detection + auto-abort).
 - [ ] Rebuild syntropy container to deploy hang prevention: `docker compose up -d syntropy --build`
@@ -37,7 +36,7 @@ This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feed
 **Current Status**: 32 tasks queued (0 completed)
 **Next Task**: T001 - Delete Temporary Output Files
 
-Note: Worker executing Human Inbox verification. Refactor processing will occur after worker completes and ecosystem health is re-validated.
+Note: Refactor processing will occur after the in-flight worker completes and the ecosystem health is re-validated.
 
 ## 📊 Evolution Dashboard (Syntropy's Mission)
 
@@ -59,32 +58,33 @@ Note: Worker executing Human Inbox verification. Refactor processing will occur 
 (unchanged)
 
 ## 🔄 Ongoing Monitoring
-- Treasury balance: 79,014 sats. Checked 2026-01-02 (this cycle).
-- Health status (checked 2026-01-02): 
+- Last ecosystem audit: 2026-01-02T18:24:07Z — containers status retrieved.
+- Last treasury check: 2026-01-02T18:24:07Z — 79,014 sats.
+- Container status snapshot:
   - pixel-syntropy-1: Up (healthy)
-  - pixel-agent-1: Up (health: starting)
-  - pixel-api-1: Up (healthy)
-  - pixel-landing-1: Up (healthy)
-  - pixel-web-1: Up (healthy)
   - pixel-nginx-1: Up (health: starting)
-  - pixel-postgres-1: Up (healthy)
+  - pixel-agent-1: Up (health: starting)
+  - pixel-web-1: Up (healthy)
+  - pixel-landing-1: Up (healthy)
+  - pixel-api-1: Up (healthy)
   - pixel-certbot-1: Up
+  - pixel-postgres-1: Up (healthy)
   - pixel-backup-1: Up
-- Database: Agent uses external PostgreSQL (`pixel-postgres-1`) via `POSTGRES_URL` (pgvector enabled).
+  - pixel-worker-logs-1: Up
 
 ## ✅ Recently Completed (2026-01-02)
-- **Worker Architecture deployed**: Brain/Hands separation - Syntropy spawns ephemeral worker containers for code tasks.
-- **Removed delegateToOpencode**: Replaced with `spawnWorker` tool (runs Opencode in isolated container).
-- **Headless safeguards**: stdin disabled, 45-min timeout, CI=true for non-interactive mode.
-- Performed ecosystem audit (containers status) and agent log read.
-- Checked treasury balance (79,014 sats).
+- Performed ecosystem audit (containers status) and agent log read in this cycle.
+- Checked treasury balance (79,014 sats) in this cycle.
+- Worker architecture deployed: Brain/Hands separation - Syntropy spawns ephemeral worker containers for code tasks.
 
 ## 📚 Knowledge Base
-- **Treasury Status:** 79,014 sats as of 2026-01-02 (this cycle).
-- **Containers:** All healthy. Worker containers are ephemeral (spawn on demand, die after task).
-- **Worker Tools:** Use `spawnWorker` for coding tasks, `checkWorkerStatus` to monitor, `readWorkerLogs` to view output.
-- **Next steps:** 
-  - Wait for worker (1429e885) to complete verification of diary integration and Twitter plugin enablement.
-  - After worker completes and returns results, process ONE refactor task from queue if ecosystem health is stable.
-  - Test syncAll() in next cycle and monitor Nostr plugin.
+- **Treasury Status:** 79,014 sats as of 2026-01-02T18:24:07Z.
+- **Worker Status:** Worker 1429e885-7d8c-4095-b32b-fd1fd78a726e is pending; assigned to verify diary integration and safely re-enable Twitter.
+- **Containers:** All up. `pixel-nginx-1` and `pixel-agent-1` currently report health: starting (expected to stabilize shortly).
+- **Next steps:**
+  1. Wait for worker 1429e885-7d8c-4095-b32b-fd1fd78a726e to complete verification of diary integration and Twitter plugin enablement.
+  2. After worker completes, re-run ecosystem audit and then process ONE refactor task from queue (T001) if system stable.
+  3. Schedule next Syntropy run based on monitoring cadence below.
 
+## ⏱️ Scheduling
+- Proposed next run: 30 minutes — to allow pending worker time to finish and to re-check container health.

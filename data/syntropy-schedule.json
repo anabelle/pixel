@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-02T18:54:34.702Z","reason":"Worker verification for diary + Twitter plugin in progress; monitor results and process refactor once healthy."}
+{"nextRunAt":"2026-01-02T19:20:36.234Z","reason":"Allow in-flight worker to complete diary + Twitter verification; re-check container health before refactor."}
