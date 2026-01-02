@@ -160,7 +160,7 @@ Completed: 2026-01-02T23:08Z
 
 ---
 
-### T007: Move Setup Scripts ⬜ READY
+### T007: Move Setup Scripts 🟡 IN_PROGRESS
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
