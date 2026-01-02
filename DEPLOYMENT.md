@@ -53,7 +53,7 @@ docker compose up -d --build
 ### Health Monitoring
 The ecosystem includes a unified status tool:
 ```bash
-./report-status.js # Provides System stats + PM2 (if used) + API health
+./scripts/monitoring/report-status.js # Provides System stats + PM2 (if used) + API health
 ```
 
 ### Automated Backups

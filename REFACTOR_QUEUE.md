@@ -27,8 +27,14 @@
 1. **One task per cycle**: Only attempt ONE task from this queue per Syntropy cycle
 2. **Spawn Worker**: Use `spawnWorker` with the task's `INSTRUCTIONS` block (workers run Opencode in ephemeral containers)
 3. **Verify before marking done**: Run the `VERIFY` command if provided
-4. **Update status**: After completion, update the task status in this file
-5. **Don't skip ahead**: Tasks may have dependencies, process in order unless marked parallel-safe
+4. **Update ALL references**: When moving/renaming files:
+   - `grep -rn "filename" /pixel --include="*.sh" --include="*.yml" --include="*.md" --include="*.json"`
+   - Update every script, config, and doc that references the old path
+   - This includes: docker-compose.yml, *.sh scripts, DEPLOYMENT.md, AGENTS.md, README.md, etc.
+5. **Documentation is mandatory**: Every file move MUST update related documentation
+6. **No breaking changes**: If a reference can't be updated, DON'T move the file
+7. **Update status**: After completion, update the task status in this file
+8. **Don't skip ahead**: Tasks may have dependencies, process in order unless marked parallel-safe
 
 ---
 

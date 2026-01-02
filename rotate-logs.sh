@@ -5,7 +5,7 @@ echo "================================="
 
 # Rotate server monitor logs
 echo "📝 Rotating server monitor logs..."
-node server-monitor.js --rotate-logs
+node scripts/monitoring/server-monitor.js --rotate-logs
 
 # Check PM2 logs size and rotate if needed
 echo ""
