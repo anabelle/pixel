@@ -156,7 +156,7 @@ while true; do
   # This prevents Syntropy from reading partial/corrupted JSON
   mv /data/vps-metrics.tmp "${METRICS_FILE}"
   
-  echo "[vps-monitor] $(date -u +%H:%M:%S) Updated (${COLLECT_DURATION}s)"
+  # Silent operation - no per-update logging
   
   sleep "${METRICS_INTERVAL}"
 done

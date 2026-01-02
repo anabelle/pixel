@@ -311,6 +311,8 @@ services:
   vps-monitor:
     image: alpine:latest
     container_name: pixel-vps-monitor-1
+    logging:
+      driver: "none"
     volumes:
       # Read-only access to kernel interfaces
       - /proc:/host/proc:ro # CPU, memory, uptime
