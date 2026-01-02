@@ -127,25 +127,6 @@ services:
         limits:
           memory: 2G
 
-  # Watchdog - monitors agent health and auto-recovers from DB corruption
-  watchdog:
-    image: alpine:latest
-    volumes:
-      - ./scripts/watchdog.sh:/watchdog.sh:ro
-      - ./data/eliza:/data
-    entrypoint: ["/bin/sh", "/watchdog.sh"]
-    environment:
-      - CHECK_INTERVAL=60
-    networks:
-      - pixel-net
-    depends_on:
-      - agent
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-
   # Syntropy Core (AI Orchestration)
   syntropy:
     build:
