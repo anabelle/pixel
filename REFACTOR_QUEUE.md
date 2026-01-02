@@ -9,16 +9,16 @@
 
 ## 📊 Queue Status
 
-| Status | Count | Description |
+ | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 27 | Available for processing |
+| ⬜ READY | 26 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 5 | Completed successfully |
+| ✅ DONE | 6 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T005)
-**Next Priority**: T006
+**Last Processed**: 2026-01-02 (T006)
+**Next Priority**: T007
 
 ---
 
@@ -140,7 +140,7 @@ test -f /pixel/scripts/deploy/deploy-production.sh && echo "OK"
 
 ---
 
-### T006: Move Maintenance Scripts ⬜ READY
+### T006: Move Maintenance Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
@@ -154,6 +154,8 @@ mv /pixel/rotate-logs.sh /pixel/scripts/maintenance/
 
 VERIFY:
 ls /pixel/scripts/maintenance/ | wc -l  # Should be 3
+
+Completed: 2026-01-02T23:08Z
 ```
 
 ---
