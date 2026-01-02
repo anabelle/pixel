@@ -40,7 +40,7 @@ Credentials configured in `.env`. Plugin needs to be enabled in `character.json`
 ## 🔧 Recent Fixes (2026-01-02)
 
 - ✅ Fixed `pixels.db` empty bug — API now loads 9,041 pixels
-- ✅ Silenced nginx logs (crit level)
+- ✅ Nginx logs completely disabled (`/dev/null emerg`)
 - ✅ Implemented VPS metrics collector (v2.0)
 - ✅ Worker volume mounts fixed (`HOST_PIXEL_ROOT`)
 - ✅ PostgreSQL migration complete
