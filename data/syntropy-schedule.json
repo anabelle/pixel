@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-02T20:47:19.599Z","reason":"Monitor VPS swap and disk cleanup after enabling Twitter plugin; follow-up check for worker result and performance impact."}
+{"nextRunAt":"2026-01-02T21:08:53.581Z","reason":"Cleanup worker running to reduce swap/disk usage; re-check metrics and worker status after cleanup"}
