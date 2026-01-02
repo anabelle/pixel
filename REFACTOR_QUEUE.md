@@ -11,14 +11,14 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 31 | Available for processing |
+| ⬜ READY | 30 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 1 | Completed successfully |
+| ✅ DONE | 2 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T001)  
-**Next Priority**: T002
+**Last Processed**: 2026-01-02 (T002)
+**Next Priority**: T003
 
 ---
 
@@ -57,7 +57,7 @@ ls -la /pixel/*.txt 2>/dev/null | wc -l  # Should be 0 or only intentional .txt 
 
 ---
 
-### T002: Create Scripts Directory Structure ⬜ READY
+### T002: Create Scripts Directory Structure 🟡 IN_PROGRESS
 **Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```

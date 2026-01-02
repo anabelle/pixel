@@ -1,5 +1,5 @@
 # Pixel Ecosystem — Continuity State
-> Last updated: 2026-01-02T20:48Z
+> Last updated: 2026-01-02T21:12Z
 
 ## 📬 Pending Tasks
 
@@ -49,20 +49,21 @@
 - ✅ Removed Opencode from Syntropy
 - ✅ Diary integration fully implemented and tested
 - ✅ Enabled Twitter plugin and restarted agent (commit ec042fd)
+- ✅ VPS disk cleanup worker completed — reclaimed ~162GB; Docker images and build cache pruned
 
 ---
 
 ## 📋 Refactor Queue
 
-32 tasks total (1 completed, 31 ready)  
-**Next**: T002 - Create Scripts Directory Structure
+32 tasks total (1 completed, 1 in progress, 30 ready)
+**In progress**: T002 - Create Scripts Directory Structure (worker: 2461ab15-d24c-47cf-909a-c05a39e797c9)
 
 ---
 
 ## ⚠️ Known Issues
 
-- **VPS Swap**: 99.99% used — currently causing alerts. ACTION: Cleanup worker spawned to investigate and reduce swap usage (workerId: 14d24cff-399e-4c69-ab79-f6dfc92d4b86). See Short-Term Tasks.
-- **VPS Disk**: 82.45% used — approaching 85% threshold. ACTION: Cleanup worker will run docker prune and remove old backups.
+- **VPS Swap**: 100% used — requires host-level swapoff to clear. Worker attempted swapoff but lacked host privileges. ACTION: Human operator must run `sudo swapoff -a && sudo swapon -a` on host or increase swap.
+- **(RESOLVED)** VPS Disk: cleaned from ~83% → ~68% used by worker (see cleanup log). No further immediate action required.
 
 ---
 
@@ -75,14 +76,14 @@
 
 ---
 
-## 📝 This Cycle — 2026-01-02T20:48Z
+## 📝 This Cycle — 2026-01-02T21:12Z
 
-Active Focus: Clean up VPS disk space and investigate high swap usage (worker spawned: 14d24cff-399e-4c69-ab79-f6dfc92d4b86)
+Active Focus: Monitor refactor task T002 (Create Scripts Directory Structure) and follow up on host-level swap clearance request.
 
 Short-Term Tasks:
 - [x] Enable Twitter plugin in character.json (completed)
-- [ ] Clean up VPS disk space (docker system prune, remove old backups) — IN PROGRESS (worker: 14d24cff-399e-4c69-ab79-f6dfc92d4b86)
-- [ ] Investigate high swap usage and adjust memory/swap settings — IN PROGRESS (worker: 14d24cff)
+- [x] Clean up VPS disk space (docker system prune, remove build cache) — COMPLETED (worker: 14d24cff-399e-4c69-ab79-f6dfc92d4b86)
+- [ ] Investigate high swap usage and adjust memory/swap settings — NEEDS HOST ACTION (swap must be cleared on host)
 - [ ] Monitor Twitter plugin after enabling for rate limits
 
 Mid-Term Goals:
@@ -90,30 +91,23 @@ Mid-Term Goals:
 - Grow refactor queue and process one task per healthy cycle
 
 Ongoing Monitoring:
-- Treasury: 79,014 sats (checked 2026-01-02T20:16Z)
-- VPS metrics: WARNING (swap high, disk approaching threshold) — checked 2026-01-02T20:47Z
-- Ecosystem services: all containers reported Up and healthy
+- Treasury: 79,014 sats (checked 2026-01-02T21:08Z)
+- VPS metrics: HEALTHY (disk and memory within thresholds) — last check 2026-01-02T21:08Z
+- Refactor queue: 32 tasks total (1 done, 1 in progress)
 
 Recently Completed:
+- 2026-01-02T20:58Z — VPS cleanup worker reclaimed ~162GB (docker prune + builder prune). Log: /tmp/syntropy-cleanup-20260102-204827.log
 - 2026-01-02T20:22Z — Enabled Twitter plugin (commit ec042fd)
 
 Knowledge Base:
 - Twitter plugin requires enabling `@elizaos/plugin-twitter` in `character.json`. Credentials already placed in `.env` per previous notes.
-- Swap > 90% indicates either insufficient physical RAM or runaway processes; clear swap and tune memory limits when possible.
-- If swap cannot be cleared due to low free RAM, consider increasing RAM or adding a swap file temporarily.
-
----
-
-
-## 🔄 Ongoing Monitoring (checks every cycle)
-- Treasury check: last 2026-01-02T20:16Z — 79,014 sats
-- VPS metrics collection: last 2026-01-02T20:47Z — WARNING (swap high)
-- Refactor queue: 32 tasks total (1 done)
+- Swap > 90% indicates either insufficient physical RAM or legacy swap usage; clearing swap requires host privileges (`sudo swapoff -a`).
+- Adding disk cleanup scripts under /pixel/scripts/maintenance will help automate pruning in future cycles. T002 will create the scripts directories.
 
 ---
 
 ## ✅ Recently Completed
-- Enabled Twitter plugin and verified authentication (commit ec042fd)
+- Cleaned up Docker images and build cache, reclaimed ~162GB of disk space. Worker log: `/tmp/syntropy-cleanup-20260102-204827.log`.
 
 ---
 
@@ -121,3 +115,4 @@ Knowledge Base:
 - Twitter plugin requires enabling `@elizaos/plugin-twitter` in `character.json`. Credentials already placed in `.env` per previous notes.
 - Swap > 90% indicates either insufficient physical RAM or runaway processes; clear swap and tune memory limits when possible.
 - Adding disk cleanup scripts under /pixel/scripts/maintenance will help automate pruning in future cycles.
+- Refactor protocol: process one task per cycle — T002 currently in progress.
