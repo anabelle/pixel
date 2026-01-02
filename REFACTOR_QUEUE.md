@@ -17,8 +17,8 @@
 | | ❌ FAILED | 0 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02T23:14Z (T007)
-**Next Priority**: T008
+**Last Processed**: 2026-01-02T23:27Z (T008)
+**Next Priority**: T009
 
 ---
 
@@ -179,7 +179,7 @@ Completed: 2026-01-02T23:14Z
 
 ---
 
-### T008: Move Recovery Scripts ⬜ READY
+### T008: Move Recovery Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
@@ -192,6 +192,8 @@ mv /pixel/emergency-recovery.sh /pixel/scripts/recovery/
 VERIFY:
 test -f /pixel/scripts/recovery/emergency-recovery.sh && echo "OK"
 ```
+
+Completed: 2026-01-02T23:27Z
 
 ---
 

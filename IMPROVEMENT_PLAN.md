@@ -92,7 +92,7 @@ scripts/
 │   ├── report-status.js
 │   └── server-monitor.js
 ├── recovery/
-│   └── emergency-recovery.sh
+│   └── emergency-recovery.sh ✅ (moved)
 ├── setup/
 │   ├── docker-setup.sh
 │   ├── init-ssl.sh
