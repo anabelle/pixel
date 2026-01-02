@@ -274,6 +274,19 @@ services:
           memory: 4G
           cpus: "2"
 
+  # Worker log tailer (makes worker output visible in `docker compose logs -f`)
+  # This tails the shared log file that every worker appends to.
+  worker-logs:
+    image: alpine:latest
+    volumes:
+      - .:/pixel
+    working_dir: /pixel
+    command: >-
+      /bin/sh -c 'mkdir -p /pixel/logs && touch /pixel/logs/opencode_live.log && tail -n 0 -F /pixel/logs/opencode_live.log'
+    restart: unless-stopped
+    networks:
+      - pixel-net
+
 networks:
   pixel-net:
     driver: bridge
