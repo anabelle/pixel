@@ -11,14 +11,14 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 28 | Available for processing |
+| ⬜ READY | 27 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 4 | Completed successfully |
+| ✅ DONE | 5 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T004)
-**Next Priority**: T004
+**Last Processed**: 2026-01-02 (T005)
+**Next Priority**: T006
 
 ---
 
@@ -123,7 +123,7 @@ ls /pixel/scripts/monitoring/ | wc -l  # Should be 4
 
 ---
 
-### T005: Move Deploy Scripts ⬜ READY
+### T005: Move Deploy Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
