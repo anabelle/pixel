@@ -7,7 +7,6 @@
 ## 🎯 Active Focus
 - **Worker Architecture**: Brain/Hands separation deployed. Syntropy spawns ephemeral workers for code tasks.
 - Worker Task (in-flight): Verify and enable Pixel diary integration + safely re-enable Twitter plugin
-  - Worker ID: 1429e885-7d8c-4095-b32b-fd1fd78a726e (status: pending)
 - PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
 - Twitter plugin currently disabled; credentials present in .env and pending safe re-enable by worker.
 - Current cycle status: Healthy. Core containers reporting Up; two containers report health: starting (nginx, agent) while recovery completes.
@@ -79,10 +78,5 @@ Note: Refactor processing will occur after the in-flight worker completes and th
 - **Treasury Status:** 79,014 sats as of 2026-01-02T18:24:07Z.
 - **Worker Status:** Worker 1429e885-7d8c-4095-b32b-fd1fd78a726e is pending; assigned to verify diary integration and safely re-enable Twitter.
 - **Containers:** All up. `pixel-nginx-1` and `pixel-agent-1` currently report health: starting (expected to stabilize shortly).
-- **Next steps:**
-  1. Wait for worker 1429e885-7d8c-4095-b32b-fd1fd78a726e to complete verification of diary integration and Twitter plugin enablement.
-  2. After worker completes, re-run ecosystem audit and then process ONE refactor task from queue (T001) if system stable.
-  3. Schedule next Syntropy run based on monitoring cadence below.
-
 ## ⏱️ Scheduling
 - Proposed next run: 30 minutes — to allow pending worker time to finish and to re-check container health.
