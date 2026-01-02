@@ -11,14 +11,14 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 30 | Available for processing |
+| ⬜ READY | 29 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 2 | Completed successfully |
+| ✅ DONE | 3 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T002)
-**Next Priority**: T003
+**Last Processed**: 2026-01-02 (T003)
+**Next Priority**: T004
 
 ---
 
@@ -80,7 +80,7 @@ ls -d /pixel/scripts/*/ | wc -l  # Should be 9
 
 ---
 
-### T003: Move Backup Scripts 🟡 IN_PROGRESS
+### T003: Move Backup Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 

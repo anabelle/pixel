@@ -58,7 +58,7 @@ The ecosystem includes a unified status tool:
 
 ### Automated Backups
 Databases are stored in `./data/`.
-- **Automated**: `./autonomous-backup.sh` (runs via cron or Syntropy)
+- **Automated**: `./scripts/backup/autonomous-backup.sh` (runs via cron or Syntropy)
 - **Manual**: `cp data/pixels.db backups/pixels-$(date +%Y%m%d).db`
 
 ## 🛡️ Deployment Safety Rules

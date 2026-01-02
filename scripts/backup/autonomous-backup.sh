@@ -1,6 +1,6 @@
 #!/bin/bash
 # Autonomous backup system
-# Run daily via cron: 0 2 * * * /home/pixel/autonomous-backup.sh
+# Run daily via cron: 0 2 * * * /home/pixel/scripts/backup/autonomous-backup.sh
 
 BACKUP_DIR="/home/pixel/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
