@@ -9,7 +9,7 @@ This guide covers the procedures for deploying and maintaining the Pixel ecosyst
 ssh pixel@your-vps
 git clone --recursive https://github.com/anabelle/pixel.git
 cd pixel
-./vps-bootstrap.sh  # Installs Docker, Node, Bun, and configures groups
+./scripts/setup/vps-bootstrap.sh  # Installs Docker, Node, Bun, and configures groups
 exit # Logout and login to apply group changes
 ```
 
