@@ -197,7 +197,7 @@ Completed: 2026-01-02T23:27Z
 
 ---
 
-### T009: Move Utility Scripts ⬜ READY
+### T009: Move Utility Scripts 🟡 IN_PROGRESS
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 

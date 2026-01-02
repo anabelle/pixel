@@ -13,7 +13,7 @@ if [ -f "lnpixels/api/pixels.db" ]; then
     echo "Copied to data/pixels.db"
 elif [ -f "pixels.json" ]; then
     echo "No database found, but pixels.json exists."
-    echo "You should run 'node restore_pixels.js pixels.json data/pixels.db' manually if needed."
+    echo "You should run 'node ../utilities/restore_pixels.js pixels.json data/pixels.db' manually if needed."
 else
     echo "No data found. Starting fresh."
 fi
