@@ -117,7 +117,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3003/health"]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3003/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -148,6 +148,9 @@ services:
       - LOG_PATH=/pixel/logs/agent.log
       - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
       - HOME=/tmp
+      # HOST_PIXEL_ROOT is the absolute path on the host machine.
+      # Syntropy passes this to docker compose when spawning workers.
+      - HOST_PIXEL_ROOT=${HOST_PIXEL_ROOT:-${PWD}}
       # Git authentication via Personal Access Token
       - GH_TOKEN=${GH_TOKEN}
     networks:
@@ -178,7 +181,7 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d pixel_agent"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d pixel_agent" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -247,12 +250,15 @@ services:
       context: ./syntropy-core
       dockerfile: Dockerfile.worker
     profiles:
-      - worker  # Not started by default
+      - worker # Not started by default
     user: "1000:1000"
     group_add:
       - "${DOCKER_GID:-999}"
     volumes:
-      - .:/pixel
+      # IMPORTANT: Use HOST_PIXEL_ROOT to specify the absolute host path.
+      # When Syntropy spawns workers via docker socket, relative paths (.) resolve
+      # to the container's PWD, not the host's. This breaks volume mounts.
+      - ${HOST_PIXEL_ROOT:-.}:/pixel
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
@@ -267,7 +273,7 @@ services:
       - .env
     networks:
       - pixel-net
-    restart: "no"  # Ephemeral - no restart policy
+    restart: "no" # Ephemeral - no restart policy
     deploy:
       resources:
         limits:
