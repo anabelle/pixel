@@ -9,16 +9,16 @@
 
 ## 📊 Queue Status
 
- | Status | Count | Description |
+  | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 26 | Available for processing |
-| 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 6 | Completed successfully |
-| ❌ FAILED | 0 | Failed, needs human review |
-| ⏸️ BLOCKED | 0 | Waiting on dependency |
+| | ⬜ READY | 25 | Available for processing |
+| | 🟡 IN_PROGRESS | 0 | Currently being worked on |
+| | ✅ DONE | 7 | Completed successfully |
+| | ❌ FAILED | 0 | Failed, needs human review |
+| | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T006)
-**Next Priority**: T007
+**Last Processed**: 2026-01-02T23:14Z (T007)
+**Next Priority**: T008
 
 ---
 
@@ -160,7 +160,7 @@ Completed: 2026-01-02T23:08Z
 
 ---
 
-### T007: Move Setup Scripts 🟡 IN_PROGRESS
+### T007: Move Setup Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
@@ -174,6 +174,8 @@ mv /pixel/vps-bootstrap.sh /pixel/scripts/setup/
 VERIFY:
 ls /pixel/scripts/setup/ | wc -l  # Should be 2+ (init-ssl.sh, setup-local-docker.sh may already be there)
 ```
+
+Completed: 2026-01-02T23:14Z
 
 ---
 
