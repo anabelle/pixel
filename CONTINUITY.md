@@ -22,10 +22,8 @@
 - [x] Configure Twitter API credentials. (Credentials present; ready for re-enable).
 - [ ] Monitor Nostr plugin stability.
 - [ ] Wait for Pixel to generate self-reflections, then verify insights flow to Syntropy.
-- [ ] Implement Pixel diary integration (pixel-agent/docs/diary) — IN PROGRESS (worker 1429e885-7d8c-4095-b32b-fd1fd78a726e).
 - [x] Investigate and remediate pixel-nginx-1 and pixel-agent-1 health issues. All systems go.
 - [x] **FIXED**: Implement Opencode hang prevention (permission prompt detection + auto-abort).
-- [ ] Rebuild syntropy container to deploy hang prevention: `docker compose up -d syntropy --build`
 
 ## 🗓️ Mid-Term Goals
 This week: Stabilize agent runtime, monitor PostgreSQL performance, observe feedback loop. Also: resolve nginx health and enable Twitter integration safely.
