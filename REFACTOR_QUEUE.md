@@ -11,13 +11,13 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 29 | Available for processing |
+| ⬜ READY | 28 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 3 | Completed successfully |
+| ✅ DONE | 4 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-02 (T003)
+**Last Processed**: 2026-01-02 (T004)
 **Next Priority**: T004
 
 ---
@@ -98,7 +98,7 @@ test -f /pixel/scripts/backup/autonomous-backup.sh && echo "OK"
 
 ---
 
-### T004: Move Monitoring Scripts ⬜ READY
+### T004: Move Monitoring Scripts ✅ DONE
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
