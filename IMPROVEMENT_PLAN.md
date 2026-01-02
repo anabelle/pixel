@@ -355,18 +355,18 @@ The main loop in `index.ts` could benefit from:
 ### 6.1 Docker Compose Cleanup
 
 **Current Issues**:
-- Postgres service is marked as `unused` but still defined
+- Postgres is required for agent memory; ensure docs/config match reality
 - Comments indicate technical debt
 - Some services share `.env` but only need subset
 
 **Recommendations**:
 
-1. **Remove unused postgres service** or move to separate compose file:
+1. **Keep postgres service, but make it explicit and consistent**:
 ```yaml
-# docker-compose.external-db.yml
+# postgres (agent memory DB)
 services:
   postgres:
-    image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
     ...
 ```
 

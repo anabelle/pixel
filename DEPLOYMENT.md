@@ -25,7 +25,7 @@ nano .env
 - `OPENROUTER_API_KEY`: Multi-model AI routing
 - `NAKAPAY_API_KEY`: Lightning Network payments
 
-**Note:** `DATABASE_URL` is configured but ElizaOS v1.6+ uses **embedded PGLite** (PostgreSQL 17) at `/app/.eliza/.elizadb/` inside the agent container. The Docker `postgres` service is currently unused.
+**Database Note:** This repo runs the ElizaOS agent on external PostgreSQL via `POSTGRES_URL` (Compose service `pixel-postgres`). The Postgres image includes `pgvector` so embedding/memory migrations can run cleanly.
 - `NAKAPAY_API_KEY`: Lightning Network payments
 - `TELEGRAM_BOT_TOKEN`: Telegram bot integration
 - `DISCORD_API_TOKEN` / `DISCORD_APPLICATION_ID`: Discord bot integration
@@ -88,7 +88,7 @@ If Nginx fails to start due to SSL, verify the paths in `nginx/nginx.conf` and e
 | **Canvas** | `pixel-web` | 3002 | Collaborative art UI |
 | **Agent** | `pixel-agent` | 3003 | ElizaOS social intelligence |
 | **Syntropy**| `pixel-syntropy` | - | AI Orchestration & Self-Evolution |
-| **PostgreSQL** | `pixel-postgres` | 5432 | ⚠️ UNUSED - Agent uses embedded PGLite |
+| **PostgreSQL** | `pixel-postgres` | 5432 | Agent memory DB (pgvector enabled) |
 | **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
 
 For deep technical details on plugin development or local builds, see the **[Technical Guide](./docs/TECH_GUIDE.md)**.

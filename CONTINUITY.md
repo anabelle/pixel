@@ -67,7 +67,7 @@ Note: Ecosystem is now HEALTHY. Refactor protocol is active for next cycle.
   - pixel-nginx-1: Up (unhealthy) — action queued: Investigate & remediate. Notified human.
   - pixel-backup-1: Up
   - pixel-certbot-1: Up
-- Database: ElizaOS uses embedded PGLite at `/app/.eliza/.elizadb/` inside agent container.
+- Database: Agent uses external PostgreSQL (`pixel-postgres-1`) via `POSTGRES_URL` (pgvector enabled).
 
 ## ✅ Recently Completed (2026-01-01)
 - Performed ecosystem audit (containers status) and agent log read.

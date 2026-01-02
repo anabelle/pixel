@@ -174,14 +174,14 @@ docker compose run --rm agent bun run build:character
 # Enter agent container
 docker compose exec agent bash
 
-# Query agent's embedded PGLite database (ElizaOS v1.6+ uses embedded PostgreSQL)
-docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pglite'); new PGlite('/app/.eliza/.elizadb').query('SELECT COUNT(*) as total FROM memories').then(r => console.log(r.rows));"
+# Query agent's PostgreSQL database (recommended in this repo)
+docker exec pixel-postgres-1 psql -U postgres -d pixel_agent -c "SELECT COUNT(*) AS total FROM memories;"
 
-# Get memory stats
-docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pglite'); const db = new PGlite('/app/.eliza/.elizadb'); db.query(\"SELECT content->>'source' as src, COUNT(*) FROM memories GROUP BY content->>'source'\").then(r => console.log(r.rows));"
+# Get memory stats by source
+docker exec pixel-postgres-1 psql -U postgres -d pixel_agent -c "SELECT content->>'source' AS src, COUNT(*) FROM memories GROUP BY 1 ORDER BY 2 DESC;"
 ```
 
-**Note:** ElizaOS v1.6+ uses **embedded PGLite** at `/app/.eliza/.elizadb/` inside the agent container. The Docker `postgres` service is currently unused.
+**Note:** This repo is configured to use external PostgreSQL via `POSTGRES_URL` (Compose service `pixel-postgres-1`, with pgvector enabled).
 
 ### Service Ports
 | Service | Port | Container |
@@ -190,7 +190,7 @@ docker exec pixel-agent-1 bun -e "const { PGlite } = require('@electric-sql/pgli
 | Landing | 3001 | pixel-landing-1 |
 | Canvas | 3002 | pixel-web-1 |
 | Agent | 3003 | pixel-agent-1 |
-| PostgreSQL | 5432 | pixel-postgres-1 (⚠️ unused) |
+| PostgreSQL | 5432 | pixel-postgres-1 |
 
 ### Emergency Recovery
 ```bash
@@ -199,8 +199,9 @@ docker compose logs agent --tail=500 > /tmp/agent-crash.log
 docker compose down agent
 docker compose up -d agent
 
-# Backup agent's PGLite data
-docker cp pixel-agent-1:/app/.eliza/.elizadb ./backups/elizadb-$(date +%Y%m%d)
+# Backup agent database (PostgreSQL)
+mkdir -p ./backups
+docker exec pixel-postgres-1 pg_dump -U postgres -d pixel_agent > ./backups/pixel_agent-$(date +%Y%m%d).sql
 ```
 
 ---
