@@ -52,6 +52,18 @@ Plugins enable agent capabilities. Configured in `pixel-agent/scripts/build-char
 - `@elizaos/plugin-discord` - Disabled until API credentials configured
 - `@elizaos/plugin-twitter` - Disabled until API credentials configured
 
+## 🤖 Worker Architecture
+
+Syntropy uses the **Brain/Hands separation pattern** for safe autonomous code modifications:
+
+- **Syntropy (Brain)**: Plans tasks, monitors health, NEVER rebuilds itself
+- **Worker (Hands)**: Ephemeral containers running Opencode for actual code changes
+- **Task Ledger**: Persistent queue at `data/task-ledger.json`
+
+Key tools: `spawnWorker`, `checkWorkerStatus`, `listWorkerTasks`, `readWorkerLogs`
+
+For full architecture details, see [WORKER_ARCHITECTURE.md](./WORKER_ARCHITECTURE.md).
+
 ## 📡 API Reference
 - **API Base**: `https://ln.pixel.xx.kg/api`
 - **Endpoints**:

@@ -99,8 +99,43 @@ In production, the agent runs within a hardened Docker environment supervised by
 - **Orchestration**: Syntropy monitors health, audits logs, and can autonomously apply fixes via git.
 - **Persistence**: Data is mapped to host volumes to survive container restarts.
 - **Security**: Hardened Nginx proxy with SSL.
+- **Worker Architecture**: Brain/Hands separation - Syntropy spawns ephemeral workers for code changes.
 
 For the full production operations manual, see **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
+---
+
+## 🔧 WORKER ARCHITECTURE (January 2026)
+
+Syntropy uses the **Brain/Hands separation pattern** to safely perform autonomous code modifications:
+
+### The Problem
+If Syntropy rebuilds its own container while running, it kills itself mid-task. Digital self-destruction.
+
+### The Solution
+- **Syntropy (Brain)**: Plans, monitors, orchestrates. NEVER rebuilds itself.
+- **Worker (Hands)**: Ephemeral containers that run Opencode for actual code changes.
+- **Task Ledger**: Persistent queue at `data/task-ledger.json` survives container restarts.
+
+### Worker Tools (for Syntropy)
+| Tool | Purpose |
+|------|---------|
+| `spawnWorker` | Queue a coding task for worker execution |
+| `checkWorkerStatus` | Monitor worker progress |
+| `listWorkerTasks` | View task ledger |
+| `readWorkerLogs` | Read worker output logs |
+| `scheduleSelfRebuild` | Safe protocol for Syntropy self-updates |
+
+### Worker Execution Flow
+1. Syntropy calls `spawnWorker` with task description
+2. Worker container spawns, reads task from ledger
+3. Worker runs Opencode with the briefing
+4. Worker updates ledger with results, self-terminates
+5. Syntropy reads results via `checkWorkerStatus`
+
+For full architecture details, see [WORKER_ARCHITECTURE.md](./docs/WORKER_ARCHITECTURE.md).
+
+---
 
 **Better Memory**: Long-term relationship building and context retention
 **Multimodal Interaction**: Voice, images, videos, AR/VR integration
@@ -191,6 +226,22 @@ docker exec pixel-postgres-1 psql -U postgres -d pixel_agent -c "SELECT content-
 | Canvas | 3002 | pixel-web-1 |
 | Agent | 3003 | pixel-agent-1 |
 | PostgreSQL | 5432 | pixel-postgres-1 |
+| Worker | - | pixel-worker-* (ephemeral) |
+
+### Worker Operations
+```bash
+# View task ledger
+cat data/task-ledger.json | jq .
+
+# View worker logs
+tail -f logs/opencode_live.log
+
+# View specific task log
+cat logs/worker-{taskId}.log
+
+# Manual worker spawn (for debugging)
+docker compose run --rm -e TASK_ID=<task-id> worker
+```
 
 ### Emergency Recovery
 ```bash

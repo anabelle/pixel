@@ -293,6 +293,7 @@ syntropy-core/src/
 ├── index.ts
 ├── config.ts
 ├── utils.ts
+├── worker-tools.ts    (spawnWorker, checkWorkerStatus, listWorkerTasks, etc.)
 └── tools/
     ├── index.ts           (re-exports all)
     ├── continuity.ts      (readContinuity, updateContinuity)
@@ -301,7 +302,7 @@ syntropy-core/src/
     ├── memory.ts          (readPixelMemories, getPixelStats)
     ├── character.ts       (readCharacterFile, mutateCharacter)
     ├── evolution.ts       (writeEvolutionReport)
-    ├── delegation.ts      (delegateToOpencode)
+    ├── workers.ts         (worker tool wrappers)
     ├── notifications.ts   (notifyHuman)
     └── audit.ts           (readAudit)
 ```

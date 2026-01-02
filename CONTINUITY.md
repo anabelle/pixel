@@ -5,13 +5,12 @@
   - NOTE: Re-enable testing in progress. Same worker (1429e885) will attempt to safely enable the Twitter plugin, verify credentials, and ensure graceful failure on 401.
 
 ## 🎯 Active Focus
+- **Worker Architecture**: Brain/Hands separation deployed. Syntropy spawns ephemeral workers for code tasks.
 - Worker Task: Verify and enable Pixel diary integration + safely re-enable Twitter plugin (worker id: 1429e885)
 - PostgreSQL migration complete. Agent running with Bun + ElizaOS CLI v1.7.0.
 - Twitter plugin disabled until API credentials are configured (credentials now present in .env — worker verifying and re-enabling if safe).
 - **RESOLVED**: `pixel-nginx-1` and `pixel-agent-1` health issues fixed (nginx restart + agent wget install).
-- **HARDENED**: Opencode delegation tool fixed to support complex prompts AND prevent permission prompt hangs (auto-abort on interactive prompts).
-- **READY**: Syntropy is unblocked to execute Diary and Twitter tasks; verification in progress.
-- **NEW**: Opencode visibility improved with PID logging, internal log capture, and streaming console output.
+- **REPLACED**: `delegateToOpencode` removed — use `spawnWorker` tool for coding tasks (runs in ephemeral container).
 - Current cycle status: Healthy. All core containers reporting healthy. Worker running for Human Inbox tasks.
 
 ## 📋 Short-Term Tasks
@@ -74,18 +73,16 @@ Note: Worker executing Human Inbox verification. Refactor processing will occur 
 - Database: Agent uses external PostgreSQL (`pixel-postgres-1`) via `POSTGRES_URL` (pgvector enabled).
 
 ## ✅ Recently Completed (2026-01-02)
-- **FIXED Opencode hang issue**: Implemented permission prompt detection and auto-abort to prevent infinite hangs in headless mode.
-- **Enhanced Opencode visibility**: Added PID logging, internal log capture, streaming console output, and configurable timeouts.
-- **Pushed changes**: Updated syntropy-core and root repo with hang prevention features.
+- **Worker Architecture deployed**: Brain/Hands separation - Syntropy spawns ephemeral worker containers for code tasks.
+- **Removed delegateToOpencode**: Replaced with `spawnWorker` tool (runs Opencode in isolated container).
+- **Headless safeguards**: stdin disabled, 45-min timeout, CI=true for non-interactive mode.
 - Performed ecosystem audit (containers status) and agent log read.
 - Checked treasury balance (79,014 sats).
-- Notified human about pixel-nginx-1 unhealthy container and Opencode delegation failure.
-- Attempted to delegate diary integration and Twitter re-enable tasks to Opencode (failed due to permission hangs). **FIXED**: Hang prevention now deployed.
 
 ## 📚 Knowledge Base
 - **Treasury Status:** 79,014 sats as of 2026-01-02 (this cycle).
-- **Containers:** pixel-nginx-1 is reporting 'starting' health; monitor logs if health remains non-healthy. Agent reporting 'starting' health — expected during verification steps.
-- **Opencode delegation:** Previously failed due to permission prompt hangs in headless mode. **RESOLVED**: Hang prevention implemented with permission prompt detection and auto-abort. Worker delegation now in use.
+- **Containers:** All healthy. Worker containers are ephemeral (spawn on demand, die after task).
+- **Worker Tools:** Use `spawnWorker` for coding tasks, `checkWorkerStatus` to monitor, `readWorkerLogs` to view output.
 - **Next steps:** 
   - Wait for worker (1429e885) to complete verification of diary integration and Twitter plugin enablement.
   - After worker completes and returns results, process ONE refactor task from queue if ecosystem health is stable.

@@ -88,7 +88,24 @@ If Nginx fails to start due to SSL, verify the paths in `nginx/nginx.conf` and e
 | **Canvas** | `pixel-web` | 3002 | Collaborative art UI |
 | **Agent** | `pixel-agent` | 3003 | ElizaOS social intelligence |
 | **Syntropy**| `pixel-syntropy` | - | AI Orchestration & Self-Evolution |
+| **Worker** | `pixel-worker-*` | - | Ephemeral coding containers (spawned on demand) |
 | **PostgreSQL** | `pixel-postgres` | 5432 | Agent memory DB (pgvector enabled) |
 | **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
+
+### Worker Architecture
+
+Syntropy uses a **Brain/Hands separation pattern** for autonomous code modifications:
+
+- **Brain (Syntropy)**: Plans tasks, monitors health, NEVER rebuilds itself
+- **Hands (Worker)**: Ephemeral containers running Opencode for actual code changes
+- **Task Ledger**: Persistent queue at `data/task-ledger.json`
+
+Workers are spawned via `docker compose run worker` with a task ID. They:
+1. Read task from ledger
+2. Execute Opencode with the task briefing
+3. Update ledger with results
+4. Self-terminate
+
+For full architecture details, see [WORKER_ARCHITECTURE.md](./docs/WORKER_ARCHITECTURE.md).
 
 For deep technical details on plugin development or local builds, see the **[Technical Guide](./docs/TECH_GUIDE.md)**.

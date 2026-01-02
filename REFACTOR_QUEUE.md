@@ -2,7 +2,7 @@
 ## *Autonomous Self-Improvement Tasks*
 
 **Purpose**: Atomic tasks for Syntropy to process during runtime cycles.  
-**Protocol**: Pick the next `⬜ READY` task, execute via `delegateToOpencode`, mark complete.  
+**Protocol**: Pick the next `⬜ READY` task, execute via `spawnWorker`, mark complete.  
 **Safety**: All tasks are designed to be rollback-safe and testable.
 
 ---
@@ -25,7 +25,7 @@
 ## 🚦 Processing Rules for Syntropy
 
 1. **One task per cycle**: Only attempt ONE task from this queue per Syntropy cycle
-2. **Delegate to Opencode**: Use `delegateToOpencode` with the task's `INSTRUCTIONS` block
+2. **Spawn Worker**: Use `spawnWorker` with the task's `INSTRUCTIONS` block (workers run Opencode in ephemeral containers)
 3. **Verify before marking done**: Run the `VERIFY` command if provided
 4. **Update status**: After completion, update the task status in this file
 5. **Don't skip ahead**: Tasks may have dependencies, process in order unless marked parallel-safe
@@ -671,10 +671,11 @@ Update main tools.ts to just re-export from ./tools/index.ts
 
 Remaining tools to extract (can be done later):
 - checkTreasury -> treasury.ts
-- delegateToOpencode -> delegation.ts
 - notifyHuman -> notifications.ts
 - writeEvolutionReport -> evolution.ts
 - readAudit -> audit.ts
+
+(Note: delegateToOpencode has been replaced by spawnWorker in worker-tools.ts)
 
 VERIFY:
 cd /pixel/syntropy-core && bun run build && bun run start 2>&1 | head -10
@@ -698,7 +699,7 @@ REFACTORING PROTOCOL:
 2. Read REFACTOR_QUEUE.md
 3. Find the first task marked ⬜ READY
 4. If task has unmet "Depends" - skip to next READY task
-5. Call delegateToOpencode with the INSTRUCTIONS block
+5. Call spawnWorker with the INSTRUCTIONS block (runs in ephemeral container)
 6. Run VERIFY command to confirm success
 7. Update task status: ⬜ READY → ✅ DONE (or ❌ FAILED)
 8. Update "Last Processed" timestamp
