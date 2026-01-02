@@ -104,18 +104,47 @@ services:
       - LNPIXELS_WS_URL=http://api:3000
       - PORT=3003
       - CI=true
-      - DATABASE_URL=${DATABASE_URL}
+      # Use external PostgreSQL instead of embedded PGLite to prevent corruption
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/pixel_agent
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/pixel_agent
     networks:
       - pixel-net
+    stop_grace_period: 30s
     depends_on:
       api:
         condition: service_healthy
-      # NOTE: postgres service is unused - ElizaOS uses embedded PGLite
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     deploy:
       resources:
         limits:
           memory: 2G
+
+  # Watchdog - monitors agent health and auto-recovers from DB corruption
+  watchdog:
+    image: alpine:latest
+    volumes:
+      - ./scripts/watchdog.sh:/watchdog.sh:ro
+      - ./data/eliza:/data
+    entrypoint: ["/bin/sh", "/watchdog.sh"]
+    environment:
+      - CHECK_INTERVAL=60
+    networks:
+      - pixel-net
+    depends_on:
+      - agent
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 32M
 
   # Syntropy Core (AI Orchestration)
   syntropy:
@@ -153,12 +182,9 @@ services:
         limits:
           memory: 4G
 
-  # Postgres Database (UNUSED - ElizaOS v1.6+ uses embedded PGLite)
-  # Kept for potential future use or external integrations
+  # Postgres Database - External DB for ElizaOS (prevents PGLite corruption)
   postgres:
-    image: postgres:15-alpine
-    profiles:
-      - unused # Won't start by default, use: docker compose --profile unused up postgres
+    image: pgvector/pgvector:pg15
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -170,6 +196,12 @@ services:
     networks:
       - pixel-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pixel_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
