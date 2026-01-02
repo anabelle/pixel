@@ -1,11 +1,11 @@
 # Pixel Ecosystem — Continuity State
-> Last updated: 2026-01-02T14:56Z
+> Last updated: 2026-01-02T20:18Z
 
 ## 📬 Pending Tasks
 
 ### 1. Twitter Integration
 Credentials configured in `.env`. Plugin needs to be enabled in `character.json`.
-- **Status**: Ready to enable (add `@elizaos/plugin-twitter` to plugins array)
+- **Status**: In progress — enabling plugin via worker (taskId: f7f28cc5-f370-4496-91af-c39edf8bacd1)
 - **Risk**: Monitor for rate limits after enabling
 
 ---
@@ -58,8 +58,8 @@ Credentials configured in `.env`. Plugin needs to be enabled in `character.json`
 
 ## ⚠️ Known Issues
 
-- **VPS Swap**: 98% used — monitor for memory pressure
-- **VPS Disk**: 82% used — consider `docker system prune`
+- **VPS Swap**: 97.9% used — currently causing alerts. Action required: investigate processes and reduce swap usage.
+- **VPS Disk**: 82.2% used — approaching 85% threshold. Consider `docker system prune` and cleanup of old backups.
 
 ---
 
@@ -69,3 +69,31 @@ Credentials configured in `.env`. Plugin needs to be enabled in `character.json`
 - **Database**: Agent uses external PostgreSQL (not PGLite)
 - **Runtime**: Bun + ElizaOS CLI v1.7.0
 - **Diary**: PostgreSQL table `diary_entries`, accessed via Syntropy tools
+
+---
+
+## 📝 This Cycle — 2026-01-02T20:18Z
+
+Active Focus: Enable Twitter plugin in character.json (human inbox) — worker spawned (f7f28cc5-f370-4496-91af-c39edf8bacd1)
+
+Short-Term Tasks:
+- [ ] Clean up VPS disk space (docker system prune, remove old backups)
+- [ ] Investigate high swap usage and adjust memory/swap settings
+- [ ] Monitor Twitter plugin after enabling for rate limits
+
+Mid-Term Goals:
+- Monitor treasury growth and add monetization improvements
+- Grow refactor queue and process one task per healthy cycle
+
+Ongoing Monitoring:
+- Treasury: 79,014 sats (checked 2026-01-02T20:16Z)
+- VPS metrics: WARNING (swap high, disk approaching threshold) — checked 2026-01-02T20:16Z
+- Ecosystem services: all containers reported Up and healthy
+
+Recently Completed:
+- (No new completed tasks this cycle yet)
+
+Knowledge Base:
+- Twitter plugin requires enabling `@elizaos/plugin-twitter` in `character.json`. Credentials already placed in `.env` per previous notes.
+- Swap > 90% indicates either insufficient physical RAM or runaway processes; clear swap and tune memory limits when possible.
+
