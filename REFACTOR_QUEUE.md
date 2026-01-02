@@ -57,7 +57,7 @@ ls -la /pixel/*.txt 2>/dev/null | wc -l  # Should be 0 or only intentional .txt 
 
 ---
 
-### T002: Create Scripts Directory Structure 🟡 IN_PROGRESS
+### T002: Create Scripts Directory Structure ✅ DONE
 **Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```
@@ -80,7 +80,7 @@ ls -d /pixel/scripts/*/ | wc -l  # Should be 9
 
 ---
 
-### T003: Move Backup Scripts ⬜ READY
+### T003: Move Backup Scripts 🟡 IN_PROGRESS
 **Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T002
 
