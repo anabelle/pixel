@@ -240,6 +240,40 @@ services:
       '
     restart: unless-stopped
 
+  # Worker Container (spawned on-demand by Syntropy)
+  # Not started by default - use docker compose run worker
+  worker:
+    build:
+      context: ./syntropy-core
+      dockerfile: Dockerfile.worker
+    profiles:
+      - worker  # Not started by default
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID:-999}"
+    volumes:
+      - .:/pixel
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - NODE_ENV=production
+      - PIXEL_ROOT=/pixel
+      - HOME=/tmp
+      - CI=true
+      - OPENCODE_TELEMETRY_DISABLED=true
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-anthropic:claude-sonnet-4-20250514}
+      - WORKER_TIMEOUT_SECONDS=${WORKER_TIMEOUT_SECONDS:-2700}
+      # TASK_ID is passed at runtime via -e TASK_ID=xxx
+    env_file:
+      - .env
+    networks:
+      - pixel-net
+    restart: "no"  # Ephemeral - no restart policy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+
 networks:
   pixel-net:
     driver: bridge
