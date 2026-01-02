@@ -1,8 +1,8 @@
 ## 📬 Human Inbox
 - [ ] Create a simple way for syntropy to use Pixel diary in pixel-agent/docs/diary, to read it and write it often and make it useful for the evolution.  
-  - STATUS: In progress. Verification in-flight via worker 1429e885-7d8c-4095-b32b-fd1fd78a726e (pending). Worker will check for diary module, add safe wrapper, update docs, and run tests.
+  - STATUS: In progress but interrupted, check for diary module, add safe wrapper, update docs, and run tests.
 - [ ] Twitter Credentials have been added to .env file, use as you wish.  
-  - STATUS: In progress. Worker 1429e885-7d8c-4095-b32b-fd1fd78a726e will attempt to safely enable the Twitter plugin, verify credentials, and ensure graceful failure on 401.
+  - STATUS: In progress. but interrupted, please verify.
 
 ## 🎯 Active Focus
 - **Worker Architecture**: Brain/Hands separation deployed. Syntropy spawns ephemeral workers for code tasks.
