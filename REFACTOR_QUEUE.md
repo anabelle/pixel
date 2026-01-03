@@ -11,20 +11,20 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 12 | Available for processing |
+| ⬜ READY | 11 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 24 | Completed successfully |
+| ✅ DONE | 25 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T15:30Z (T024)
+**Last Processed**: 2026-01-03T16:02Z (T025)
 **Last Verified**: 2026-01-03 (T020 connection monitoring methods)
-**Next Priority**: T024
+**Next Priority**: T026
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
-- Phase 2 (API Routes): 1/3 🟡 (T024 done, T025-T026 pending)
+- Phase 2 (API Routes): 2/3 🟢 (T024-T025 done, T026 pending)
 - Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
 ---
@@ -711,9 +711,30 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T025: Extract Validation Middleware 🟡 IN_PROGRESS
+### T025: Extract Validation Middleware ✅ DONE
 **Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T024
+
+Completed: 2026-01-03T16:02Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+**Changes Made**:
+1. Created /pixel/lnpixels/api/src/middleware/validation.ts
+2. Extracted validation functions:
+   - validateCoordinates
+   - validateColor
+   - validateLetter
+   - validateRectangleCoordinates
+   - MAX_COLOR_LENGTH constant
+   - MAX_LETTER_LENGTH constant
+3. Updated routes.ts to import from validation.ts
+4. All validation function calls remain functional
+
+**Verification**:
+- TypeScript compilation: Pre-existing errors in server.ts/socket.ts (unrelated)
+- Validation module imports correctly
+- All validation functions still called in routes.ts
+- No test files directly use validation functions
 
 ```
 INSTRUCTIONS:
@@ -1118,10 +1139,10 @@ REFACTORING PROTOCOL:
 ---
 
 **Total Tasks**: 36
-**Completed**: 24 (Phase 0 complete + T021-T023 pre-done + T013-T024 done)
-**Remaining**: 12
-**Estimated Remaining Effort**: ~5.5 hours of automated work
-**At 1 task per Syntropy cycle**: ~12 cycles to complete all phases
+**Completed**: 25 (Phase 0 complete + T021-T023 pre-done + T013-T025 done)
+**Remaining**: 11
+**Estimated Remaining Effort**: ~5 hours of automated work
+**At 1 task per Syntropy cycle**: ~11 cycles to complete all phases
 
 ---
 
