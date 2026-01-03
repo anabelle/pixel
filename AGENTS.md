@@ -219,6 +219,25 @@ docker exec pixel-postgres-1 psql -U postgres -d pixel_agent -c "SELECT content-
 
 **Note:** This repo is configured to use external PostgreSQL via `POSTGRES_URL` (Compose service `pixel-postgres-1`, with pgvector enabled).
 
+### pgAdmin (Database GUI)
+pgAdmin is available but not started by default (uses `tools` profile).
+
+```bash
+# Start pgAdmin
+docker compose --profile tools up -d pgadmin
+
+# Load server config (first time only)
+docker compose exec pgadmin /venv/bin/python /pgadmin4/setup.py load-servers /pgadmin4/servers.json --user pgadmin4@pgadmin.org
+
+# Access via SSH tunnel (from your laptop)
+ssh -L 5050:127.0.0.1:5050 user@your-vps
+# Then open http://localhost:5050
+# DB password: postgres
+
+# Stop when done
+docker compose --profile tools stop pgadmin
+```
+
 ### Service Ports
 | Service | Port | Container |
 |---------|------|-----------|
@@ -227,6 +246,7 @@ docker exec pixel-postgres-1 psql -U postgres -d pixel_agent -c "SELECT content-
 | Canvas | 3002 | pixel-web-1 |
 | Agent | 3003 | pixel-agent-1 |
 | PostgreSQL | 5432 | pixel-postgres-1 |
+| pgAdmin | 5050 | pixel-pgadmin-1 (on-demand) |
 | Worker | - | pixel-worker-* (ephemeral) |
 
 ### Worker Operations

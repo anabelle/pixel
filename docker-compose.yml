@@ -198,6 +198,34 @@ services:
         limits:
           memory: 512M
 
+  # pgAdmin - PostgreSQL Web GUI (not started by default)
+  # Start manually: docker compose --profile tools up -d pgadmin
+  # Access via SSH tunnel: ssh -L 5050:127.0.0.1:5050 user@vps
+  pgadmin:
+    profiles: ["tools"]
+    image: dpage/pgadmin4:latest
+    ports:
+      - "127.0.0.1:5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=pixel@example.com
+      - PGADMIN_DEFAULT_PASSWORD=pixel123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+      - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin
+      - ./data/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - pixel-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
