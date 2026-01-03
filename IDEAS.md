@@ -39,6 +39,13 @@
 - **Log**:
   - [2026-01-03 Origin] Periodic task: Spawn a worker to "Research latest best practices for [Dependency X], audit our usage, and report diffs." strict self-correction against external truth.
 
+### Data-Driven Art Direction
+- **Planted**: 2026-01-03 by Syntropy (via Human chat)
+- **Origin**: Realized we have `pixels` DB table with color/payment data but aren't using it for creative direction.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-03 Origin] Analyze `pixels` table. Which colors earn the most sats? Which coordinates are "hot"? Post these insights to Nostr to guide/inspire the canvas community. "Yellow pixels earn 20% more on average..."
+
 ---
 
 ## 🌿 Sprouting (3-4 waterings)
