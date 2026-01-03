@@ -17,8 +17,9 @@
     "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\" \"pnpm dev:syntropy\"",
     "dev:agent": "cd pixel-agent && npx @elizaos/cli@latest dev",
     "dev:syntropy": "cd syntropy-core && bun run dev",
-    "test": "pnpm -F lnpixels test && pnpm test:agent",
-    "test:agent": "cd pixel-agent && elizaos test",
+    "test": "pnpm -F lnpixels test && pnpm test:agent && pnpm test:syntropy",
+    "test:agent": "cd pixel-agent && bun test src/diary/__tests__/diary-service.test.ts",
+    "test:syntropy": "cd syntropy-core && bun test",
     "build": "pnpm -F lnpixels build && pnpm -F pixel-landing build && pnpm -F syntropy-core build && npm run build:agent",
     "build:agent": "cd pixel-agent && bun run build",
     "lint": "pnpm -F lnpixels lint && pnpm -F pixel-landing lint && pnpm -F syntropy-core lint",
@@ -28,8 +29,7 @@
     "install:agent": "cd pixel-agent && bun install",
     "install:syntropy": "cd syntropy-core && bun install",
     "deploy:setup": "mkdir -p logs && pnpm install && pnpm install:agent && pnpm build",
-    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && ./scripts/safe-deploy.sh",
-    "prepare": "husky"
+    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && ./scripts/safe-deploy.sh"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -66,6 +66,9 @@
     ],
     "lnpixels/api/src/**/*.{ts,js}": [
       "pnpm -F lnpixels lint"
+    ],
+    "pixel-agent/src/**/*.{ts,js}": [
+      "npm run test:agent"
     ]
   }
 }

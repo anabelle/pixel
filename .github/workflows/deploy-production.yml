@@ -29,8 +29,8 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install
-      - name: Run Syntropy Tests
-        run: cd syntropy-core && bun test
+      - name: Run Ecosystem Tests
+        run: npm test
       # Add more validations here as they become available
 
   deploy_to_vps:
