@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 14 | Available for processing |
+| ⬜ READY | 13 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 18 | Completed successfully |
+| ✅ DONE | 19 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T02:35Z (T015)
-**Last Verified**: 2026-01-03 (T015 tests pass)
-**Next Priority**: T016
+**Last Processed**: 2026-01-03T02:52Z (T016)
+**Last Verified**: 2026-01-03 (T016 tests pass)
+**Next Priority**: T017
 
 ---
 
@@ -418,7 +418,7 @@ Status: Already completed during T014 implementation
 
 ---
 
-### T016: Extract _shouldEngageWithThread 🟡 IN_PROGRESS
+### T016: Extract _shouldEngageWithThread ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T015
 
@@ -438,6 +438,12 @@ INSTRUCTIONS:
 VERIFY:
 cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
 ```
+
+Completed: 2026-01-03T02:52Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- Implementation extracted to threadContext.js (lines 267-330)
+- Wrapper created in service.js (lines 4247-4249)
+- Logger adapted to use `this.logger`
 
 ---
 
