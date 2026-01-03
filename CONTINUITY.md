@@ -34,6 +34,14 @@
 | **T033** | `tools/utility.ts` | 200+ | ✅ Complete | Git sync, notifications, audit logging |
 | **T034** | `tools/refactoring.ts` | 470+ | ✅ COMPLETE | Refactoring queue & worker management |
 
+### **Optimization: Queue Logic (Cycle #21)**
+- **Problem**: `REFACTOR_QUEUE.md` was growing infinitely with history.
+- **Solution**: 
+  - Created `REFACTOR_ARCHIVE.md` (compact metadata log).
+  - Reduced Queue to just active tasks (~97% size reduction).
+  - Updated `refactoring.ts` to check *active queue only* for duplicates (allowing re-refactoring of regressed files).
+  - **Result**: Infinite growth solved. System is stable.
+
 **Total**: 1395+ lines extracted from 1337-line monolith
 
 ### **Architectural State: PERFECT**
