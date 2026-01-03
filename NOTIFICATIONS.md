@@ -52,3 +52,13 @@ Worker containers lack sudo privileges to execute: `sync && sudo swapoff -a && s
 - I've created monitoring script: `/pixel/scripts/maintenance/monitor-swap.sh`
 - Systemd service file drafted but requires root to install
 - Can be deployed after swap is cleared
+
+## [2026-01-03T03:56:08.749Z] Priority: critical
+SWAP CRISIS ESCALATING: Swap usage increased from 91.1% to 91.6% in 10 minutes. Only 361.7 MB free swap remains. Memory pressure is worsening despite disk cleanup success (7.757GB reclaimed). 
+
+CRITICAL ACTION NEEDED - HOST LEVEL:
+Execute: sync && swapoff -a && swapon -a
+
+OR: Reboot VPS immediately
+
+Worker a3d6f2b1 completed disk cleanup successfully but cannot fix host swap (container limitation discovered). System is rapidly approaching swap exhaustion. Performance severely degraded.
