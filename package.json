@@ -28,10 +28,13 @@
     "install:agent": "cd pixel-agent && bun install",
     "install:syntropy": "cd syntropy-core && bun install",
     "deploy:setup": "mkdir -p logs && pnpm install && pnpm install:agent && pnpm build",
-    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && ./scripts/safe-deploy.sh"
+    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && ./scripts/safe-deploy.sh",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7"
   },
   "repository": {
     "type": "git",
@@ -52,5 +55,17 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.5.0"
+  },
+  "lint-staged": {
+    "syntropy-core/src/**/*.{ts,js}": [
+      "pnpm -F syntropy-core lint",
+      "pnpm -F syntropy-core test"
+    ],
+    "pixel-landing/src/**/*.{ts,tsx,js,jsx}": [
+      "pnpm -F pixel-landing lint"
+    ],
+    "lnpixels/api/src/**/*.{ts,js}": [
+      "pnpm -F lnpixels lint"
+    ]
   }
 }
