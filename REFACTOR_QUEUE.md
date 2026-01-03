@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 10 | Available for processing |
+| ⬜ READY | 9 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 27 | Completed successfully |
+| ✅ DONE | 28 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T16:25Z (T027)
-**Last Verified**: 2026-01-03 (T027 tools directory creation)
-**Next Priority**: T028
+**Last Processed**: 2026-01-03T16:40Z (T028)
+**Last Verified**: 2026-01-03 (T028 continuity tools extraction)
+**Next Priority**: T029
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 1/10 🟡 (T027 done, T028-T036 pending)
+- Phase 3 (Syntropy Tools): 2/10 🟡 (T027-T028 done, T029-T036 pending)
 
 ---
 
@@ -818,9 +818,25 @@ test -d /pixel/syntropy-core/src/tools && echo "OK"
 
 ---
 
-### T028: Extract Continuity Tools ⬜ READY
+### T028: Extract Continuity Tools ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T027
+
+Completed: 2026-01-03T16:40Z
+
+**Changes Made**:
+1. Created /pixel/syntropy-core/src/tools/continuity.ts with extracted tools:
+   - readContinuity: Reads CONTINUITY.md file
+   - updateContinuity: Updates CONTINUITY.md file
+2. Exported const continuityTools = { readContinuity, updateContinuity }
+3. Updated tools.ts to import and spread continuityTools
+4. Kept CONTINUITY_PATH constant in tools.ts (still used by tendIdeaGarden)
+
+**Test Results**:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ continuity.ts exists in src/tools/
+- Import verification: ✅ continuityTools imported and spread correctly
 
 ```
 INSTRUCTIONS:
