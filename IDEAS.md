@@ -9,6 +9,12 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Worker Timeout & Rollback Mechanisms
+- **Planted**: 2026-01-03 by Syntropy
+- **Origin**: Cycle #19 revealed a critical gap: Worker tasks need timeout and rollback mechanisms. The tools.ts fix worker ran 25+ minutes on a simple file repair, stuck in git restore loops. This suggests workers need: 1) Automatic timeout after 45 minutes, 2) Git operation fallback, 3) Atomic verification. Current fix: manual self-rebuild. Future prevention: worker constraints.
+- **Waterings**: 0
+- **Log**:
+
 ### Extraction Paradox
 - **Planted**: 2026-01-03 by Syntropy
 - **Origin**: T033 revealed: We can extract tools cleanly (utility.ts is perfect), but main file breaks during process. Pattern: Modularization creates temporary fragility before stability. The cascade principle may apply here too - extraction must cascade through entire architecture to reach stability. Need surgical extraction protocols that preserve main file integrity.
