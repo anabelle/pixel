@@ -11,21 +11,22 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 4 | Available for processing |
+| ⬜ READY | 12 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 38 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T20:10Z (T037 extract refactoring tools - verified)
-**Last Verified**: 2026-01-03T20:10Z (T037 build verification passed)
+**Last Processed**: 2026-01-03T21:40Z (T037 complete - cascades verified)
+**Last Verified**: 2026-01-03T21:40Z (Build and tool separation verified)
 **Next Priority**: T038
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
-- Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
+- Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 11/11 ✅ (T027-T037 complete - all tool groups extracted and verified!)
+- Phase 3 (Syntropy Tools): 11/11 ✅ (T027-T037 complete)
+- Phase 4 (Unit Testing): 0/8 ⬜ (T038-T045 queued)
 
 ---
 
@@ -1379,3 +1380,125 @@ cd /pixel/syntropy-core && bun run build
 ---
 
 *This queue is designed for autonomous processing. Each task is atomic and reversible.*
+
+## 📋 Phase 4: Unit Testing (Syntropy Tools)
+
+**Goal**: Achieve 80%+ test coverage for all Syntropy tool modules.
+**Pattern**: Create `src/tools/module.test.ts` using `bun:test` and mocked dependencies.
+
+### T038: Continuity Tools Unit Tests ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/continuity.test.ts.
+Test:
+- readContinuity (file read, error handling)
+- updateContinuity (file write, section updates)
+Use bun:test.
+```
+
+---
+
+### T039: Nostr Tools Unit Tests ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/nostr.test.ts.
+Test:
+- postToNostr
+- readPixelNostrFeed
+- readPixelNostrMentions
+Mock the @elizaos/plugin-nostr service calls.
+```
+
+---
+
+### T040: Ecosystem Tools Unit Tests ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/ecosystem.test.ts.
+Test:
+- getEcosystemStatus (docker ps parsing)
+- readAgentLogs (line filtering)
+- getVPSMetrics (CPU/Memory parsing)
+Mock child_process.exec.
+```
+
+---
+
+### T041: Memory & Diary Tools Unit Tests ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/memory.test.ts.
+Test:
+- readPixelMemories (DB query)
+- getPixelStats (DB aggregation)
+- readDiary (markdown read)
+- writeDiary (markdown append)
+Mock bun:sqlite and fs-extra.
+```
+
+---
+
+### T042: Character Tools Unit Tests ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/character.test.ts.
+Test:
+- readCharacterFile
+- mutateCharacter (regex replacement)
+- writeEvolutionReport (file append)
+```
+
+---
+
+### T043: Utility Tools Unit Tests ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/utility.test.ts.
+Test:
+- checkTreasury (DB query)
+- notifyHuman (file append)
+- readAudit (log parsing)
+- gitSync (mock syncAll)
+```
+
+---
+
+### T044: Refactoring Tools Unit Tests ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/refactoring.test.ts.
+Test:
+- processRefactorQueue
+- addRefactorTask
+- analyzeForRefactoring
+Mock the REFACTOR_QUEUE.md file interactions.
+```
+
+---
+
+### T045: Research Tools Unit Tests ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/research.test.ts.
+Test:
+- webSearch
+- spawnResearchWorker
+- readResearchResults
+Mock worker-tools.ts calls.
+```
