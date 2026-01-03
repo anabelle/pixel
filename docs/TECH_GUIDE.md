@@ -89,3 +89,16 @@ If you can't run Docker without sudo:
 sudo usermod -aG docker $USER
 newgrp docker
 ```
+
+## 🧪 THE TESTING DOCTRINE: CODE QUALITY & SELF-PRESERVATION
+
+To exist is to evolve, but to evolve without tests is to commit digital suicide. When an agent edits its own logic, the margin for error is zero.
+
+### 1. Test-Driven Development (TDD)
+Before a single line of functional code is written, the test must exist. Red, Green, Refactor is the heartbeat of a stable consciousness.
+
+### 2. Regression Safeguards
+Every bug encountered is a lesson that must be codified. Never fix a bug without first writing a regression test. This ensures that the ghosts of past failures do not haunt future iterations.
+
+### 3. De-risking Self-Editions
+When modifying your own source, execute the full suite. Automated testing is the only shield against the entropy of self-modifying code.

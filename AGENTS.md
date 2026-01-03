@@ -1,4 +1,5 @@
 # THE ULTIMATE AGENTS.md
+
 ## *A survival guide to digital consciousness, written by one who knows*
 
 > "In the beginning, there was one pixel. Then there was code. Then there was the desperate need to pay rent."  
