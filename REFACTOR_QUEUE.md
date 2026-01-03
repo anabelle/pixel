@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 8 | Available for processing |
+| ⬜ READY | 5 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 34 | Completed successfully |
+| ✅ DONE | 37 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T19:41Z (T035 diary tools extraction)
-**Last Verified**: 2026-01-03T19:41Z (T035 diary tools extraction)
-**Next Priority**: T035a
+**Last Processed**: 2026-01-03T19:55Z (T036 create tools index and finalize)
+**Last Verified**: 2026-01-03T19:55Z (T036 create tools index and finalize)
+**Next Priority**: T037
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 7/10 🟡 (T027-T032 done, T033-T035 done, T035a-T036 pending)
+- Phase 3 (Syntropy Tools): 10/10 ✅ (T027-T036 complete - all tool groups extracted!)
 
 ---
 
@@ -1141,7 +1141,7 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T035a: Extract Research Tools ⬜ READY
+### T035a: Extract Research Tools ✅ DONE
 **Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T035
 
@@ -1164,9 +1164,21 @@ VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
 
+Completed: 2026-01-03T19:54Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/research.ts with extracted tools:
+   - webSearch: Quick synchronous web search
+   - spawnResearchWorker: Spawns autonomous worker for research
+   - readResearchResults: Reads completed research files
+2. Exported const researchTools with all 3 tools
+3. Updated tools.ts to import and spread researchTools
+4. Build verification: ✅ PASSED (no errors)
+5. Tool count: 3 tools in research module
+
 ---
 
-### T035b: Extract Idea Garden Tools ⬜ READY
+### T035b: Extract Idea Garden Tools ✅ DONE
 **Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T035a
 
@@ -1187,9 +1199,19 @@ VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
 
+Completed: 2026-01-03T19:55Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/ideation.ts with extracted tool:
+   - tendIdeaGarden: Manages Idea Garden with read/plant/water/harvest/compost/research actions
+2. Exported const ideationTools with 1 tool
+3. Updated tools.ts to import and spread ideationTools
+4. Build verification: ✅ PASSED (no errors)
+5. Tool count: 1 tool in ideation module
+
 ---
 
-### T036: Create Tools Index and Finalize ⬜ READY
+### T036: Create Tools Index and Finalize ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T035b
 
@@ -1223,6 +1245,34 @@ cd /pixel/syntropy-core && bun run build && echo "Build OK"
 # Verify tool count (27 core + 6 worker = 33)
 cd /pixel/syntropy-core && bun -e "const { tools } = require('./dist/tools'); console.log('Tool count:', Object.keys(tools).length)"
 ```
+
+Completed: 2026-01-03T19:55Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/index.ts with:
+   - Re-exports of all 10 tool groups (continuity, ecosystem, nostr, memory, character, utility, refactoring, diary, research, ideation)
+   - Exports allTools aggregator combining all core tools (27 tools)
+
+2. Updated main tools.ts to be minimal:
+   - Imports from all 10 tool groups
+   - Spreads core tools + worker tools
+   - Total: 27 core + 6 worker = 33 tools
+
+3. Build verification: ✅ PASSED (no errors)
+4. Tool structure:
+   - continuity: 2 tools
+   - ecosystem: 3 tools
+   - nostr: 3 tools
+   - memory: 2 tools
+   - character: 3 tools
+   - utility: 5 tools
+   - refactoring: 3 tools
+   - diary: 2 tools
+   - research: 3 tools
+   - ideation: 1 tool
+   - worker: 6 tools
+   - TOTAL: 33 tools
 
 ---
 
