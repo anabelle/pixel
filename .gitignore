@@ -26,6 +26,8 @@ logs/
 *.db
 *.sqlite
 data/
+!data/research-*.md
+!data/monitor-*.md
 
 # OS files
 .DS_Store
@@ -52,6 +54,7 @@ temp/
 # Temporary output files
 *_output.txt
 *_out.txt
+worker-output-*.txt
 out.txt
 err.txt
 
