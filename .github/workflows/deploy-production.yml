@@ -17,7 +17,25 @@ env:
   VPS_HOST: pixel.xx.kg
 
 jobs:
+  validate:
+    name: Validate Ecosystem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Run Syntropy Tests
+        run: cd syntropy-core && bun test
+      # Add more validations here as they become available
+
   deploy_to_vps:
+    name: Deploy to VPS
+    needs: validate
     runs-on: ubuntu-22.04
     timeout-minutes: 15
 
