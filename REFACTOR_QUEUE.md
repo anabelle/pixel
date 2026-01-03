@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 9 | Available for processing |
+| ⬜ READY | 8 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 28 | Completed successfully |
+| ✅ DONE | 29 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T16:40Z (T028)
-**Last Verified**: 2026-01-03 (T028 continuity tools extraction)
-**Next Priority**: T029
+**Last Processed**: 2026-01-03T17:05Z (T029)
+**Last Verified**: 2026-01-03T17:05 (T029 ecosystem tools extraction)
+**Next Priority**: T030
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 2/10 🟡 (T027-T028 done, T029-T036 pending)
+- Phase 3 (Syntropy Tools): 3/10 🟡 (T027-T029 done, T030-T036 pending)
 
 ---
 
@@ -860,28 +860,27 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T029: Extract Ecosystem & Metrics Tools ⬜ READY
+### T029: Extract Ecosystem & Metrics Tools ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T028
 
-```
-INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/ecosystem.ts
+Completed: 2026-01-03T17:05Z
 
-1. Extract from tools.ts:
+**Changes Made**:
+1. Created /pixel/syntropy-core/src/tools/ecosystem.ts with extracted tools:
    - getEcosystemStatus
    - readAgentLogs
    - getVPSMetrics
+2. Included necessary imports (exec, docker logic, fs, path, config)
+3. Exported const ecosystemTools = { getEcosystemStatus, readAgentLogs, getVPSMetrics }
+4. Updated tools.ts to import and spread ecosystemTools
+5. Removed three tool definitions from tools.ts
 
-2. Include necessary imports (exec, docker logic, fs, path, config)
-
-3. Export const ecosystemTools = { getEcosystemStatus, readAgentLogs, getVPSMetrics }
-
-4. In main tools.ts, replace with import and spread.
-
-VERIFY:
-cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
-```
+**Verification**:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ ecosystem.ts exists in src/tools/
+- Import verification: ✅ ecosystemTools imported and spread correctly
 
 ---
 
