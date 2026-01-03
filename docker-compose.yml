@@ -269,9 +269,10 @@ services:
       # When Syntropy spawns workers via docker socket, relative paths (.) resolve
       # to the container's PWD, not the host's. This breaks volume mounts.
       - ${HOST_PIXEL_ROOT:-.}:/pixel
-      # Security: Read-only docker socket limits container escape vectors
-      # Workers should only need to inspect, not create containers
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # SECURITY NOTE: Docker socket grants host-level access. Workers need it
+      # to run docker compose commands. Guardrails in worker-entrypoint.sh limit
+      # what commands are permitted. Single-worker lock prevents spawn cascades.
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PIXEL_ROOT=/pixel
