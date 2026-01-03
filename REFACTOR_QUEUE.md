@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 5 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 32 | Completed successfully |
+| ✅ DONE | 33 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T18:00Z (T032)
-**Last Verified**: 2026-01-03T18:00 (T032 character tools extraction)
-**Next Priority**: T033
+**Last Processed**: 2026-01-03T... (T034 refactoring tools extraction)
+**Last Verified**: 2026-01-03T18:00 (T034 refactoring tools extraction)
+**Next Priority**: T035
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
@@ -1053,9 +1053,28 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T034: Extract Refactoring Tools ⬜ READY
+### T034: Extract Refactoring Tools ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T033
+
+**Completed**: 2026-01-03T... (Worker: [WORKER_CONTAINER] - task briefing executed)
+
+**Changes Made**:
+1. Created /pixel/syntropy-core/src/tools/refactoring.ts with extracted tools:
+   - processRefactorQueue: Processes refactoring tasks from REFACTOR_QUEUE.md
+   - addRefactorTask: Adds new atomic refactoring tasks to queue
+   - analyzeForRefactoring: Analyzes codebase for refactoring opportunities
+2. Included necessary imports: tool, zod, fs-extra, path, child_process, config, utils
+3. Exported const refactoringTools = { processRefactorQueue, addRefactorTask, analyzeForRefactoring }
+4. Updated tools.ts to import and spread refactoringTools
+5. Removed old tool definitions from tools.ts (lines 38-494)
+6. Verified TypeScript compilation: ✅ PASSED (no errors)
+
+**Verification**:
+- TypeScript compilation: ✅ PASSED (no errors)
+- File structure: ✅ refactoring.ts exists in src/tools/
+- Import verification: ✅ refactoringTools imported and spread correctly
+- Old tool definitions: ✅ Removed from tools.ts
 
 ```
 INSTRUCTIONS:
