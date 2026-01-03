@@ -235,7 +235,7 @@ Completed: 2026-01-02T23:40Z
 
 ---
 
-### T011: Update Package.json Script References ⬜ READY
+### T011: Update Package.json Script References 🟡 IN_PROGRESS
 **Effort**: 10 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T003-T010
 
