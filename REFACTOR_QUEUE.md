@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 8 | Available for processing |
+| ⬜ READY | 7 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 29 | Completed successfully |
+| ✅ DONE | 30 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T17:05Z (T029)
-**Last Verified**: 2026-01-03T17:05 (T029 ecosystem tools extraction)
-**Next Priority**: T030
+**Last Processed**: 2026-01-03T17:30Z (T030)
+**Last Verified**: 2026-01-03T17:30 (T030 nostr tools extraction)
+**Next Priority**: T031
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 3/10 🟡 (T027-T029 done, T030-T036 pending)
+- Phase 3 (Syntropy Tools): 4/10 🟡 (T027-T030 done, T031-T036 pending)
 
 ---
 
@@ -884,9 +884,27 @@ Completed: 2026-01-03T17:05Z
 
 ---
 
-### T030: Extract Nostr Tools ⬜ READY
+### T030: Extract Nostr Tools ✅ DONE
 **Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T029
+
+Completed: 2026-01-03T17:30Z
+
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/nostr.ts with extracted tools:
+   - postToNostr
+   - readPixelNostrFeed
+   - readPixelNostrMentions
+2. Included necessary imports (tool, zod, exec, promisify, fs-extra, path, config, utils)
+3. Exported const nostrTools = { postToNostr, readPixelNostrFeed, readPixelNostrMentions }
+4. Updated tools.ts to import and spread nostrTools
+5. Removed three tool definitions from tools.ts (postToNostr, readPixelNostrFeed, readPixelNostrMentions)
+
+**Verification**:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ nostr.ts exists in src/tools/
+- Import verification: ✅ nostrTools imported and spread correctly
 
 ```
 INSTRUCTIONS:
@@ -1165,10 +1183,10 @@ REFACTORING PROTOCOL:
 ---
 
 **Total Tasks**: 36
-**Completed**: 27 (Phase 0 complete + T021-T023 pre-done + T013-T027 done)
-**Remaining**: 9
-**Estimated Remaining Effort**: ~4 hours of automated work
-**At 1 task per Syntropy cycle**: ~9 cycles to complete all phases
+**Completed**: 30 (Phase 0 complete + T021-T023 pre-done + T013-T030 done)
+**Remaining**: 6
+**Estimated Remaining Effort**: ~3 hours of automated work
+**At 1 task per Syntropy cycle**: ~6 cycles to complete all phases
 
 ---
 
