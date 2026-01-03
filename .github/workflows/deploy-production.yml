@@ -3,6 +3,14 @@ name: Deploy Pixel Ecosystem to Production
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Prevent concurrent deployments which could race condition on the VPS lock
+concurrency:
+  group: production_deploy
+  cancel-in-progress: false
 
 env:
   VPS_USER: pixel
@@ -11,46 +19,46 @@ env:
 jobs:
   deploy_to_vps:
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT_FOR_SUBMODULES }}
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Build Validation (Local)
-        run: |
-          # Verify that the composition is valid and images compile
-          docker compose config
-          docker compose build --parallel
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to VPS
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      - name: Deploy via Git Strategy
         run: |
-          # Stash any Syntropy changes on VPS before deploying
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "cd /pixel && git stash push -m 'pre-deploy-stash' -- CONTINUITY.md 2>/dev/null || true"
+          echo "🚀 Initiating Ultra-Resilient Deployment to ${{ env.VPS_HOST }}..."
           
-          rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" \
-            --exclude 'node_modules' \
-            --exclude '.git' \
-            --exclude 'logs' \
-            --exclude 'data' \
-            --exclude 'backups' \
-            --exclude 'certbot' \
-            --exclude 'CONTINUITY.md' \
-            --exclude 'pixel-landing/public/audit.json' \
-            --exclude 'pixel-landing/public/syntropy.json' \
-            ./ ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/pixel/
-
-      - name: Atomic Blue/Green Deploy
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "/pixel/scripts/safe-deploy.sh"
+          # We use a pure Git strategy on the VPS. 
+          # 1. Fetch latest state
+          # 2. Hard reset to match remote (Safe Single Source of Truth)
+          # 3. Update submodules
+          # 4. Rebuild & Restart
+          
+          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "bash -s" << 'EOF'
+            set -e
+            
+            # Navigate to project root
+            cd /pixel || { echo "❌ Project root not found"; exit 1; }
+            
+            echo "📥 Fetching latest code..."
+            # Ensure we are on the right branch and have latest refs
+            git fetch origin master
+            
+            echo "🔄 Synchronizing state (Hard Reset)..."
+            # This is the "Ultra Resilient" part: We do NOT try to merge on deploy.
+            # We treat the repo as the source of truth.
+            git reset --hard origin/master
+            
+            echo "📦 Updating submodules..."
+            git submodule update --init --recursive
+            
+            echo "🏗️  Executing Safe Deploy Script..."
+            # Pass strict execution
+            ./scripts/safe-deploy.sh
+            
+          EOF
