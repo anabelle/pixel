@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 17 | Available for processing |
+| ⬜ READY | 13 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 19 | Completed successfully |
+| ✅ DONE | 20 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T02:52Z (T016)
-**Last Verified**: 2026-01-03 (T016 tests pass)
-**Next Priority**: T017
+**Last Processed**: 2026-01-03T03:12Z (T017)
+**Last Verified**: 2026-01-03 (T017 tests pass)
+**Next Priority**: T018
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
@@ -453,7 +453,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T017: Create threadContext Unit Tests 🟡 IN_PROGRESS
+### T017: Create threadContext Unit Tests ✅ DONE
 **Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T016
 
@@ -482,6 +482,12 @@ Use vitest (already configured in vitest.config.mjs).
 VERIFY:
 cd /pixel/pixel-agent/plugin-nostr && npx vitest run threadContext 2>&1 | tail -15
 ```
+
+Completed: 2026-01-03T03:12Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- Created 26 comprehensive unit tests for ThreadContextResolver
+- All tests passing (26/26)
+- No regressions in existing tests
 
 ---
 
