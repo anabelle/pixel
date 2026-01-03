@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 18 | Available for processing |
+| ⬜ READY | 15 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 15 | Completed successfully |
+| ✅ DONE | 17 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T02:15Z (T013)
-**Last Verified**: 2026-01-02 (Phase 1 accuracy check)
-**Next Priority**: T014
+**Last Processed**: 2026-01-03T02:25Z (T014)
+**Last Verified**: 2026-01-03 (T014 tests pass)
+**Next Priority**: T015
 
 ---
 
@@ -346,7 +346,7 @@ Worker: Created skeleton file, verification passed
 
 ---
 
-### T014: Extract _getThreadContext to threadContext.js 🟡 IN_PROGRESS
+### T014: Extract _getThreadContext to threadContext.js ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T013
 
@@ -390,7 +390,7 @@ cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
 
 ---
 
-### T015: Extract _assessThreadContextQuality ⬜ READY
+### T015: Extract _assessThreadContextQuality 🟡 IN_PROGRESS
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T014
 
