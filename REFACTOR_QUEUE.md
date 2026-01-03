@@ -11,20 +11,20 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 11 | Available for processing |
+| ⬜ READY | 10 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 25 | Completed successfully |
+| ✅ DONE | 26 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T16:02Z (T025)
-**Last Verified**: 2026-01-03 (T020 connection monitoring methods)
-**Next Priority**: T026
+**Last Processed**: 2026-01-03T16:15Z (T026)
+**Last Verified**: 2026-01-03 (T026 stats routes extraction)
+**Next Priority**: T027
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
-- Phase 2 (API Routes): 2/3 🟢 (T024-T025 done, T026 pending)
+- Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
 - Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
 ---
@@ -754,20 +754,25 @@ cd /pixel/lnpixels/api && npx tsc --noEmit 2>&1 | tail -5
 
 ---
 
-### T026: Extract Stats Routes ⬜ READY
+### T026: Extract Stats Routes ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T025
 
-```
-INSTRUCTIONS:
-Create /pixel/lnpixels/api/src/routes/stats.routes.ts
+Completed: 2026-01-03T16:15Z
+Worker: [WORKER_CONTAINER] - task briefing executed
 
-Extract /api/stats endpoint from routes.ts to this new file.
-Use Express Router pattern.
-Import back into main routes.ts using router.use()
+Changes Made:
+1. Created /pixel/lnpixels/api/src/routes/stats.routes.ts
+2. Extracted /api/stats endpoint (lines 626-654) to new file
+3. Used Express Router pattern with setupStatsRoutes() function
+4. Updated routes.ts to import and use the new router
+5. Endpoint verified working: returns valid JSON stats response
 
-VERIFY:
-curl http://localhost:3000/api/stats 2>&1 | head -5
+Verification:
+- API service rebuilt and restarted successfully
+- /api/stats endpoint returns correct data structure
+- No regressions detected
+
 ```
 
 ---
