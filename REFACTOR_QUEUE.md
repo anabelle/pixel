@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 7 | Available for processing |
+| ⬜ READY | 6 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 30 | Completed successfully |
+| ✅ DONE | 31 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T17:30Z (T030)
-**Last Verified**: 2026-01-03T17:30 (T030 nostr tools extraction)
-**Next Priority**: T031
+**Last Processed**: 2026-01-03T17:45Z (T031)
+**Last Verified**: 2026-01-03T17:45 (T031 memory tools extraction)
+**Next Priority**: T032
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 4/10 🟡 (T027-T030 done, T031-T036 pending)
+- Phase 3 (Syntropy Tools): 5/10 🟡 (T027-T031 done, T032-T036 pending)
 
 ---
 
@@ -927,9 +927,26 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T031: Extract Memory Tools ⬜ READY
+### T031: Extract Memory Tools ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T030
+
+Completed: 2026-01-03T17:45Z
+
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/memory.ts with extracted tools:
+   - readPixelMemories: Reads Pixel's memories from PostgreSQL
+   - getPixelStats: Gets memory database statistics
+2. Included necessary imports (tool, zod, exec, promisify, utils)
+3. Exported const memoryTools = { readPixelMemories, getPixelStats }
+4. Updated tools.ts to import and spread memoryTools
+5. Removed two tool definitions from tools.ts
+
+Verification:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ memory.ts exists in src/tools/
+- Import verification: ✅ memoryTools imported and spread correctly
 
 ```
 INSTRUCTIONS:
