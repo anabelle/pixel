@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 4 | Available for processing |
+| ⬜ READY | 8 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 33 | Completed successfully |
+| ✅ DONE | 34 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T... (T034 refactoring tools extraction)
-**Last Verified**: 2026-01-03T18:00 (T034 refactoring tools extraction)
-**Next Priority**: T035
+**Last Processed**: 2026-01-03T19:41Z (T035 diary tools extraction)
+**Last Verified**: 2026-01-03T19:41Z (T035 diary tools extraction)
+**Next Priority**: T035a
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 6/10 🟡 (T027-T032 done, T033-T036 pending)
+- Phase 3 (Syntropy Tools): 7/10 🟡 (T027-T032 done, T033-T035 done, T035a-T036 pending)
 
 ---
 
@@ -1097,9 +1097,29 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T035: Extract Diary Tools ⬜ READY
+### T035: Extract Diary Tools ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T034
+
+Completed: 2026-01-03T19:41Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/diary.ts with extracted tools:
+   - readDiary: Reads diary entries from Pixel agent database
+   - writeDiary: Writes new diary entries with context validation
+2. Included necessary imports (tool, zod, exec, promisify, fs-extra, path, config, utils)
+3. Exported const diaryTools = { readDiary, writeDiary }
+4. Updated tools.ts to import and spread diaryTools
+5. Removed old tool definitions from tools.ts (readDiary and writeDiary)
+6. Fixed duplicate webSearch definition that was incorrectly carrying over readDiary code
+
+Verification:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ diary.ts exists in src/tools/
+- Import verification: ✅ diaryTools imported and spread correctly
+- Old tool definitions: ✅ Removed from tools.ts
 
 ```
 INSTRUCTIONS:
@@ -1252,10 +1272,39 @@ REFACTORING PROTOCOL:
 ---
 
 **Total Tasks**: 36
-**Completed**: 30 (Phase 0 complete + T021-T023 pre-done + T013-T030 done)
-**Remaining**: 6
-**Estimated Remaining Effort**: ~3 hours of automated work
-**At 1 task per Syntropy cycle**: ~6 cycles to complete all phases
+**Completed**: 31 (Phase 0 complete + T021-T023 pre-done + T013-T035 done)
+**Remaining**: 5
+**Estimated Remaining Effort**: ~2 hours of automated work
+**At 1 task per Syntropy cycle**: ~5 cycles to complete all phases
+
+## 📋 Phase 3: Tool Extraction Cascade
+
+
+### T037: Extract Refactoring Tools from tools.ts ⬜ READY
+**Effort**: 45 minutes | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/refactoring.ts and extract these 5 refactoring tools from tools.ts:
+1. processRefactorQueue
+2. addRefactorTask  
+3. analyzeForRefactoring
+4. spawnWorker
+5. checkWorkerStatus
+
+Move these 5 tools to the new file and export them. Update tools.ts to import from the new file. Ensure no duplicate exports remain. Verify with build and test that all tools remain accessible.
+
+Target files:
+- Create: /pixel/syntropy-core/src/tools/refactoring.ts
+- Modify: /pixel/syntropy-core/src/tools.ts
+
+This continues the extraction cascade (5/6 tools groups done, this is the 6th/last group).
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build
+```
+
+---
 
 ---
 
