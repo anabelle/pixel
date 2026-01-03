@@ -711,7 +711,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T025: Extract Validation Middleware ⬜ READY
+### T025: Extract Validation Middleware 🟡 IN_PROGRESS
 **Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T024
 
