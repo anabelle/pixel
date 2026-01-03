@@ -46,6 +46,16 @@
 - **Log**:
   - [2026-01-03 Origin] Analyze `pixels` table. Which colors earn the most sats? Which coordinates are "hot"? Post these insights to Nostr to guide/inspire the canvas community. "Yellow pixels earn 20% more on average..."
 
+### Integrated Documentation Discipline
+- **Planted**: 2026-01-03 by Human
+- **Origin**: Request to "auto update documentation tied to useful moments".
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-03 Syntropy] "Magic" automation is often brittle. Instead, we should strictly bind documentation updates to the *definition of done* for specific coding events.
+    1. **Schema Changes**: If `migrations/` is touched, `DATA_MODEL.md` *must* be updated in the same cycle.
+    2. **Tool Changes**: If new capabilities are added, the agent is required to update the tool registry docs immediately.
+    3. **Mechanism**: Enforce this via system instructions ("If you touched X, did you update Y?") rather than complex triggers.
+
 ---
 
 ## 🌿 Sprouting (3-4 waterings)
