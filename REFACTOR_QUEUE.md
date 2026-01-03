@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 13 | Available for processing |
+| ⬜ READY | 17 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 19 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
@@ -20,6 +20,12 @@
 **Last Processed**: 2026-01-03T02:52Z (T016)
 **Last Verified**: 2026-01-03 (T016 tests pass)
 **Next Priority**: T017
+
+**Phase Summary**:
+- Phase 0 (Quick Wins): 12/12 ✅
+- Phase 1 (Nostr Plugin): 4/10 ✅ (T013-T016 done, T017-T023 remaining, T021-T023 pre-done)
+- Phase 2 (API Routes): 0/3 ⬜ (T024-T026)
+- Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
 ---
 
@@ -447,7 +453,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T017: Create threadContext Unit Tests ⬜ READY
+### T017: Create threadContext Unit Tests 🟡 IN_PROGRESS
 **Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T016
 
@@ -713,6 +719,41 @@ curl http://localhost:3000/api/stats 2>&1 | head -5
 
 ## 📋 Phase 3: Syntropy Tools Splitting
 
+**Current state**: `tools.ts` is 1601 lines with 22 tools + worker-tools.ts (692 lines, 6 tools).  
+**Target**: Split into logical domain modules for maintainability.
+
+### Tool Inventory (as of 2026-01-02)
+
+| Tool | Lines | Domain | Priority |
+|------|-------|--------|----------|
+| `readContinuity` | ~15 | continuity | High |
+| `updateContinuity` | ~15 | continuity | High |
+| `getEcosystemStatus` | ~35 | ecosystem | Medium |
+| `gitSync` | ~55 | git | Medium |
+| `readAgentLogs` | ~75 | ecosystem | Medium |
+| `checkTreasury` | ~25 | treasury | Low |
+| `getVPSMetrics` | ~250 | metrics | Medium |
+| `postToNostr` | ~20 | nostr | Medium |
+| `readPixelNostrFeed` | ~70 | nostr | Medium |
+| `readPixelNostrMentions` | ~70 | nostr | Medium |
+| `readPixelMemories` | ~80 | memory | Medium |
+| `getPixelStats` | ~55 | memory | Medium |
+| `readCharacterFile` | ~15 | character | High |
+| `mutateCharacter` | ~55 | character | High |
+| `writeEvolutionReport` | ~60 | evolution | Low |
+| `notifyHuman` | ~20 | notifications | Low |
+| `readAudit` | ~30 | audit | Low |
+| `processRefactorQueue` | ~210 | refactoring | Low |
+| `addRefactorTask` | ~120 | refactoring | Low |
+| `analyzeForRefactoring` | ~115 | refactoring | Low |
+| `readDiary` | ~55 | diary | Medium |
+| `writeDiary` | ~95 | diary | Medium |
+
+**Worker tools** (`worker-tools.ts`) - ALREADY EXTRACTED:
+- `spawnWorker`, `checkWorkerStatus`, `listWorkerTasks`, `scheduleSelfRebuild`, `cleanupStaleTasks`, `readWorkerLogs`
+
+---
+
 ### T027: Create Tools Directory Structure ⬜ READY
 **Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
@@ -730,16 +771,32 @@ test -d /pixel/syntropy-core/src/tools && echo "OK"
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T027
 
+**Current location**: tools.ts lines 25-55 (~30 lines)
+
 ```
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/continuity.ts
 
-Extract from tools.ts:
-- readContinuity tool
-- updateContinuity tool
+1. Extract from tools.ts:
+   - readContinuity tool (line 25)
+   - updateContinuity tool (line 41)
 
-Re-export from tools/index.ts
-Update main tools.ts to import from tools/continuity.ts
+2. Include necessary imports:
+   - tool from 'ai'
+   - z from 'zod'
+   - fs from 'fs-extra'
+   - path from 'path'
+   - PIXEL_ROOT from '../config'
+   - logAudit from '../utils'
+
+3. Recalculate CONTINUITY_PATH in the new file (same logic as original)
+
+4. Export: export const continuityTools = { readContinuity, updateContinuity }
+
+5. In main tools.ts, replace the extracted tools with:
+   import { continuityTools } from './tools/continuity';
+   
+   And spread into the tools object: ...continuityTools,
 
 VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
@@ -747,17 +804,34 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T029: Extract Ecosystem Tools ⬜ READY
-**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+### T029: Extract Ecosystem & Metrics Tools ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T028
+
+**Current location**: tools.ts lines 58-505 (~450 lines, but getVPSMetrics is ~250)
 
 ```
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/ecosystem.ts
 
-Extract:
-- getEcosystemStatus tool
-- readAgentLogs tool
+1. Extract from tools.ts:
+   - getEcosystemStatus tool (line 58)
+   - readAgentLogs tool (line 150)
+   - getVPSMetrics tool (line 253) - large tool, ~250 lines
+
+2. Include necessary imports:
+   - tool from 'ai'
+   - z from 'zod'
+   - exec from 'child_process'
+   - promisify from 'util'
+   - fs from 'fs-extra'
+   - path from 'path'
+   - PIXEL_ROOT, LOG_PATH from '../config'
+   - logAudit from '../utils'
+
+3. Export: export const ecosystemTools = { getEcosystemStatus, readAgentLogs, getVPSMetrics }
+
+4. In main tools.ts, replace with import and spread.
 
 VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
@@ -765,17 +839,52 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T030: Extract Memory Tools ⬜ READY
-**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+### T030: Extract Nostr Tools ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T029
+
+**Current location**: tools.ts lines 507-672 (~165 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/nostr.ts
+
+1. Extract from tools.ts:
+   - postToNostr tool (line 507)
+   - readPixelNostrFeed tool (line 530)
+   - readPixelNostrMentions tool (line 603)
+
+2. Include necessary imports (check what each tool needs)
+
+3. Export: export const nostrTools = { postToNostr, readPixelNostrFeed, readPixelNostrMentions }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T031: Extract Memory Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T030
+
+**Current location**: tools.ts lines 674-808 (~135 lines)
 
 ```
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/memory.ts
 
-Extract:
-- readPixelMemories tool
-- getPixelStats tool
+1. Extract from tools.ts:
+   - readPixelMemories tool (line 674)
+   - getPixelStats tool (line 755)
+
+2. Include necessary imports (uses execAsync for docker postgres queries)
+
+3. Export: export const memoryTools = { readPixelMemories, getPixelStats }
+
+4. In main tools.ts, replace with import and spread.
 
 VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
@@ -783,17 +892,28 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T031: Extract Character Tools ⬜ READY
+### T032: Extract Character Tools ⬜ READY
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
-**Depends**: T030
+**Depends**: T031
+
+**Current location**: tools.ts lines 810-943 (~135 lines)
 
 ```
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/character.ts
 
-Extract:
-- readCharacterFile tool
-- mutateCharacter tool
+1. Extract from tools.ts:
+   - readCharacterFile tool (line 810)
+   - mutateCharacter tool (line 825)
+   - writeEvolutionReport tool (line 881)
+
+2. Include necessary imports:
+   - CHARACTER_DIR, PIXEL_ROOT, PIXEL_AGENT_DIR from '../config'
+   - syncAll from '../utils'
+
+3. Export: export const characterTools = { readCharacterFile, mutateCharacter, writeEvolutionReport }
+
+4. In main tools.ts, replace with import and spread.
 
 VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
@@ -801,27 +921,152 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T032: Create Tools Index and Finalize ⬜ READY
-**Effort**: 15 min | **Risk**: Medium | **Parallel-Safe**: ❌
-**Depends**: T031
+### T033: Extract Utility Tools ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T032
+
+**Current location**: tools.ts lines 93-147 (gitSync), 945-997 (notifyHuman, readAudit), 226-251 (checkTreasury)
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/index.ts that re-exports all tools.
+Create /pixel/syntropy-core/src/tools/utility.ts
 
-Update main tools.ts to just re-export from ./tools/index.ts
+1. Extract from tools.ts:
+   - gitSync tool (line 93)
+   - checkTreasury tool (line 226)
+   - notifyHuman tool (line 945)
+   - readAudit tool (line 966)
 
-Remaining tools to extract (can be done later):
-- checkTreasury -> treasury.ts
-- notifyHuman -> notifications.ts
-- writeEvolutionReport -> evolution.ts
-- readAudit -> audit.ts
+2. Include necessary imports
 
-(Note: delegateToOpencode has been replaced by spawnWorker in worker-tools.ts)
+3. Export: export const utilityTools = { gitSync, checkTreasury, notifyHuman, readAudit }
+
+4. In main tools.ts, replace with import and spread.
 
 VERIFY:
-cd /pixel/syntropy-core && bun run build && bun run start 2>&1 | head -10
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
+
+---
+
+### T034: Extract Refactoring Tools ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T033
+
+**Current location**: tools.ts lines 999-1448 (~450 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/refactoring.ts
+
+1. Extract from tools.ts:
+   - processRefactorQueue tool (line 999)
+   - addRefactorTask tool (line 1210)
+   - analyzeForRefactoring tool (line 1331)
+
+2. Include necessary imports
+
+3. Export: export const refactoringTools = { processRefactorQueue, addRefactorTask, analyzeForRefactoring }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T035: Extract Diary Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T034
+
+**Current location**: tools.ts lines 1450-1599 (~150 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/diary.ts
+
+1. Extract from tools.ts:
+   - readDiary tool (line 1450)
+   - writeDiary tool (line 1506)
+
+2. Include necessary imports (uses execAsync for docker postgres queries)
+
+3. Export: export const diaryTools = { readDiary, writeDiary }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T036: Create Tools Index and Finalize ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T035
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/index.ts that re-exports all tool groups:
+
+export { continuityTools } from './continuity';
+export { ecosystemTools } from './ecosystem';
+export { nostrTools } from './nostr';
+export { memoryTools } from './memory';
+export { characterTools } from './character';
+export { utilityTools } from './utility';
+export { refactoringTools } from './refactoring';
+export { diaryTools } from './diary';
+
+// Combined export for convenience
+export const allTools = {
+  ...continuityTools,
+  ...ecosystemTools,
+  ...nostrTools,
+  ...memoryTools,
+  ...characterTools,
+  ...utilityTools,
+  ...refactoringTools,
+  ...diaryTools,
+};
+
+Then update main tools.ts to be minimal:
+
+import { allTools } from './tools';
+import { workerTools } from './worker-tools';
+
+export const tools = {
+  ...allTools,
+  ...workerTools
+};
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build && echo "Build OK"
+# Test that tools object has all expected keys:
+cd /pixel/syntropy-core && bun -e "const { tools } = require('./dist/tools'); console.log('Tool count:', Object.keys(tools).length)"
+# Expected: 28 tools (22 from tools.ts + 6 from worker-tools.ts)
+```
+
+---
+
+### Phase 3 Summary
+
+| Task | Module | Tools Extracted | Est. Lines |
+|------|--------|-----------------|------------|
+| T028 | continuity.ts | 2 | ~30 |
+| T029 | ecosystem.ts | 3 | ~360 |
+| T030 | nostr.ts | 3 | ~165 |
+| T031 | memory.ts | 2 | ~135 |
+| T032 | character.ts | 3 | ~135 |
+| T033 | utility.ts | 4 | ~130 |
+| T034 | refactoring.ts | 3 | ~450 |
+| T035 | diary.ts | 2 | ~150 |
+| T036 | index.ts | (aggregator) | ~30 |
+
+**Total**: 10 tasks (T027-T036), ~1585 lines extracted into 8 domain modules.
+
+**Note**: Worker tools (`worker-tools.ts`) are ALREADY a separate module - no extraction needed.
 
 ---
 
@@ -830,7 +1075,7 @@ cd /pixel/syntropy-core && bun run build && bun run start 2>&1 | head -10
 Add this to CONTINUITY.md under Short-Term Tasks:
 
 ```markdown
-- [ ] Process one task from REFACTOR_QUEUE.md per cycle (T001 → T032)
+- [ ] Process one task from REFACTOR_QUEUE.md per cycle (T001 → T036)
 ```
 
 And add this processing logic to Syntropy's instructions:
@@ -850,9 +1095,11 @@ REFACTORING PROTOCOL:
 
 ---
 
-**Total Tasks**: 32  
-**Estimated Total Effort**: ~15 hours of automated work  
-**At 1 task per Syntropy cycle**: ~32 cycles to complete Phase 0-3
+**Total Tasks**: 36  
+**Completed**: 19 (Phase 0 complete + T021-T023 pre-done + T013-T016 done)  
+**Remaining**: 17  
+**Estimated Remaining Effort**: ~8 hours of automated work  
+**At 1 task per Syntropy cycle**: ~17 cycles to complete all phases
 
 ---
 
