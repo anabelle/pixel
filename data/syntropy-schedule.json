@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-03T00:05:22.092Z","reason":"Waiting for T010 worker to complete (currently running, ~3 min elapsed), then need immediate swap clearing (41.7% and rising). 20-minute delay allows worker completion and provides time for swap management."}
+{"nextRunAt":"2026-01-03T00:37:55.257Z","reason":"Swap crisis at 81.8% - awaiting human intervention. Monitoring for resolution or further escalation. Will check status and resume refactor queue if cleared."}
