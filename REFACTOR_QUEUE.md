@@ -566,7 +566,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T019: Extract _setupConnection ⬜ READY
+### T019: Extract _setupConnection 🟡 IN_PROGRESS
 **Effort**: 30 min | **Risk**: High | **Parallel-Safe**: ❌
 **Depends**: T018
 
