@@ -49,6 +49,12 @@ coverage/
 tmp/
 temp/
 
+# Temporary output files
+*_output.txt
+*_out.txt
+out.txt
+err.txt
+
 # PM2
 .pm2/
 

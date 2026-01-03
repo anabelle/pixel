@@ -9,16 +9,17 @@
 
 ## 📊 Queue Status
 
-    | Status | Count | Description |
-| |--------|-------|-------------|
-| | ⬜ READY | 22 | Available for processing |
-| | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 10 | Completed successfully |
-| | ❌ FAILED | 0 | Failed, needs human review |
-| | ⏸️ BLOCKED | 0 | Waiting on dependency |
+| Status | Count | Description |
+|--------|-------|-------------|
+| ⬜ READY | 19 | Available for processing |
+| 🟡 IN_PROGRESS | 0 | Currently being worked on |
+| ✅ DONE | 14 | Completed successfully |
+| ❌ FAILED | 0 | Failed, needs human review |
+| ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T01:00Z (T011)
-**Next Priority**: T012
+**Last Processed**: 2026-01-03T01:52Z (T012)
+**Last Verified**: 2026-01-02 (Phase 1 accuracy check)
+**Next Priority**: T013
 
 ---
 
@@ -259,7 +260,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T012: Update .gitignore for Temp Files 🟡 IN_PROGRESS
+### T012: Update .gitignore for Temp Files ✅ DONE
 **Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```
@@ -276,7 +277,368 @@ VERIFY:
 grep -q "out.txt" /pixel/.gitignore && echo "OK"
 ```
 
--
+Completed: 2026-01-03T01:52Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+---
+
+## 📋 Phase 1: Nostr Plugin - Thread Context Extraction
+
+**service.js current size**: 7740 lines  
+**Target**: Extract ~300 lines of thread context logic to threadContext.js
+
+### T013: Create threadContext.js Skeleton ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+**Note**: `context.js` already exists but handles Nostr room/world context, NOT thread resolution.
+This new file handles reply thread fetching and engagement decisions.
+
+```
+INSTRUCTIONS:
+Create /pixel/pixel-agent/plugin-nostr/lib/threadContext.js with this skeleton:
+
+"use strict";
+
+const { poolList } = require('./poolList');
+
+/**
+ * Thread Context Resolver
+ * Extracted from service.js (lines 4223-4530) for better separation of concerns.
+ * Handles fetching thread history and determining engagement quality.
+ */
+
+class ThreadContextResolver {
+  constructor({ pool, relays, selfPubkey, maxEvents, maxRounds, batchSize, list, logger }) {
+    this.pool = pool;
+    this.relays = relays;
+    this.selfPubkey = selfPubkey;
+    this.maxEvents = maxEvents || 80;
+    this.maxRounds = maxRounds || 4;
+    this.batchSize = batchSize || 3;
+    this._list = list || ((relays, filters) => poolList(pool, relays, filters));
+    this.logger = logger || console;
+  }
+
+  // Placeholder - will be filled in T014
+  async getThreadContext(evt) {
+    throw new Error('Not implemented - see T014');
+  }
+
+  // Placeholder - will be filled in T015
+  assessThreadContextQuality(threadEvents) {
+    throw new Error('Not implemented - see T015');
+  }
+
+  // Placeholder - will be filled in T016
+  shouldEngageWithThread(evt, threadContext) {
+    throw new Error('Not implemented - see T016');
+  }
+}
+
+module.exports = { ThreadContextResolver };
+
+VERIFY:
+node -e "require('/pixel/pixel-agent/plugin-nostr/lib/threadContext.js')" && echo "OK"
+```
+
+---
+
+### T014: Extract _getThreadContext to threadContext.js ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T013
+
+**Current location**: service.js lines 4223-4433 (~210 lines)
+
+```
+INSTRUCTIONS:
+1. Open /pixel/pixel-agent/plugin-nostr/lib/service.js
+2. Find the _getThreadContext method (lines 4223-4433)
+3. Copy the method body to ThreadContextResolver.getThreadContext in threadContext.js
+4. Adapt 'this.' references to use constructor-injected dependencies:
+   - this.pool -> this.pool
+   - this.relays -> this.relays  
+   - this._list -> this._list
+   - this.maxThreadContextEvents -> this.maxEvents
+   - this.threadContextFetchRounds -> this.maxRounds
+   - this.threadContextFetchBatch -> this.batchSize
+   - this._assessThreadContextQuality -> this.assessThreadContextQuality
+5. Keep the original method in service.js but make it call the new class:
+   
+   async _getThreadContext(evt) {
+     return this.threadResolver.getThreadContext(evt);
+   }
+
+6. In the service.js constructor (after pool/relays are set), add:
+   const { ThreadContextResolver } = require('./threadContext');
+   this.threadResolver = new ThreadContextResolver({
+     pool: this.pool,
+     relays: this.relays,
+     selfPubkey: this.pk,
+     maxEvents: this.maxThreadContextEvents,
+     maxRounds: this.threadContextFetchRounds,
+     batchSize: this.threadContextFetchBatch,
+     list: this._list.bind(this),
+     logger: this.logger
+   });
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+---
+
+### T015: Extract _assessThreadContextQuality ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T014
+
+**Current location**: service.js lines 4435-4461 (~27 lines)
+
+```
+INSTRUCTIONS:
+1. Find _assessThreadContextQuality in service.js (lines 4435-4461)
+2. Move implementation to ThreadContextResolver.assessThreadContextQuality
+3. This is a pure function - no 'this.' references to adapt
+4. Create wrapper in service.js:
+   
+   _assessThreadContextQuality(threadEvents) {
+     return this.threadResolver.assessThreadContextQuality(threadEvents);
+   }
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+---
+
+### T016: Extract _shouldEngageWithThread ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T015
+
+**Current location**: service.js lines 4463-4530 (~68 lines)
+
+```
+INSTRUCTIONS:
+1. Find _shouldEngageWithThread in service.js (lines 4463-4530)
+2. Move implementation to ThreadContextResolver.shouldEngageWithThread
+3. Adapt the logger reference - pass logger into constructor
+4. Create wrapper in service.js:
+   
+   _shouldEngageWithThread(evt, threadContext) {
+     return this.threadResolver.shouldEngageWithThread(evt, threadContext);
+   }
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+---
+
+### T017: Create threadContext Unit Tests ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T016
+
+**Note**: test/service.threadContext.test.js already exists with some thread context tests.
+This task adds unit tests for the extracted ThreadContextResolver class.
+
+```
+INSTRUCTIONS:
+Create /pixel/pixel-agent/plugin-nostr/test/threadContext.test.js with unit tests:
+
+1. Test ThreadContextResolver constructor
+2. Test getThreadContext with mocked pool (returning various thread structures)
+3. Test assessThreadContextQuality with sample data:
+   - Empty array -> 0
+   - Single short event -> low score
+   - Multiple events with varied content -> high score
+4. Test shouldEngageWithThread with various scenarios:
+   - Root post with high quality -> true
+   - Deep thread (>5 events) -> false
+   - Low context quality -> false
+   - Relevant keywords present -> true
+   - Bot patterns -> false
+
+Use vitest (already configured in vitest.config.mjs).
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npx vitest run threadContext 2>&1 | tail -15
+```
+
+---
+
+## 📋 Phase 1: Nostr Plugin - Connection Manager Extraction
+
+**Target**: Extract ~150 lines of connection lifecycle management to connectionManager.js
+
+### T018: Create connectionManager.js Skeleton ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+**Methods to extract** (service.js):
+- `_startConnectionMonitoring` (line 5648)
+- `_checkConnectionHealth` (line 5662)
+- `_attemptReconnection` (line 5678)
+- `_setupConnection` (line 5724)
+
+```
+INSTRUCTIONS:
+Create /pixel/pixel-agent/plugin-nostr/lib/connectionManager.js with skeleton class.
+
+"use strict";
+
+/**
+ * Connection Manager
+ * Extracted from service.js (lines 5648-5800) for better separation.
+ * Handles pool lifecycle, health monitoring, and reconnection logic.
+ */
+
+class ConnectionManager {
+  constructor({ poolFactory, relays, pkHex, runtime, handlers, config, logger }) {
+    this.poolFactory = poolFactory;
+    this.relays = relays;
+    this.pkHex = pkHex;
+    this.runtime = runtime;
+    this.handlers = handlers; // { onevent, oneose, onclose }
+    this.config = config; // { checkIntervalMs, maxTimeSinceLastEventMs, maxReconnectAttempts, reconnectDelayMs }
+    this.logger = logger || console;
+    
+    this.pool = null;
+    this.listenUnsub = null;
+    this.homeFeedUnsub = null;
+    this.monitorTimer = null;
+    this.reconnectAttempts = 0;
+    this.lastEventReceived = Date.now();
+  }
+
+  // Placeholder - T019
+  async setup() { throw new Error('Not implemented - see T019'); }
+  
+  // Placeholder - T020  
+  startMonitoring() { throw new Error('Not implemented - see T020'); }
+  checkHealth() { throw new Error('Not implemented - see T020'); }
+  async attemptReconnection() { throw new Error('Not implemented - see T020'); }
+  
+  stop() {
+    if (this.monitorTimer) clearTimeout(this.monitorTimer);
+    if (this.listenUnsub) try { this.listenUnsub(); } catch {}
+    if (this.homeFeedUnsub) try { this.homeFeedUnsub(); } catch {}
+    if (this.pool) try { this.pool.close([]); } catch {}
+  }
+}
+
+module.exports = { ConnectionManager };
+
+VERIFY:
+node -e "require('/pixel/pixel-agent/plugin-nostr/lib/connectionManager.js')" && echo "OK"
+```
+
+---
+
+### T019: Extract _setupConnection ⬜ READY
+**Effort**: 30 min | **Risk**: High | **Parallel-Safe**: ❌
+**Depends**: T018
+
+**Current location**: service.js lines 5724-5800+ (~80 lines)
+
+```
+INSTRUCTIONS:
+1. Extract _setupConnection (lines 5724-5800+) to ConnectionManager.setup()
+2. This method creates pool, sets up subscriptions via subscribeMap
+3. Adapt references:
+   - this.runtime -> this.runtime
+   - this.relays -> this.relays
+   - this.pkHex -> this.pkHex
+   - this.pool -> this.pool (store on instance)
+   - this.listenUnsub -> this.listenUnsub
+4. Return pool instance so service.js can store reference
+5. This is HIGH RISK - connection setup is critical. Test thoroughly.
+
+VERIFY:
+docker compose restart agent && sleep 30 && docker compose logs agent --tail=20 | grep -i "connected\|error"
+```
+
+---
+
+### T020: Extract Connection Monitoring Methods ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T019
+
+**Current locations** (service.js):
+- `_startConnectionMonitoring` (line 5648, ~14 lines)
+- `_checkConnectionHealth` (line 5662, ~16 lines)
+- `_attemptReconnection` (line 5678, ~46 lines)
+
+```
+INSTRUCTIONS:
+1. Extract these methods to ConnectionManager:
+   - _startConnectionMonitoring -> startMonitoring()
+   - _checkConnectionHealth -> checkHealth()
+   - _attemptReconnection -> attemptReconnection()
+2. Adapt references to use constructor-injected config
+3. Note: _checkConnectionHealth also calls _cleanupImageContexts() - 
+   this should be passed as a callback in handlers or kept in service.js
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+---
+
+## 📋 Phase 1: Nostr Plugin - Contact Manager ✅ ALREADY EXTRACTED
+
+**STATUS**: Contact management code was already extracted to `contacts.js` and `mute.js` in prior work.
+Tasks T021-T023 are marked DONE. See individual tasks for details.
+
+### T021: SKIP - contacts.js and mute.js Already Exist ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+
+**STATUS**: Already completed in prior refactoring.
+- `/pixel/pixel-agent/plugin-nostr/lib/contacts.js` - exports: loadCurrentContacts, publishContacts, loadMuteList, publishMuteList
+- `/pixel/pixel-agent/plugin-nostr/lib/mute.js` - exports: muteUser, unmuteUser, checkIfMuted
+
+Service.js methods `_loadCurrentContacts`, `_loadMuteList`, `_publishContacts`, `_publishMuteList` are now thin wrappers
+that call these extracted functions. Methods `muteUser`/`unmuteUser` in service.js add caching and logging.
+
+```
+VERIFY:
+node -e "const c = require('/pixel/pixel-agent/plugin-nostr/lib/contacts'); const m = require('/pixel/pixel-agent/plugin-nostr/lib/mute'); console.log('contacts:', Object.keys(c)); console.log('mute:', Object.keys(m));" && echo "OK"
+```
+
+Completed: Prior to queue creation
+
+---
+
+### T022: SKIP - Contact Loading Already Extracted ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+**Depends**: T021
+
+**STATUS**: Already completed. See T021.
+
+The following are thin wrappers in service.js calling contacts.js:
+- `_loadCurrentContacts` (line 1730) -> calls `loadCurrentContacts` from contacts.js
+- `_loadMuteList` (line 1740) -> calls `loadMuteList` from contacts.js (with caching)
+- `_isUserMuted` (line 1774) -> calls `_loadMuteList` and checks Set
+
+Completed: Prior to queue creation
+
+---
+
+### T023: SKIP - Contact Mutation Already Extracted ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+**Depends**: T022
+
+**STATUS**: Already completed. See T021.
+
+The following are thin wrappers in service.js:
+- `_publishContacts` (line 1829) -> calls `publishContacts` from contacts.js
+- `_publishMuteList` (line 1842) -> calls `publishMuteList` from contacts.js
+- `muteUser` (line 1856) -> orchestrates mute with caching and optional unfollow
+- `unmuteUser` (line 1900) -> orchestrates unmute with caching
+
+The standalone functions in mute.js (`muteUser`, `unmuteUser`, `checkIfMuted`) are simpler versions
+without caching - the service.js methods add service-level concerns.
+
+Completed: Prior to queue creation
+
+---
 
 ## 📋 Phase 2: API Route Splitting
 
