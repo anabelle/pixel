@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 6 | Available for processing |
+| ⬜ READY | 5 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 31 | Completed successfully |
+| ✅ DONE | 32 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T17:45Z (T031)
-**Last Verified**: 2026-01-03T17:45 (T031 memory tools extraction)
-**Next Priority**: T032
+**Last Processed**: 2026-01-03T18:00Z (T032)
+**Last Verified**: 2026-01-03T18:00 (T032 character tools extraction)
+**Next Priority**: T033
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 8/10 🟢 (T013-T020 done, T021-T023 pre-done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 5/10 🟡 (T027-T031 done, T032-T036 pending)
+- Phase 3 (Syntropy Tools): 6/10 🟡 (T027-T032 done, T033-T036 pending)
 
 ---
 
@@ -968,9 +968,28 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T032: Extract Character Tools ⬜ READY
+### T032: Extract Character Tools ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T031
+
+Completed: 2026-01-03T18:00Z
+
+Changes Made:
+1. Created /pixel/syntropy-core/src/tools/character.ts with extracted tools:
+   - readCharacterFile: Reads character DNA files
+   - mutateCharacter: Mutates character with validation and rollback
+   - writeEvolutionReport: Writes evolution reports with auto-pruning
+2. Included necessary imports (CHARACTER_DIR, helper functions, CONTINUITY_PATH)
+3. Exported const characterTools = { readCharacterFile, mutateCharacter, writeEvolutionReport }
+4. Updated tools.ts to import and spread characterTools
+5. Removed three tool definitions from tools.ts
+6. Cleaned up unused imports (PIXEL_AGENT_DIR, CHARACTER_DIR)
+
+Verification:
+- TypeScript compilation: ✅ PASSED (no errors)
+- Build verification: ✅ PASSED
+- File structure: ✅ character.ts exists in src/tools/
+- Import verification: ✅ characterTools imported and spread correctly
 
 ```
 INSTRUCTIONS:
