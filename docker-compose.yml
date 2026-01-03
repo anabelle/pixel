@@ -158,6 +158,8 @@ services:
       - HOST_PIXEL_ROOT=${HOST_PIXEL_ROOT:-${PWD}}
       # Git authentication via Personal Access Token
       - GH_TOKEN=${GH_TOKEN}
+      # Security: Prevent worker spawn cascade (OOM protection)
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
     networks:
       - pixel-net
     depends_on:
@@ -267,7 +269,9 @@ services:
       # When Syntropy spawns workers via docker socket, relative paths (.) resolve
       # to the container's PWD, not the host's. This breaks volume mounts.
       - ${HOST_PIXEL_ROOT:-.}:/pixel
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Security: Read-only docker socket limits container escape vectors
+      # Workers should only need to inspect, not create containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - NODE_ENV=production
       - PIXEL_ROOT=/pixel

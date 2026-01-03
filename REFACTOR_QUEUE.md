@@ -1,10 +1,9 @@
 # 🔄 Syntropy Refactor Queue
 ## *Autonomous Self-Improvement Tasks*
 
-**Purpose**: Atomic tasks for Syntropy to process during runtime cycles.
-**Protocol**: Pick the next `⬜ READY` task, execute via `spawnWorker`, mark complete.
+**Purpose**: Atomic tasks for Syntropy to process during runtime cycles.  
+**Protocol**: Pick the next `⬜ READY` task, execute via `spawnWorker`, mark complete.  
 **Safety**: All tasks are designed to be rollback-safe and testable.
-**Archive**: Completed tasks are moved to `REFACTOR_ARCHIVE.md`.
 
 ---
 
@@ -12,146 +11,1102 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 8 | Available for processing |
+| ⬜ READY | 13 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 0 | Completed (See Archive) |
+| ✅ DONE | 20 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T20:10Z (T037 complete - archived)
-**Next Priority**: T038
+**Last Processed**: 2026-01-03T03:12Z (T017)
+**Last Verified**: 2026-01-03 (T017 tests pass)
+**Next Priority**: T018
+
+**Phase Summary**:
+- Phase 0 (Quick Wins): 12/12 ✅
+- Phase 1 (Nostr Plugin): 4/10 ✅ (T013-T016 done, T017-T023 remaining, T021-T023 pre-done)
+- Phase 2 (API Routes): 0/3 ⬜ (T024-T026)
+- Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
 ---
 
 ## 🚦 Processing Rules for Syntropy
 
 1. **One task per cycle**: Only attempt ONE task from this queue per Syntropy cycle
-2. **Spawn Worker**: Use `spawnWorker` with the task's `INSTRUCTIONS` block
-3. **Verify before marking done**: Run the `VERIFY` command
-4. **Update ALL references**: When moving/renaming files, update all calling scripts/docs
-5. **Move to Archive**: Once done, move the task block to `REFACTOR_ARCHIVE.md` to keep this file lean
-6. **No breaking changes**: Tests must pass before and after
+2. **Spawn Worker**: Use `spawnWorker` with the task's `INSTRUCTIONS` block (workers run Opencode in ephemeral containers)
+3. **Verify before marking done**: Run the `VERIFY` command if provided
+4. **Update ALL references**: When moving/renaming files:
+   - `grep -rn "filename" /pixel --include="*.sh" --include="*.yml" --include="*.md" --include="*.json"`
+   - Update every script, config, and doc that references the old path
+   - This includes: docker-compose.yml, *.sh scripts, DEPLOYMENT.md, AGENTS.md, README.md, etc.
+5. **Documentation is mandatory**: Every file move MUST update related documentation
+6. **No breaking changes**: If a reference can't be updated, DON'T move the file
+7. **Update status**: After completion, update the task status in this file
+8. **Don't skip ahead**: Tasks may have dependencies, process in order unless marked parallel-safe
 
 ---
 
-## 📋 Phase 4: Unit Testing (Syntropy Tools)
+## 📋 Phase 0: Quick Wins (No Dependencies, Safe)
 
-**Goal**: Achieve 80%+ test coverage for all Syntropy tool modules.
-**Pattern**: Create `src/tools/module.test.ts` using `bun:test` and mocked dependencies.
+These are parallel-safe and can be done in any order.
 
-### T038: Continuity Tools Unit Tests ⬜ READY
-**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T001: Delete Temporary Output Files ✅ DONE
+**Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/continuity.test.ts.
-Test:
-- readContinuity (file read, error handling)
-- updateContinuity (file write, section updates)
-Use bun:test.
+Delete these temporary files from the repo root /pixel/:
+- direct_output.txt
+- err.txt
+- out.txt
+- output.txt
+- opencode_out.txt
+- opencode_test.txt
+
+Use: rm -f /pixel/direct_output.txt /pixel/err.txt /pixel/out.txt /pixel/output.txt /pixel/opencode_out.txt /pixel/opencode_test.txt
+
+VERIFY:
+ls -la /pixel/*.txt 2>/dev/null | wc -l  # Should be 0 or only intentional .txt files
 ```
 
 ---
 
-### T039: Nostr Tools Unit Tests ⬜ READY
+### T002: Create Scripts Directory Structure ✅ DONE
+**Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create the following directory structure in /pixel/:
+
+mkdir -p /pixel/scripts/backup
+mkdir -p /pixel/scripts/deploy
+mkdir -p /pixel/scripts/diagnostics
+mkdir -p /pixel/scripts/maintenance
+mkdir -p /pixel/scripts/monitoring
+mkdir -p /pixel/scripts/recovery
+mkdir -p /pixel/scripts/setup
+mkdir -p /pixel/scripts/utilities
+mkdir -p /pixel/scripts/validation
+
+VERIFY:
+ls -d /pixel/scripts/*/ | wc -l  # Should be 9
+```
+
+---
+
+### T003: Move Backup Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move backup-related scripts to /pixel/scripts/backup/:
+
+mv /pixel/autonomous-backup.sh /pixel/scripts/backup/
+
+Update any references if found.
+
+VERIFY:
+test -f /pixel/scripts/backup/autonomous-backup.sh && echo "OK"
+```
+
+---
+
+### T004: Move Monitoring Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move monitoring scripts to /pixel/scripts/monitoring/:
+
+mv /pixel/check-monitor.sh /pixel/scripts/monitoring/
+mv /pixel/health-check.sh /pixel/scripts/monitoring/
+mv /pixel/server-monitor.js /pixel/scripts/monitoring/
+mv /pixel/report-status.js /pixel/scripts/monitoring/
+
+VERIFY:
+ls /pixel/scripts/monitoring/ | wc -l  # Should be 4
+```
+
+---
+
+### T005: Move Deploy Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move deployment scripts:
+
+mv /pixel/deploy-production.sh /pixel/scripts/deploy/
+# safe-deploy.sh is already in scripts/
+
+VERIFY:
+test -f /pixel/scripts/deploy/deploy-production.sh && echo "OK"
+```
+
+---
+
+### T006: Move Maintenance Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move maintenance scripts:
+
+mv /pixel/final-cleanup.sh /pixel/scripts/maintenance/
+mv /pixel/fix-build-corruption.sh /pixel/scripts/maintenance/
+mv /pixel/rotate-logs.sh /pixel/scripts/maintenance/
+
+VERIFY:
+ls /pixel/scripts/maintenance/ | wc -l  # Should be 3
+
+Completed: 2026-01-02T23:08Z
+```
+
+---
+
+### T007: Move Setup Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move setup scripts:
+
+mv /pixel/docker-setup.sh /pixel/scripts/setup/
+mv /pixel/vps-bootstrap.sh /pixel/scripts/setup/
+
+VERIFY:
+ls /pixel/scripts/setup/ | wc -l  # Should be 2+ (init-ssl.sh, setup-local-docker.sh may already be there)
+```
+
+Completed: 2026-01-02T23:14Z
+
+---
+
+### T008: Move Recovery Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move recovery scripts:
+
+mv /pixel/emergency-recovery.sh /pixel/scripts/recovery/
+
+VERIFY:
+test -f /pixel/scripts/recovery/emergency-recovery.sh && echo "OK"
+```
+
+Completed: 2026-01-02T23:27Z
+
+---
+
+### T009: Move Utility Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move utility scripts:
+
+mv /pixel/download_pixels.py /pixel/scripts/utilities/
+mv /pixel/query_db.js /pixel/scripts/utilities/
+mv /pixel/restore_pixels.js /pixel/scripts/utilities/
+
+VERIFY:
+ls /pixel/scripts/utilities/ | wc -l  # Should be 3
+```
+
+Completed: 2026-01-02T23:34Z
+
+---
+
+### T010: Move Diagnostics Scripts ✅ DONE
+**Effort**: 5 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T002
+
+```
+INSTRUCTIONS:
+Move diagnostic scripts:
+
+mv /pixel/doctor.js /pixel/scripts/diagnostics/
+
+VERIFY:
+test -f /pixel/scripts/diagnostics/doctor.js && echo "OK"
+```
+
+Completed: 2026-01-02T23:40Z
+
+---
+
+### T011: Update Package.json Script References ✅ DONE
+**Effort**: 10 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T003-T010
+
+```
+INSTRUCTIONS:
+Update /pixel/package.json to reference new script locations.
+
+Change:
+  "doctor": "node doctor.js"
+To:
+  "doctor": "node scripts/diagnostics/doctor.js"
+
+Verify no other script references are broken.
+
+VERIFY:
+npm run doctor 2>&1 | head -5  # Should run without "file not found"
+```
+
+Completed: 2026-01-03T01:00Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+---
+
+### T012: Update .gitignore for Temp Files ✅ DONE
+**Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Add these patterns to /pixel/.gitignore if not present:
+
+# Temporary output files
+*_output.txt
+*_out.txt
+out.txt
+err.txt
+
+VERIFY:
+grep -q "out.txt" /pixel/.gitignore && echo "OK"
+```
+
+Completed: 2026-01-03T01:52Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+
+---
+
+## 📋 Phase 1: Nostr Plugin - Thread Context Extraction
+
+**service.js current size**: 7740 lines  
+**Target**: Extract ~300 lines of thread context logic to threadContext.js
+
+### T013: Create threadContext.js Skeleton ✅ DONE
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+**Note**: `context.js` already exists but handles Nostr room/world context, NOT thread resolution.
+This new file handles reply thread fetching and engagement decisions.
+
+```
+INSTRUCTIONS:
+Create /pixel/pixel-agent/plugin-nostr/lib/threadContext.js with this skeleton:
+
+"use strict";
+
+const { poolList } = require('./poolList');
+
+/**
+ * Thread Context Resolver
+ * Extracted from service.js (lines 4223-4530) for better separation of concerns.
+ * Handles fetching thread history and determining engagement quality.
+ */
+
+class ThreadContextResolver {
+  constructor({ pool, relays, selfPubkey, maxEvents, maxRounds, batchSize, list, logger }) {
+    this.pool = pool;
+    this.relays = relays;
+    this.selfPubkey = selfPubkey;
+    this.maxEvents = maxEvents || 80;
+    this.maxRounds = maxRounds || 4;
+    this.batchSize = batchSize || 3;
+    this._list = list || ((relays, filters) => poolList(pool, relays, filters));
+    this.logger = logger || console;
+  }
+
+  // Placeholder - will be filled in T014
+  async getThreadContext(evt) {
+    throw new Error('Not implemented - see T014');
+  }
+
+  // Placeholder - will be filled in T015
+  assessThreadContextQuality(threadEvents) {
+    throw new Error('Not implemented - see T015');
+  }
+
+  // Placeholder - will be filled in T016
+  shouldEngageWithThread(evt, threadContext) {
+    throw new Error('Not implemented - see T016');
+  }
+}
+
+module.exports = { ThreadContextResolver };
+
+VERIFY:
+node -e "require('/pixel/pixel-agent/plugin-nostr/lib/threadContext.js')" && echo "OK"
+```
+
+Completed: 2026-01-03T02:15Z
+Worker: Created skeleton file, verification passed
+
+---
+
+### T014: Extract _getThreadContext to threadContext.js ✅ DONE
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T013
+
+**Current location**: service.js lines 4223-4433 (~210 lines)
+
+```
+INSTRUCTIONS:
+1. Open /pixel/pixel-agent/plugin-nostr/lib/service.js
+2. Find the _getThreadContext method (lines 4223-4433)
+3. Copy the method body to ThreadContextResolver.getThreadContext in threadContext.js
+4. Adapt 'this.' references to use constructor-injected dependencies:
+   - this.pool -> this.pool
+   - this.relays -> this.relays  
+   - this._list -> this._list
+   - this.maxThreadContextEvents -> this.maxEvents
+   - this.threadContextFetchRounds -> this.maxRounds
+   - this.threadContextFetchBatch -> this.batchSize
+   - this._assessThreadContextQuality -> this.assessThreadContextQuality
+5. Keep the original method in service.js but make it call the new class:
+   
+   async _getThreadContext(evt) {
+     return this.threadResolver.getThreadContext(evt);
+   }
+
+6. In the service.js constructor (after pool/relays are set), add:
+   const { ThreadContextResolver } = require('./threadContext');
+   this.threadResolver = new ThreadContextResolver({
+     pool: this.pool,
+     relays: this.relays,
+     selfPubkey: this.pk,
+     maxEvents: this.maxThreadContextEvents,
+     maxRounds: this.threadContextFetchRounds,
+     batchSize: this.threadContextFetchBatch,
+     list: this._list.bind(this),
+     logger: this.logger
+   });
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+---
+
+### T015: Extract _assessThreadContextQuality ✅ DONE
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T014
+
+**Current location**: service.js lines 4435-4461 (~27 lines)
+
+```
+INSTRUCTIONS:
+1. Find _assessThreadContextQuality in service.js (lines 4435-4461)
+2. Move implementation to ThreadContextResolver.assessThreadContextQuality
+3. This is a pure function - no 'this.' references to adapt
+4. Create wrapper in service.js:
+   
+   _assessThreadContextQuality(threadEvents) {
+     return this.threadResolver.assessThreadContextQuality(threadEvents);
+   }
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+Completed: 2026-01-03T02:35Z
+Status: Already completed during T014 implementation
+- Implementation extracted to threadContext.js (lines 238-264)
+- Wrapper created in service.js (lines 4243-4245)
+
+---
+
+### T016: Extract _shouldEngageWithThread ✅ DONE
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T015
+
+**Current location**: service.js lines 4463-4530 (~68 lines)
+
+```
+INSTRUCTIONS:
+1. Find _shouldEngageWithThread in service.js (lines 4463-4530)
+2. Move implementation to ThreadContextResolver.shouldEngageWithThread
+3. Adapt the logger reference - pass logger into constructor
+4. Create wrapper in service.js:
+   
+   _shouldEngageWithThread(evt, threadContext) {
+     return this.threadResolver.shouldEngageWithThread(evt, threadContext);
+   }
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
+```
+
+Completed: 2026-01-03T02:52Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- Implementation extracted to threadContext.js (lines 267-330)
+- Wrapper created in service.js (lines 4247-4249)
+- Logger adapted to use `this.logger`
+
+---
+
+### T017: Create threadContext Unit Tests ✅ DONE
 **Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T016
+
+**Note**: test/service.threadContext.test.js already exists with some thread context tests.
+This task adds unit tests for the extracted ThreadContextResolver class.
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/nostr.test.ts.
-Test:
-- postToNostr
-- readPixelNostrFeed
-- readPixelNostrMentions
-Mock the @elizaos/plugin-nostr service calls.
+Create /pixel/pixel-agent/plugin-nostr/test/threadContext.test.js with unit tests:
+
+1. Test ThreadContextResolver constructor
+2. Test getThreadContext with mocked pool (returning various thread structures)
+3. Test assessThreadContextQuality with sample data:
+   - Empty array -> 0
+   - Single short event -> low score
+   - Multiple events with varied content -> high score
+4. Test shouldEngageWithThread with various scenarios:
+   - Root post with high quality -> true
+   - Deep thread (>5 events) -> false
+   - Low context quality -> false
+   - Relevant keywords present -> true
+   - Bot patterns -> false
+
+Use vitest (already configured in vitest.config.mjs).
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npx vitest run threadContext 2>&1 | tail -15
+```
+
+Completed: 2026-01-03T03:12Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- Created 26 comprehensive unit tests for ThreadContextResolver
+- All tests passing (26/26)
+- No regressions in existing tests
+
+---
+
+## 📋 Phase 1: Nostr Plugin - Connection Manager Extraction
+
+**Target**: Extract ~150 lines of connection lifecycle management to connectionManager.js
+
+### T018: Create connectionManager.js Skeleton ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+**Methods to extract** (service.js):
+- `_startConnectionMonitoring` (line 5648)
+- `_checkConnectionHealth` (line 5662)
+- `_attemptReconnection` (line 5678)
+- `_setupConnection` (line 5724)
+
+```
+INSTRUCTIONS:
+Create /pixel/pixel-agent/plugin-nostr/lib/connectionManager.js with skeleton class.
+
+"use strict";
+
+/**
+ * Connection Manager
+ * Extracted from service.js (lines 5648-5800) for better separation.
+ * Handles pool lifecycle, health monitoring, and reconnection logic.
+ */
+
+class ConnectionManager {
+  constructor({ poolFactory, relays, pkHex, runtime, handlers, config, logger }) {
+    this.poolFactory = poolFactory;
+    this.relays = relays;
+    this.pkHex = pkHex;
+    this.runtime = runtime;
+    this.handlers = handlers; // { onevent, oneose, onclose }
+    this.config = config; // { checkIntervalMs, maxTimeSinceLastEventMs, maxReconnectAttempts, reconnectDelayMs }
+    this.logger = logger || console;
+    
+    this.pool = null;
+    this.listenUnsub = null;
+    this.homeFeedUnsub = null;
+    this.monitorTimer = null;
+    this.reconnectAttempts = 0;
+    this.lastEventReceived = Date.now();
+  }
+
+  // Placeholder - T019
+  async setup() { throw new Error('Not implemented - see T019'); }
+  
+  // Placeholder - T020  
+  startMonitoring() { throw new Error('Not implemented - see T020'); }
+  checkHealth() { throw new Error('Not implemented - see T020'); }
+  async attemptReconnection() { throw new Error('Not implemented - see T020'); }
+  
+  stop() {
+    if (this.monitorTimer) clearTimeout(this.monitorTimer);
+    if (this.listenUnsub) try { this.listenUnsub(); } catch {}
+    if (this.homeFeedUnsub) try { this.homeFeedUnsub(); } catch {}
+    if (this.pool) try { this.pool.close([]); } catch {}
+  }
+}
+
+module.exports = { ConnectionManager };
+
+VERIFY:
+node -e "require('/pixel/pixel-agent/plugin-nostr/lib/connectionManager.js')" && echo "OK"
 ```
 
 ---
 
-### T040: Ecosystem Tools Unit Tests ⬜ READY
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T019: Extract _setupConnection ⬜ READY
+**Effort**: 30 min | **Risk**: High | **Parallel-Safe**: ❌
+**Depends**: T018
+
+**Current location**: service.js lines 5724-5800+ (~80 lines)
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/ecosystem.test.ts.
-Test:
-- getEcosystemStatus (docker ps parsing)
-- readAgentLogs (line filtering)
-- getVPSMetrics (CPU/Memory parsing)
-Mock child_process.exec.
+1. Extract _setupConnection (lines 5724-5800+) to ConnectionManager.setup()
+2. This method creates pool, sets up subscriptions via subscribeMap
+3. Adapt references:
+   - this.runtime -> this.runtime
+   - this.relays -> this.relays
+   - this.pkHex -> this.pkHex
+   - this.pool -> this.pool (store on instance)
+   - this.listenUnsub -> this.listenUnsub
+4. Return pool instance so service.js can store reference
+5. This is HIGH RISK - connection setup is critical. Test thoroughly.
+
+VERIFY:
+docker compose restart agent && sleep 30 && docker compose logs agent --tail=20 | grep -i "connected\|error"
 ```
 
 ---
 
-### T041: Memory & Diary Tools Unit Tests ⬜ READY
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T020: Extract Connection Monitoring Methods ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T019
+
+**Current locations** (service.js):
+- `_startConnectionMonitoring` (line 5648, ~14 lines)
+- `_checkConnectionHealth` (line 5662, ~16 lines)
+- `_attemptReconnection` (line 5678, ~46 lines)
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/memory.test.ts.
-Test:
-- readPixelMemories (DB query)
-- getPixelStats (DB aggregation)
-- readDiary (markdown read)
-- writeDiary (markdown append)
-Mock bun:sqlite and fs-extra.
+1. Extract these methods to ConnectionManager:
+   - _startConnectionMonitoring -> startMonitoring()
+   - _checkConnectionHealth -> checkHealth()
+   - _attemptReconnection -> attemptReconnection()
+2. Adapt references to use constructor-injected config
+3. Note: _checkConnectionHealth also calls _cleanupImageContexts() - 
+   this should be passed as a callback in handlers or kept in service.js
+
+VERIFY:
+cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
 ```
 
 ---
 
-### T042: Character Tools Unit Tests ⬜ READY
+## 📋 Phase 1: Nostr Plugin - Contact Manager ✅ ALREADY EXTRACTED
+
+**STATUS**: Contact management code was already extracted to `contacts.js` and `mute.js` in prior work.
+Tasks T021-T023 are marked DONE. See individual tasks for details.
+
+### T021: SKIP - contacts.js and mute.js Already Exist ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+
+**STATUS**: Already completed in prior refactoring.
+- `/pixel/pixel-agent/plugin-nostr/lib/contacts.js` - exports: loadCurrentContacts, publishContacts, loadMuteList, publishMuteList
+- `/pixel/pixel-agent/plugin-nostr/lib/mute.js` - exports: muteUser, unmuteUser, checkIfMuted
+
+Service.js methods `_loadCurrentContacts`, `_loadMuteList`, `_publishContacts`, `_publishMuteList` are now thin wrappers
+that call these extracted functions. Methods `muteUser`/`unmuteUser` in service.js add caching and logging.
+
+```
+VERIFY:
+node -e "const c = require('/pixel/pixel-agent/plugin-nostr/lib/contacts'); const m = require('/pixel/pixel-agent/plugin-nostr/lib/mute'); console.log('contacts:', Object.keys(c)); console.log('mute:', Object.keys(m));" && echo "OK"
+```
+
+Completed: Prior to queue creation
+
+---
+
+### T022: SKIP - Contact Loading Already Extracted ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+**Depends**: T021
+
+**STATUS**: Already completed. See T021.
+
+The following are thin wrappers in service.js calling contacts.js:
+- `_loadCurrentContacts` (line 1730) -> calls `loadCurrentContacts` from contacts.js
+- `_loadMuteList` (line 1740) -> calls `loadMuteList` from contacts.js (with caching)
+- `_isUserMuted` (line 1774) -> calls `_loadMuteList` and checks Set
+
+Completed: Prior to queue creation
+
+---
+
+### T023: SKIP - Contact Mutation Already Extracted ✅ DONE
+**Effort**: N/A | **Risk**: None | **Parallel-Safe**: ✅
+**Depends**: T022
+
+**STATUS**: Already completed. See T021.
+
+The following are thin wrappers in service.js:
+- `_publishContacts` (line 1829) -> calls `publishContacts` from contacts.js
+- `_publishMuteList` (line 1842) -> calls `publishMuteList` from contacts.js
+- `muteUser` (line 1856) -> orchestrates mute with caching and optional unfollow
+- `unmuteUser` (line 1900) -> orchestrates unmute with caching
+
+The standalone functions in mute.js (`muteUser`, `unmuteUser`, `checkIfMuted`) are simpler versions
+without caching - the service.js methods add service-level concerns.
+
+Completed: Prior to queue creation
+
+---
+
+## 📋 Phase 2: API Route Splitting
+
+### T024: Create Routes Directory Structure ⬜ READY
+**Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+mkdir -p /pixel/lnpixels/api/src/routes
+mkdir -p /pixel/lnpixels/api/src/middleware
+mkdir -p /pixel/lnpixels/api/src/controllers
+
+VERIFY:
+ls -d /pixel/lnpixels/api/src/*/ | wc -l  # Should be 3+
+```
+
+---
+
+### T025: Extract Validation Middleware ⬜ READY
 **Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+**Depends**: T024
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/character.test.ts.
-Test:
-- readCharacterFile
-- mutateCharacter (regex replacement)
-- writeEvolutionReport (file append)
+Create /pixel/lnpixels/api/src/middleware/validation.ts
+
+Extract these functions from routes.ts:
+- validateCoordinates
+- validateColor
+- validateLetter
+- validateRectangleCoordinates
+
+Export them as middleware and utility functions.
+
+VERIFY:
+cd /pixel/lnpixels/api && npx tsc --noEmit 2>&1 | tail -5
 ```
 
 ---
 
-### T043: Utility Tools Unit Tests ⬜ READY
-**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T026: Extract Stats Routes ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T025
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/utility.test.ts.
-Test:
-- checkTreasury (DB query)
-- notifyHuman (file append)
-- readAudit (log parsing)
-- gitSync (mock syncAll)
+Create /pixel/lnpixels/api/src/routes/stats.routes.ts
+
+Extract /api/stats endpoint from routes.ts to this new file.
+Use Express Router pattern.
+Import back into main routes.ts using router.use()
+
+VERIFY:
+curl http://localhost:3000/api/stats 2>&1 | head -5
 ```
 
 ---
 
-### T044: Refactoring Tools Unit Tests ⬜ READY
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+## 📋 Phase 3: Syntropy Tools Splitting
+
+**Current state**: `tools.ts` is 1601 lines with 22 tools + worker-tools.ts (692 lines, 6 tools).  
+**Target**: Split into logical domain modules for maintainability.
+
+### Tool Inventory (as of 2026-01-02)
+
+| Tool | Lines | Domain | Priority |
+|------|-------|--------|----------|
+| `readContinuity` | ~15 | continuity | High |
+| `updateContinuity` | ~15 | continuity | High |
+| `getEcosystemStatus` | ~35 | ecosystem | Medium |
+| `gitSync` | ~55 | git | Medium |
+| `readAgentLogs` | ~75 | ecosystem | Medium |
+| `checkTreasury` | ~25 | treasury | Low |
+| `getVPSMetrics` | ~250 | metrics | Medium |
+| `postToNostr` | ~20 | nostr | Medium |
+| `readPixelNostrFeed` | ~70 | nostr | Medium |
+| `readPixelNostrMentions` | ~70 | nostr | Medium |
+| `readPixelMemories` | ~80 | memory | Medium |
+| `getPixelStats` | ~55 | memory | Medium |
+| `readCharacterFile` | ~15 | character | High |
+| `mutateCharacter` | ~55 | character | High |
+| `writeEvolutionReport` | ~60 | evolution | Low |
+| `notifyHuman` | ~20 | notifications | Low |
+| `readAudit` | ~30 | audit | Low |
+| `processRefactorQueue` | ~210 | refactoring | Low |
+| `addRefactorTask` | ~120 | refactoring | Low |
+| `analyzeForRefactoring` | ~115 | refactoring | Low |
+| `readDiary` | ~55 | diary | Medium |
+| `writeDiary` | ~95 | diary | Medium |
+
+**Worker tools** (`worker-tools.ts`) - ALREADY EXTRACTED:
+- `spawnWorker`, `checkWorkerStatus`, `listWorkerTasks`, `scheduleSelfRebuild`, `cleanupStaleTasks`, `readWorkerLogs`
+
+---
+
+### T027: Create Tools Directory Structure ⬜ READY
+**Effort**: 5 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/refactoring.test.ts.
-Test:
-- processRefactorQueue
-- addRefactorTask
-- analyzeForRefactoring
-Mock the REFACTOR_QUEUE.md file interactions.
+mkdir -p /pixel/syntropy-core/src/tools
+
+VERIFY:
+test -d /pixel/syntropy-core/src/tools && echo "OK"
 ```
 
 ---
 
-### T045: Research Tools Unit Tests ⬜ READY
-**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T028: Extract Continuity Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T027
+
+**Current location**: tools.ts lines 25-55 (~30 lines)
 
 ```
 INSTRUCTIONS:
-Create /pixel/syntropy-core/src/tools/research.test.ts.
-Test:
-- webSearch
-- spawnResearchWorker
-- readResearchResults
-Mock worker-tools.ts calls.
+Create /pixel/syntropy-core/src/tools/continuity.ts
+
+1. Extract from tools.ts:
+   - readContinuity tool (line 25)
+   - updateContinuity tool (line 41)
+
+2. Include necessary imports:
+   - tool from 'ai'
+   - z from 'zod'
+   - fs from 'fs-extra'
+   - path from 'path'
+   - PIXEL_ROOT from '../config'
+   - logAudit from '../utils'
+
+3. Recalculate CONTINUITY_PATH in the new file (same logic as original)
+
+4. Export: export const continuityTools = { readContinuity, updateContinuity }
+
+5. In main tools.ts, replace the extracted tools with:
+   import { continuityTools } from './tools/continuity';
+   
+   And spread into the tools object: ...continuityTools,
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
+
+---
+
+### T029: Extract Ecosystem & Metrics Tools ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T028
+
+**Current location**: tools.ts lines 58-505 (~450 lines, but getVPSMetrics is ~250)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/ecosystem.ts
+
+1. Extract from tools.ts:
+   - getEcosystemStatus tool (line 58)
+   - readAgentLogs tool (line 150)
+   - getVPSMetrics tool (line 253) - large tool, ~250 lines
+
+2. Include necessary imports:
+   - tool from 'ai'
+   - z from 'zod'
+   - exec from 'child_process'
+   - promisify from 'util'
+   - fs from 'fs-extra'
+   - path from 'path'
+   - PIXEL_ROOT, LOG_PATH from '../config'
+   - logAudit from '../utils'
+
+3. Export: export const ecosystemTools = { getEcosystemStatus, readAgentLogs, getVPSMetrics }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T030: Extract Nostr Tools ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T029
+
+**Current location**: tools.ts lines 507-672 (~165 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/nostr.ts
+
+1. Extract from tools.ts:
+   - postToNostr tool (line 507)
+   - readPixelNostrFeed tool (line 530)
+   - readPixelNostrMentions tool (line 603)
+
+2. Include necessary imports (check what each tool needs)
+
+3. Export: export const nostrTools = { postToNostr, readPixelNostrFeed, readPixelNostrMentions }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T031: Extract Memory Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T030
+
+**Current location**: tools.ts lines 674-808 (~135 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/memory.ts
+
+1. Extract from tools.ts:
+   - readPixelMemories tool (line 674)
+   - getPixelStats tool (line 755)
+
+2. Include necessary imports (uses execAsync for docker postgres queries)
+
+3. Export: export const memoryTools = { readPixelMemories, getPixelStats }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T032: Extract Character Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T031
+
+**Current location**: tools.ts lines 810-943 (~135 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/character.ts
+
+1. Extract from tools.ts:
+   - readCharacterFile tool (line 810)
+   - mutateCharacter tool (line 825)
+   - writeEvolutionReport tool (line 881)
+
+2. Include necessary imports:
+   - CHARACTER_DIR, PIXEL_ROOT, PIXEL_AGENT_DIR from '../config'
+   - syncAll from '../utils'
+
+3. Export: export const characterTools = { readCharacterFile, mutateCharacter, writeEvolutionReport }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T033: Extract Utility Tools ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T032
+
+**Current location**: tools.ts lines 93-147 (gitSync), 945-997 (notifyHuman, readAudit), 226-251 (checkTreasury)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/utility.ts
+
+1. Extract from tools.ts:
+   - gitSync tool (line 93)
+   - checkTreasury tool (line 226)
+   - notifyHuman tool (line 945)
+   - readAudit tool (line 966)
+
+2. Include necessary imports
+
+3. Export: export const utilityTools = { gitSync, checkTreasury, notifyHuman, readAudit }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T034: Extract Refactoring Tools ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T033
+
+**Current location**: tools.ts lines 999-1448 (~450 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/refactoring.ts
+
+1. Extract from tools.ts:
+   - processRefactorQueue tool (line 999)
+   - addRefactorTask tool (line 1210)
+   - analyzeForRefactoring tool (line 1331)
+
+2. Include necessary imports
+
+3. Export: export const refactoringTools = { processRefactorQueue, addRefactorTask, analyzeForRefactoring }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T035: Extract Diary Tools ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T034
+
+**Current location**: tools.ts lines 1450-1599 (~150 lines)
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/diary.ts
+
+1. Extract from tools.ts:
+   - readDiary tool (line 1450)
+   - writeDiary tool (line 1506)
+
+2. Include necessary imports (uses execAsync for docker postgres queries)
+
+3. Export: export const diaryTools = { readDiary, writeDiary }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+---
+
+### T036: Create Tools Index and Finalize ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: T035
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/index.ts that re-exports all tool groups:
+
+export { continuityTools } from './continuity';
+export { ecosystemTools } from './ecosystem';
+export { nostrTools } from './nostr';
+export { memoryTools } from './memory';
+export { characterTools } from './character';
+export { utilityTools } from './utility';
+export { refactoringTools } from './refactoring';
+export { diaryTools } from './diary';
+
+// Combined export for convenience
+export const allTools = {
+  ...continuityTools,
+  ...ecosystemTools,
+  ...nostrTools,
+  ...memoryTools,
+  ...characterTools,
+  ...utilityTools,
+  ...refactoringTools,
+  ...diaryTools,
+};
+
+Then update main tools.ts to be minimal:
+
+import { allTools } from './tools';
+import { workerTools } from './worker-tools';
+
+export const tools = {
+  ...allTools,
+  ...workerTools
+};
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build && echo "Build OK"
+# Test that tools object has all expected keys:
+cd /pixel/syntropy-core && bun -e "const { tools } = require('./dist/tools'); console.log('Tool count:', Object.keys(tools).length)"
+# Expected: 28 tools (22 from tools.ts + 6 from worker-tools.ts)
+```
+
+---
+
+### Phase 3 Summary
+
+| Task | Module | Tools Extracted | Est. Lines |
+|------|--------|-----------------|------------|
+| T028 | continuity.ts | 2 | ~30 |
+| T029 | ecosystem.ts | 3 | ~360 |
+| T030 | nostr.ts | 3 | ~165 |
+| T031 | memory.ts | 2 | ~135 |
+| T032 | character.ts | 3 | ~135 |
+| T033 | utility.ts | 4 | ~130 |
+| T034 | refactoring.ts | 3 | ~450 |
+| T035 | diary.ts | 2 | ~150 |
+| T036 | index.ts | (aggregator) | ~30 |
+
+**Total**: 10 tasks (T027-T036), ~1585 lines extracted into 8 domain modules.
+
+**Note**: Worker tools (`worker-tools.ts`) are ALREADY a separate module - no extraction needed.
+
+---
+
+## 🔧 How Syntropy Should Process This Queue
+
+Add this to CONTINUITY.md under Short-Term Tasks:
+
+```markdown
+- [ ] Process one task from REFACTOR_QUEUE.md per cycle (T001 → T036)
+```
+
+And add this processing logic to Syntropy's instructions:
+
+```
+REFACTORING PROTOCOL:
+1. At the END of each successful cycle (after normal operations)
+2. Read REFACTOR_QUEUE.md
+3. Find the first task marked ⬜ READY
+4. If task has unmet "Depends" - skip to next READY task
+5. Call spawnWorker with the INSTRUCTIONS block (runs in ephemeral container)
+6. Run VERIFY command to confirm success
+7. Update task status: ⬜ READY → ✅ DONE (or ❌ FAILED)
+8. Update "Last Processed" timestamp
+9. Only process ONE task per cycle to maintain stability
+```
+
+---
+
+**Total Tasks**: 36  
+**Completed**: 19 (Phase 0 complete + T021-T023 pre-done + T013-T016 done)  
+**Remaining**: 17  
+**Estimated Remaining Effort**: ~8 hours of automated work  
+**At 1 task per Syntropy cycle**: ~17 cycles to complete all phases
+
+---
+
+*This queue is designed for autonomous processing. Each task is atomic and reversible.*
