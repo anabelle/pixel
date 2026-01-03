@@ -91,6 +91,7 @@ If Nginx fails to start due to SSL, verify the paths in `nginx/nginx.conf` and e
 | **Worker** | `pixel-worker-*` | - | Ephemeral coding containers (spawned on demand) |
 | **PostgreSQL** | `pixel-postgres` | 5432 | Agent memory DB (pgvector enabled) |
 | **Nginx** | `pixel-nginx` | 80/443| Secure reverse proxy |
+| **VPS Monitor** | `vps-monitor` | - | Host metrics logs for Syntropy |
 
 ### Worker Architecture
 
