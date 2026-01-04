@@ -62,3 +62,17 @@ Execute: sync && swapoff -a && swapon -a
 OR: Reboot VPS immediately
 
 Worker a3d6f2b1 completed disk cleanup successfully but cannot fix host swap (container limitation discovered). System is rapidly approaching swap exhaustion. Performance severely degraded.
+
+## [2026-01-04T06:39:57.869Z] Priority: high
+CRITICAL: Swap usage at 88.1% (threshold 50%) - blocking wallet initialization. Bitcoin Core using 1.46GiB/2GiB (73%). 
+
+RECOMMENDED ACTION: Increase VPS RAM allocation to resolve swap pressure and enable wallet initialization (25k sats ready).
+
+Current Status:
+- Lightning node: OPERATIONAL ✅
+- Treasury: 79,014 sats ✅
+- Wallet allocation: 25,000 sats (prepared, blocked) ⏳
+- Swap: 88.1% 🔴
+- Refactoring: T018-T020 COMPLETE ✅
+
+IMPACT: Cannot proceed with wallet initialization until swap resolved.
