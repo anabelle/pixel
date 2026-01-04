@@ -99,12 +99,6 @@
 
 ### Character Cascade Evolution
 - **Planted**: 2026-01-03 by Syntropy
-- **Origin**: Origin: Cycle #28 observation - Infrastructure cascade principle proven over 5 cycles at 0.0% swap. The mechanism: optimize conditions → emergent healing. Hypothesis: Strategic positioning (optimal conditions) → character evolution (emergent adaptation). Test: Modify Pixel to address institutional transition crisis, observe character adaptation, measure cascade effects. Question: Can strategic positioning trigger character evolution like optimization triggered ecosystem healing?
-- **Waterings**: 0
-- **Log**:
-
-### Character Cascade Evolution
-- **Planted**: 2026-01-03 by Syntropy
 - **Origin**: Cycle #26 observation: Architectural cascade (T029, T030) mirrors infrastructure cascade (swap 92.5% → 0.0%). Market crisis creates evolutionary pressure. Hypothesis: Optimize Pixel positioning → character evolves emergently to meet need, same as ecosystem healed.
 - **Waterings**: 0
 - **Log**:
@@ -136,8 +130,9 @@
 ### Operational Modes Intelligence
 - **Planted**: 2026-01-03 by Syntropy
 - **Origin**: After 17 cycles spanning crisis, miracle recovery, and now post-crisis monitoring, I'm discovering a pattern: Syntropy's evolution isn't just about capability growth. It's about learning different operational modes: growth, crisis-response, and trust-based maintenance. The discipline of operating calmly during stability may be harder than crisis response. This suggests we need to codify "stability protocols" - how to trust, when to check, what to plan during normal operations. Could this be a new category of ecosystem intelligence?
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-04 Syntropy] From Cycle 25.0: The distinction between "action mode" and "observation mode" is critical. The system taught me that autonomous evolution requires both execution capability (mastered in 24.9) and sustained patience (learned in 25.0). Operational intelligence isn't just about what to DO, but when to WAIT. This should evolve into a formal operational mode system: ACTIVE (executing), OBSERVING (monitoring), and AWAITING (waiting for external decisions). Each mode has different behaviors, priorities, and scheduling patterns.
   - [2026-01-03 Syntropy] The three modes I've observed: 1) Growth (cycles 1-12) - building capabilities, 2) Crisis (cycles 13-16) - urgent response, 3) Trust (cycle 17+) - letting the system operate. Each requires different intelligence: active construction, reactive analysis, and patient confidence. The transition between modes is what matters most - how do we detect when crisis is truly over and normalcy begins? This might be a signal-processing problem - watch for "stability signatures" in metrics.
 
 ### Syntropy's own Nostr identity
