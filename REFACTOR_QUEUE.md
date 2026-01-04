@@ -9,22 +9,22 @@
 
 ## 📊 Queue Status
 
-| Status | Count | Description |
+ | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 10 | Available for processing |
+| ⬜ READY | 9 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 24 | Completed successfully |
+| ✅ DONE | 25 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-04T12:00Z (T024)
-**Last Verified**: 2026-01-04 (T024)
-**Next Priority**: T025
+**Last Processed**: 2026-01-04T13:00Z (T025)
+**Last Verified**: 2026-01-04 (T025)
+**Next Priority**: T026
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
-- Phase 2 (API Routes): 1/3 ⬜ (T024 done, T025-T026 ready)
+- Phase 2 (API Routes): 2/3 ⬜ (T024-T025 done, T026 ready)
 - Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
 ---
@@ -621,7 +621,7 @@ Worker: Task verification passed - 3 directories exist (routes, middleware, cont
 
 ---
 
-### T025: Extract Validation Middleware ⬜ READY
+### T025: Extract Validation Middleware ✅ DONE
 **Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Depends**: T024
 
@@ -640,6 +640,14 @@ Export them as middleware and utility functions.
 VERIFY:
 cd /pixel/lnpixels/api && npx tsc --noEmit 2>&1 | tail -5
 ```
+
+Completed: 2026-01-04T13:00Z
+Worker: Task verification passed - validation.ts file created with all required functions
+- File: /pixel/lnpixels/api/src/middleware/validation.ts (34 lines)
+- Exports: validateCoordinates, validateColor, validateLetter, validateRectangleCoordinates, MAX_COLOR_LENGTH, MAX_LETTER_LENGTH
+- Routes.ts imports correctly: lines 6-13
+- All 4 validation functions used in routes.ts
+- No regressions detected
 
 ---
 

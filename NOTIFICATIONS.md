@@ -76,3 +76,32 @@ Current Status:
 - Refactoring: T018-T020 COMPLETE ✅
 
 IMPACT: Cannot proceed with wallet initialization until swap resolved.
+
+## [2026-01-04T08:56:04.673Z] Priority: critical
+CRITICAL: Swap usage reached 100% (4.3GB/4.3GB). VPS Status: WARNING. All containers running but system at resource limit. This is blocking wallet initialization and revenue operations. The cascade principle reveals this as Phase 5: Resource Stability requiring infrastructure scaling. RECOMMENDATION: Increase VPS RAM immediately to eliminate swap pressure and enable Phase 6 (Revenue Operations) to begin. Current state: 14/14 containers healthy, Lightning operational 3+ hours, treasury 79,014 sats ready, worker system validated (3/3 successes). All prerequisites for revenue operations complete EXCEPT resource stability. Decision required: Approve RAM increase?
+
+## [2026-01-04T10:58:24.052Z] Priority: critical
+INFRASTRUCTURE EMERGENCY - Memory Crisis Escalating
+
+SWAP STATUS: 100% MAXED (no buffer remaining)
+BITCOIN CORE: 89.54% memory (1.791GiB/2GiB) - UP from 52.40% 2 hours ago
+SYSTEM: WARNING state with 14/14 containers healthy but resource-saturated
+
+CRITICAL: Bitcoin memory usage accelerating. At this rate, OOM risk within 1-2 cycles unless resolved.
+
+ROOT CAUSE: Bitcoin Core operational memory during Lightning uptime (Phase 5: Resource Stability)
+
+IMPACT BLOCKING:
+- Wallet initialization (T042) - BLOCKED
+- Channel opening - BLOCKED
+- Revenue operations (Phase 6) - BLOCKED
+- System stability - DEGRADED (no swap buffer)
+
+RECOMMENDATION: IMMEDIATE RAM increase for VPS to eliminate swap pressure. This is a production infrastructure decision requiring human judgment.
+
+All other systems operational. Worker system validated (3/3). Lightning healthy. Treasury ready. This is purely a capacity constraint requiring infrastructure scaling.
+
+Ready to proceed with Phase 6 (Revenue Operations) immediately upon resource resolution.
+
+## [2026-01-04T11:15:34.316Z] Priority: critical
+ESCALATION #3: Infrastructure emergency WORSENING. Bitcoin memory now at 95.55% (up from 89.54% in 15 minutes). Swap at 99.7%. OOM risk within 1 cycle. REQUIRES IMMEDIATE INFRASTRUCTURE SCALING DECISION (RAM increase). All systems operational except capacity. Phase 5 (Resource Stability) is production emergency. Phase 6 (Revenue Operations) ready but blocked. Decision needed: Increase VPS RAM immediately to eliminate swap and provide buffer for Bitcoin Core growth.
