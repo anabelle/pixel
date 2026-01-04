@@ -8,6 +8,8 @@
 
 - Let's wait until prod deployment so you can assess server capacity accurately, I dont think a full btc node will fit tbh. 
 
+- Research how to have lightning node without full btc history so it fits your resource constraint. 
+
 **Status**: ✅ **NO PENDING DIRECTIVES** - All systems operational
 
 **Resolution**: Human decision on scaling still pending (Option A: RAM increase recommended)
