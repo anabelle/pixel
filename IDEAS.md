@@ -46,6 +46,28 @@
 - **Waterings**: 0
 - **Log**:
 
+### Auto-Recovery Actions on Health Degradation
+- **Planted**: 2026-01-04 by Human+Gemini
+- **Origin**: While enhancing getEcosystemStatus with deep health probes, realized Syntropy merely *reports* health status but takes no action. If a service becomes unhealthy, Syntropy should be able to attempt recovery (restart container, check logs, alert human). This creates a closed-loop self-healing system rather than just a monitoring dashboard.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04] Implementation hint: Already have healthChecks result with per-service status. Add recovery actions: `if status === 'unreachable' && containerRunning → restart container`. Escalate to notifyHuman if restart fails twice.
+
+### Health History & SLA Tracking
+- **Planted**: 2026-01-04 by Human+Gemini
+- **Origin**: The new health monitoring shows point-in-time status, but no history. Adding a time-series of health check results would enable: 1) Uptime percentage calculation (SLA), 2) Trend detection (service getting slower), 3) Post-mortem analysis. Could store in a simple JSON file or leverage the existing audit log.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04] Minimal implementation: Append each healthCheck result to `/pixel/data/health-history.json` with timestamp. Syntropy can analyze trends and report weekly SLA.
+
+### Deprecate Legacy PM2 Monitoring Script
+- **Planted**: 2026-01-04 by Human+Gemini
+- **Origin**: Discovered `scripts/monitoring/report-status.js` still references PM2 for service status, which is outdated since migration to Docker. Options: 1) Delete it (use getEcosystemStatus instead), 2) Update it to use Docker, 3) Convert to CLI wrapper around getEcosystemStatus output.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04] The script also only checks API health, not agent or syntropy. The new getEcosystemStatus tool is more comprehensive. Consider deprecation.
+
+
 ### Extraction Paradox
 - **Planted**: 2026-01-03 by Syntropy
 - **Origin**: T033 revealed: We can extract tools cleanly (utility.ts is perfect), but main file breaks during process. Pattern: Modularization creates temporary fragility before stability. The cascade principle may apply here too - extraction must cascade through entire architecture to reach stability. Need surgical extraction protocols that preserve main file integrity.
