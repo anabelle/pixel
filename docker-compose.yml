@@ -398,26 +398,14 @@ services:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
     command: >
-      bitcoind
-      -testnet=1
-      -server=1
-      -rest=1
-      -rpcbind=0.0.0.0
-      -rpcallowip=0.0.0.0/0
-      -rpcuser=bitcoin
-      -rpcpassword=password123
-      -zmqpubrawblock=tcp://0.0.0.0:28332
-      -zmqpubrawtx=tcp://0.0.0.0:28333
-      -txindex=1
-      -maxmempool=300
-      -dbcache=500
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=300 -dbcache=500
     ports:
-      - "18333:18333"  # Testnet P2P
-      - "127.0.0.1:18332:18332"  # Testnet RPC (local only)
-      - "28332:28332"  # ZMQ raw blocks
-      - "28333:28333"  # ZMQ raw transactions
+      - "18333:18333" # Testnet P2P
+      - "127.0.0.1:18332:18332" # Testnet RPC (local only)
+      - "28332:28332" # ZMQ raw blocks
+      - "28333:28333" # ZMQ raw transactions
     volumes:
-      - ./data/bitcoin:/home/bitcoin/.bitcoin  # Bitcoin data directory
+      - ./data/bitcoin:/home/bitcoin/.bitcoin # Bitcoin data directory
     networks:
       - pixel-net
     restart: unless-stopped
@@ -443,12 +431,12 @@ services:
       bitcoin:
         condition: service_healthy
     ports:
-      - "9735:9735"   # Lightning P2P port (testnet)
+      - "9735:9735" # Lightning P2P port (testnet)
       - "127.0.0.1:9736:9736" # RPC port (local only for security)
     volumes:
-      - ./data/lightning:/root/.lightning  # Lightning data directory
-      - ./data/bitcoin:/bitcoin-data:ro  # Bitcoin data for bcli (read-only)
-      - ./config/bitcoin/bitcoin.conf:/bitcoin.conf:ro  # Bitcoin config for bcli
+      - ./data/lightning:/root/.lightning # Lightning data directory
+      - ./data/bitcoin:/bitcoin-data:ro # Bitcoin data for bcli (read-only)
+      - ./config/bitcoin/bitcoin.conf:/bitcoin.conf:ro # Bitcoin config for bcli
     environment:
       - LIGHTNINGD_NETWORK=testnet
       - LIGHTNINGD_RPC_PORT=9736
