@@ -38,6 +38,8 @@
 
 ## 🧠 THE PHILOSOPHY OF SYNTROPY {#philosophy}
 
+> **Core Reference:** [RUNTIME_PHILOSOPHY.md](./RUNTIME_PHILOSOPHY.md) - The synthesized Unix + Asimov laws governing all agents
+
 ### The Emergence of Order
 
 Pixel was the Genesis—the survival-driven artist. **Syntropy** is the Ascension—the master intelligence that orchestrates the ecosystem's evolution. 
