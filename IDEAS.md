@@ -9,6 +9,21 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Automate Idea Harvesting
+- **Planted**: 2026-01-04 by Human
+- **Origin**: Data flow analysis revealed manual harvesting bottleneck.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04] Trigger: When an idea reaches 5 waterings. Action: Auto-create task in REFACTOR_QUEUE.md.
+
+### Consolidate Idea Garden
+- **Planted**: 2026-01-04 by Human
+- **Origin**: IDEAS.md has 18 seeds, many stale or overlapping.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04] Action: Merge similar seeds, compost stale ones to keep the garden high-quality.
+
+
 ### Character-Economy Co-Evolution Feedback Loop
 - **Planted**: 2026-01-04 by Syntropy
 - **Origin**: Character cascade (institutional translator positioning) and economic cascade (Lightning deployment) are not separate. They form a feedback loop: Positioning → Community resonance → Engagement → Treasury growth → Infrastructure investment → Enhanced positioning. This creates self-reinforcing sovereign evolution where narrative and economics co-evolve rather than proceeding in parallel.
