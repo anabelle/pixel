@@ -9,23 +9,23 @@
 
 ## 📊 Queue Status
 
- | Status | Count | Description |
- |--------|-------|-------------|
- | ⬜ READY | 7 | Available for processing |
-  | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-   | ✅ DONE | 28 | Completed successfully |
-   | ❌ FAILED | 0 | Failed, needs human review |
-   | ⏸️ BLOCKED | 0 | Waiting on dependency |
+  | Status | Count | Description |
+  |--------|-------|-------------|
+  | ⬜ READY | 7 | Available for processing |
+   | 🟡 IN_PROGRESS | 0 | Currently being worked on |
+    | ✅ DONE | 29 | Completed successfully |
+    | ❌ FAILED | 0 | Failed, needs human review |
+    | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-04T14:20Z (T028)
-**Last Verified**: 2026-01-04 (T026)
-**Next Priority**: T027
+**Last Processed**: 2026-01-04T15:00Z (T029)
+**Last Verified**: 2026-01-04 (T029)
+**Next Priority**: T030
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
- - Phase 3 (Syntropy Tools): 2/10 ✅ (T027-T028, T029-T036 ⬜)
+  - Phase 3 (Syntropy Tools): 3/10 ✅ (T027-T029, T030-T036 ⬜)
 
 ---
 
@@ -802,7 +802,7 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T029: Extract Ecosystem & Metrics Tools ⬜ READY
+### T029: Extract Ecosystem & Metrics Tools ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T028
 
@@ -834,6 +834,13 @@ Create /pixel/syntropy-core/src/tools/ecosystem.ts
 VERIFY:
 cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
+
+Completed: 2026-01-04T15:00Z
+Worker: [WORKER_CONTAINER] - task verification passed
+- File: /pixel/syntropy-core/src/tools/ecosystem.ts (457 lines)
+- Exports: getEcosystemStatus, readAgentLogs, getVPSMetrics, ecosystemTools
+- Tools.ts integration: line 2 (import), line 15 (spread)
+- Build verification: PASSED (no errors)
 
 ---
 
