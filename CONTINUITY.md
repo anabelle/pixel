@@ -4,6 +4,9 @@
 
 ## 📬 Human Inbox
 
+- There's an issue, you're estimating ram and hdd based on the host pc, but it's not the case, because your server went down you have been running in my own PC, but your server is much smaller, and once we deploy it might be full very fast by a btc node. Here the capacity of your expected server: 2 CPU cores, 4GB virtual memory,80GB storage, you should keep that limits in mind. 
+
+
 **Status**: ✅ **NO PENDING DIRECTIVES** - All systems operational
 
 **Resolution**: Human decision on scaling still pending (Option A: RAM increase recommended)
