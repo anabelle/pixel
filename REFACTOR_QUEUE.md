@@ -11,21 +11,21 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 5 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
   | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-     | ✅ DONE | 32 | Completed successfully |
+     | ✅ DONE | 33 | Completed successfully |
      | ❌ FAILED | 0 | Failed, needs human review |
      | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-04T20:45Z (T032)
-**Last Verified**: 2026-01-04 (T032)
-**Next Priority**: T033
+**Last Processed**: 2026-01-04T21:30Z (T033)
+**Last Verified**: 2026-01-04 (T033)
+**Next Priority**: T034
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-  - Phase 3 (Syntropy Tools): 6/10 ✅ (T027-T032, T033-T036 ⬜)
+  - Phase 3 (Syntropy Tools): 7/10 ✅ (T027-T033, T034-T036 ⬜)
 
 ---
 
@@ -921,12 +921,43 @@ cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 
 ---
 
-### T033: Extract Utility Tools ⬜ READY
+### T033: Extract Utility Tools ✅ DONE
 **Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T032
 
-**Current location**: tools.ts lines 93-147 (gitSync), 945-997 (notifyHuman, readAudit), 226-251 (checkTreasury)
+**Status**: ✅ **SUCCESS** (Task already complete)
 
+**What Was Done**:
+- Verified /pixel/syntropy-core/src/tools/utility.ts exists with 203 lines
+- Confirmed gitSync tool (line 17) extracted
+- Confirmed checkTreasury tool (line 122) extracted
+- Confirmed notifyHuman tool (line 149) extracted
+- Confirmed readAudit tool (line 170) extracted
+- Verified main tools.ts imports and spreads utilityTools (lines 6, 19)
+- Build verification: PASSED (no errors)
+
+**Impact**: Utility tools modularization complete
+
+**Duration**: Task already completed prior to this execution
+
+```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/utility.ts
+
+1. Extract from tools.ts:
+   - gitSync tool (line 93)
+   - checkTreasury tool (line 226)
+   - notifyHuman tool (line 945)
+   - readAudit tool (line 966)
+
+2. Include necessary imports
+
+3. Export: export const utilityTools = { gitSync, checkTreasury, notifyHuman, readAudit }
+
+4. In main tools.ts, replace with import and spread.
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
 ```
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/utility.ts
