@@ -393,6 +393,88 @@ services:
           memory: 128M
           cpus: "0.2"
 
+  # Bitcoin Core (Testnet) - Backend for Lightning
+  bitcoin:
+    image: ruimarinho/bitcoin-core:24
+    container_name: pixel-bitcoin-1
+    command: >
+      bitcoind
+      -testnet=1
+      -server=1
+      -rest=1
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+      -rpcuser=bitcoin
+      -rpcpassword=password123
+      -zmqpubrawblock=tcp://0.0.0.0:28332
+      -zmqpubrawtx=tcp://0.0.0.0:28333
+      -txindex=1
+      -maxmempool=300
+      -dbcache=500
+    ports:
+      - "18333:18333"  # Testnet P2P
+      - "127.0.0.1:18332:18332"  # Testnet RPC (local only)
+      - "28332:28332"  # ZMQ raw blocks
+      - "28333:28333"  # ZMQ raw transactions
+    volumes:
+      - ./data/bitcoin:/home/bitcoin/.bitcoin  # Bitcoin data directory
+    networks:
+      - pixel-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "bitcoin-cli", "-testnet", "-rpcuser=bitcoin", "-rpcpassword=password123", "getblockcount" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1"
+
+  # Core Lightning (CLN) - Testnet Deployment
+  # Operational reserve: 25,000 sats from 79,014 sats treasury
+  # Purpose: Lightning Network capabilities for economic sovereignty
+  lightning:
+    image: elementsproject/lightningd:v24.11.2
+    container_name: pixel-lightning-1
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    ports:
+      - "9735:9735"   # Lightning P2P port (testnet)
+      - "127.0.0.1:9736:9736" # RPC port (local only for security)
+    volumes:
+      - ./data/lightning:/root/.lightning  # Lightning data directory
+      - ./data/bitcoin:/bitcoin-data:ro  # Bitcoin data for bcli (read-only)
+      - ./config/bitcoin/bitcoin.conf:/bitcoin.conf:ro  # Bitcoin config for bcli
+    environment:
+      - LIGHTNINGD_NETWORK=testnet
+      - LIGHTNINGD_RPC_PORT=9736
+      - EXPOSE_TCP=true
+    command:
+      - "--testnet"
+      - "--bitcoin-rpcconnect=bitcoin"
+      - "--bitcoin-rpcuser=bitcoin"
+      - "--bitcoin-rpcpassword=password123"
+      - "--bitcoin-rpcport=18332"
+      - "--addr=0.0.0.0:9735"
+    networks:
+      - pixel-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "lightning-cli", "--testnet", "getinfo" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+
 networks:
   pixel-net:
     driver: bridge

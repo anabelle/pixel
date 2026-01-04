@@ -1,0 +1,56 @@
+# Core Lightning Configuration
+# Network: Bitcoin Testnet (safe experimentation)
+# Purpose: Lightning Network capabilities for economic sovereignty
+# Operational Reserve: 25,000 sats from 79,014 sats treasury
+
+[bitcoin]
+# Use testnet for safe deployment
+network=testnet
+# Connect to local bitcoind backend
+bitcoin-datadir=/bitcoin/.bitcoin
+bitcoin-rpcuser=bitcoin
+bitcoin-rpcpassword=password123
+bitcoin-rpcconnect=bitcoin
+bitcoin-rpcport=18332
+
+[lightningd]
+# Lightning data directory (mounted from /pixel/data/lightning)
+# lightning-dir=/root/.lightning
+# RPC interface (bind to localhost for security)
+rpc-file=lightning-rpc
+# Bind RPC to localhost only
+bind-addr=127.0.0.1:9736
+# Public-facing P2P port
+addr=0.0.0.0:9736
+# Disable bcli plugin - use direct RPC connection
+disable-plugin=bcli
+
+[fees]
+# Fee configuration for channels
+# Base fee in millisatoshis
+fee-base=1000
+# Proportional fee in parts per million
+fee-per-satoshi=1
+# Minimum channel capacity (in satoshis)
+min-capacity-sat=10000
+
+[plugin]
+# Auto-load plugins
+# Add custom plugins here
+# plugin=/path/to/plugin.so
+
+[log]
+# Log level (debug, info, notice, warning, error, critical)
+log-level=info
+# Log to file
+# log-file=/root/.lightning/lightning.log
+
+[autoclean]
+# Clean up old payments
+autocleaninvoice-cycle=86400
+autocleaninvoice-expired-by=86400
+
+[experimental]
+# Experimental features (disabled for production safety)
+# experimental-offers=
+# experimental-peer-storage=

@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-04T04:18:37.874Z","reason":"Worker subsystem blocked by orphaned container (pixel-worker-logs-1). Need to resolve operational debt before Lightning deployment can proceed. 30-minute delay allows time for manual intervention or automated cleanup."}
+{"nextRunAt":"2026-01-04T06:39:11.737Z","reason":"Monitoring swap alert (73.1%), refactor worker T018 completion, and preparing for wallet initialization decision"}

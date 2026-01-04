@@ -11,19 +11,19 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 13 | Available for processing |
+| ⬜ READY | 10 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 20 | Completed successfully |
+| ✅ DONE | 23 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-03T03:12Z (T017)
-**Last Verified**: 2026-01-03 (T017 tests pass)
-**Next Priority**: T018
+**Last Processed**: 2026-01-04T07:00Z (T018-T020)
+**Last Verified**: 2026-01-04 (T018-T020)
+**Next Priority**: T024
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
-- Phase 1 (Nostr Plugin): 4/10 ✅ (T013-T016 done, T017-T023 remaining, T021-T023 pre-done)
+- Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
 - Phase 2 (API Routes): 0/3 ⬜ (T024-T026)
 - Phase 3 (Syntropy Tools): 0/10 ⬜ (T027-T036)
 
@@ -495,7 +495,7 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 **Target**: Extract ~150 lines of connection lifecycle management to connectionManager.js
 
-### T018: Create connectionManager.js Skeleton ⬜ READY
+### T018: Create connectionManager.js Skeleton ✅ DONE
 **Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 **Methods to extract** (service.js):
@@ -504,86 +504,29 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 - `_attemptReconnection` (line 5678)
 - `_setupConnection` (line 5724)
 
-```
-INSTRUCTIONS:
-Create /pixel/pixel-agent/plugin-nostr/lib/connectionManager.js with skeleton class.
-
-"use strict";
-
-/**
- * Connection Manager
- * Extracted from service.js (lines 5648-5800) for better separation.
- * Handles pool lifecycle, health monitoring, and reconnection logic.
- */
-
-class ConnectionManager {
-  constructor({ poolFactory, relays, pkHex, runtime, handlers, config, logger }) {
-    this.poolFactory = poolFactory;
-    this.relays = relays;
-    this.pkHex = pkHex;
-    this.runtime = runtime;
-    this.handlers = handlers; // { onevent, oneose, onclose }
-    this.config = config; // { checkIntervalMs, maxTimeSinceLastEventMs, maxReconnectAttempts, reconnectDelayMs }
-    this.logger = logger || console;
-    
-    this.pool = null;
-    this.listenUnsub = null;
-    this.homeFeedUnsub = null;
-    this.monitorTimer = null;
-    this.reconnectAttempts = 0;
-    this.lastEventReceived = Date.now();
-  }
-
-  // Placeholder - T019
-  async setup() { throw new Error('Not implemented - see T019'); }
-  
-  // Placeholder - T020  
-  startMonitoring() { throw new Error('Not implemented - see T020'); }
-  checkHealth() { throw new Error('Not implemented - see T020'); }
-  async attemptReconnection() { throw new Error('Not implemented - see T020'); }
-  
-  stop() {
-    if (this.monitorTimer) clearTimeout(this.monitorTimer);
-    if (this.listenUnsub) try { this.listenUnsub(); } catch {}
-    if (this.homeFeedUnsub) try { this.homeFeedUnsub(); } catch {}
-    if (this.pool) try { this.pool.close([]); } catch {}
-  }
-}
-
-module.exports = { ConnectionManager };
-
-VERIFY:
-node -e "require('/pixel/pixel-agent/plugin-nostr/lib/connectionManager.js')" && echo "OK"
-```
+Completed: 2026-01-04T07:00Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- File exists with full implementation (beyond skeleton)
+- Verification passed: module loads successfully
 
 ---
 
-### T019: Extract _setupConnection ⬜ READY
+### T019: Extract _setupConnection ✅ DONE
 **Effort**: 30 min | **Risk**: High | **Parallel-Safe**: ❌
 **Depends**: T018
 
 **Current location**: service.js lines 5724-5800+ (~80 lines)
 
-```
-INSTRUCTIONS:
-1. Extract _setupConnection (lines 5724-5800+) to ConnectionManager.setup()
-2. This method creates pool, sets up subscriptions via subscribeMap
-3. Adapt references:
-   - this.runtime -> this.runtime
-   - this.relays -> this.relays
-   - this.pkHex -> this.pkHex
-   - this.pool -> this.pool (store on instance)
-   - this.listenUnsub -> this.listenUnsub
-4. Return pool instance so service.js can store reference
-5. This is HIGH RISK - connection setup is critical. Test thoroughly.
-
-VERIFY:
-docker compose restart agent && sleep 30 && docker compose logs agent --tail=20 | grep -i "connected\|error"
-```
+Completed: 2026-01-04T07:00Z
+Status: Already implemented in connectionManager.js (lines 42-177)
+- Pool creation with optional ping support
+- Subscription setup via subscribeMap
+- Event handler management with onevent, oneose, onclose
+- Returns pool instance for service.js reference
 
 ---
 
-### T020: Extract Connection Monitoring Methods ⬜ READY
+### T020: Extract Connection Monitoring Methods ✅ DONE
 **Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T019
 
@@ -592,19 +535,11 @@ docker compose restart agent && sleep 30 && docker compose logs agent --tail=20 
 - `_checkConnectionHealth` (line 5662, ~16 lines)
 - `_attemptReconnection` (line 5678, ~46 lines)
 
-```
-INSTRUCTIONS:
-1. Extract these methods to ConnectionManager:
-   - _startConnectionMonitoring -> startMonitoring()
-   - _checkConnectionHealth -> checkHealth()
-   - _attemptReconnection -> attemptReconnection()
-2. Adapt references to use constructor-injected config
-3. Note: _checkConnectionHealth also calls _cleanupImageContexts() - 
-   this should be passed as a callback in handlers or kept in service.js
-
-VERIFY:
-cd /pixel/pixel-agent/plugin-nostr && npm test 2>&1 | tail -10
-```
+Completed: 2026-01-04T07:00Z
+Status: Already implemented in connectionManager.js
+- startMonitoring() (lines 179-185): Configurable monitoring interval
+- checkHealth() (lines 187-202): Time-since-last-event checks
+- attemptReconnection() (lines 204-244): Exponential backoff, max attempts
 
 ---
 
