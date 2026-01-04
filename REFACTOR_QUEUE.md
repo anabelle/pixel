@@ -11,13 +11,13 @@
 
  | Status | Count | Description |
  |--------|-------|-------------|
- | ⬜ READY | 8 | Available for processing |
+ | ⬜ READY | 7 | Available for processing |
   | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-  | ✅ DONE | 27 | Completed successfully |
- | ❌ FAILED | 0 | Failed, needs human review |
- | ⏸️ BLOCKED | 0 | Waiting on dependency |
+   | ✅ DONE | 28 | Completed successfully |
+   | ❌ FAILED | 0 | Failed, needs human review |
+   | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-04T14:05Z (T027)
+**Last Processed**: 2026-01-04T14:20Z (T028)
 **Last Verified**: 2026-01-04 (T026)
 **Next Priority**: T027
 
@@ -25,7 +25,7 @@
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-- Phase 3 (Syntropy Tools): 1/10 ✅ (T027, T028-T036 ⬜)
+ - Phase 3 (Syntropy Tools): 2/10 ✅ (T027-T028, T029-T036 ⬜)
 
 ---
 
@@ -731,13 +731,47 @@ Worker: [WORKER_CONTAINER] - task briefing executed
 
 ---
 
-### T028: Extract Continuity Tools ⬜ READY
+### T028: Extract Continuity Tools ✅ DONE
 **Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T027
 
-**Current location**: tools.ts lines 25-55 (~30 lines)
+Current location: tools.ts lines 25-55 (~30 lines)
 
 ```
+INSTRUCTIONS:
+Create /pixel/syntropy-core/src/tools/continuity.ts
+
+1. Extract from tools.ts:
+   - readContinuity tool (line 25)
+   - updateContinuity tool (line 41)
+
+2. Include necessary imports:
+   - tool from 'ai'
+   - z from 'zod'
+   - fs from 'fs-extra'
+   - path from 'path'
+   - PIXEL_ROOT from '../config'
+   - logAudit from '../utils'
+
+3. Recalculate CONTINUITY_PATH in the new file (same logic as original)
+
+4. Export: export const continuityTools = { readContinuity, updateContinuity }
+
+5. In main tools.ts, replace the extracted tools with:
+   import { continuityTools } from './tools/continuity';
+
+   And spread into the tools object: ...continuityTools,
+
+VERIFY:
+cd /pixel/syntropy-core && bun run build 2>&1 | tail -5
+```
+
+Completed: 2026-01-04T14:20Z
+Worker: [WORKER_CONTAINER] - task briefing executed
+- File: /pixel/syntropy-core/src/tools/continuity.ts (50 lines)
+- Exports: readContinuity, updateContinuity, continuityTools
+- Tools.ts integration: line 1 (import), line 14 (spread)
+- Build verification: PASSED (no errors)
 INSTRUCTIONS:
 Create /pixel/syntropy-core/src/tools/continuity.ts
 
