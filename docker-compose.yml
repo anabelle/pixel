@@ -168,6 +168,12 @@ services:
       agent:
         condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://127.0.0.1:3000/health" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
