@@ -208,7 +208,7 @@ services:
   # Start manually: docker compose --profile tools up -d pgadmin
   # Access via SSH tunnel: ssh -L 5050:127.0.0.1:5050 user@vps
   pgadmin:
-    profiles: ["tools"]
+    profiles: [ "tools" ]
     image: dpage/pgadmin4:latest
     ports:
       - "127.0.0.1:5050:80"
@@ -327,9 +327,10 @@ services:
           memory: 4G
           cpus: "2"
 
-  # Worker log tailer (makes worker output visible in `docker compose logs -f`)
+  # Opencode log tailer (makes worker output visible in `docker compose logs -f`)
   # This tails the shared log file that every worker appends to.
-  worker-logs:
+  # REASON FOR RENAME: Avoid name conflict with ephemeral workers (pixel-worker-*)
+  opencode-logs:
     image: alpine:latest
     volumes:
       - .:/pixel
