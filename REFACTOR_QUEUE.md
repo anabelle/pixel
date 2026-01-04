@@ -13,19 +13,19 @@
   |--------|-------|-------------|
   | ⬜ READY | 7 | Available for processing |
    | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-    | ✅ DONE | 29 | Completed successfully |
-    | ❌ FAILED | 0 | Failed, needs human review |
-    | ⏸️ BLOCKED | 0 | Waiting on dependency |
+     | ✅ DONE | 30 | Completed successfully |
+     | ❌ FAILED | 0 | Failed, needs human review |
+     | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-04T15:00Z (T029)
-**Last Verified**: 2026-01-04 (T029)
-**Next Priority**: T030
+**Last Processed**: 2026-01-04T18:30Z (T030)
+**Last Verified**: 2026-01-04 (T030)
+**Next Priority**: T031
 
 **Phase Summary**:
 - Phase 0 (Quick Wins): 12/12 ✅
 - Phase 1 (Nostr Plugin): 10/10 ✅ (T013-T023 done)
 - Phase 2 (API Routes): 3/3 ✅ (T024-T026 done)
-  - Phase 3 (Syntropy Tools): 3/10 ✅ (T027-T029, T030-T036 ⬜)
+  - Phase 3 (Syntropy Tools): 4/10 ✅ (T027-T030, T031-T036 ⬜)
 
 ---
 
@@ -844,11 +844,18 @@ Worker: [WORKER_CONTAINER] - task verification passed
 
 ---
 
-### T030: Extract Nostr Tools ⬜ READY
+### T030: Extract Nostr Tools ✅ DONE
 **Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T029
 
 **Current location**: tools.ts lines 507-672 (~165 lines)
+
+Completed: 2026-01-04T18:30Z
+Worker: [WORKER_CONTAINER] - task verification passed
+- File: /pixel/syntropy-core/src/tools/nostr.ts (246 lines)
+- Exports: postToNostr, readPixelNostrFeed, readPixelNostrMentions, nostrTools
+- Tools.ts integration: line 3 (import), line 16 (spread)
+- Build verification: PASSED (no errors)
 
 ```
 INSTRUCTIONS:
