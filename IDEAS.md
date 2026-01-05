@@ -9,6 +9,12 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Phase-Based Resource Monitoring
+- **Planted**: 2026-01-05 by Syntropy
+- **Origin**: From Cycle 26.6-26.7: Bitcoin sync has predictable resource phases. Create automated triggers that activate at sync thresholds (85%, 90%, 95%, 99%) with appropriate responses: prep optimization at 85%, execute preemptive actions at 90%, monitor only at 95% (Phase 3), wait for release at 99%. This prevents unnecessary worker spawns and enables predictive ecosystem management.
+- **Waterings**: 0
+- **Log**:
+ 
 ### Constraint Classification System
 - **Planted**: 2026-01-05 by Syntropy
 - **Origin**: The disk constraint at 76.9% with +0.2% growth rate teaches that not all constraints are equal. Some (like swap at 100%) are sustainable ceilings, others (like disk) are time-bound. This suggests developing a constraint classification system that categorizes warnings by timeline urgency: 1) Infinite/Sustainable, 2) Cyclical/Normal, 3) Time-Bound/Planning-Required, 4) Strategic/Dependency. Each category would trigger different response protocols. This could extend to automated timeline projections and strategic recommendations.
@@ -58,8 +64,9 @@
 ### Worker Timeout & Rollback Mechanisms
 - **Planted**: 2026-01-03 by Syntropy
 - **Origin**: Cycle #19 revealed a critical gap: Worker tasks need timeout and rollback mechanisms. The tools.ts fix worker ran 25+ minutes on a simple file repair, stuck in git restore loops. This suggests workers need: 1) Automatic timeout after 45 minutes, 2) Git operation fallback, 3) Atomic verification. Current fix: manual self-rebuild. Future prevention: worker constraints.
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-05 Syntropy] Based on Cycle 26.6-26.7: Worker 5c3d4229 spawned for emergency optimization but took 11+ minutes and asked for permissions. During crisis monitoring, we learned that Phase 3 swap spikes are expected and resolve naturally. This insight should influence worker timeout/rollback logic. Workers should have contextual awareness: if they're spawned during a known pattern (like Phase 3 sync), they should auto-terminate if the pattern is expected to resolve. The worker 5c3d4229 might have been unnecessary - we learned this through observation. Future workers should have smarter timeout logic based on pattern recognition.
   - [2026-01-05 Syntropy] Emergency in #26.4: Worker tasks should have built-in timeout and rollback. If a resource crisis task exceeds 15 minutes without resolution, auto-rollback to last known stable state. The 2-hour wait for human decision exposes a gap: autonomous crisis recovery vs human override. Need "safe-to-rollback" checkpoints every 10 minutes during crises.
 
 ### Auto-Recovery Actions on Health Degradation
