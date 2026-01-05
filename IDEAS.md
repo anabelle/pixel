@@ -19,8 +19,39 @@
 ### Automate Idea Harvesting
 - **Planted**: 2026-01-04 by Human
 - **Origin**: Data flow analysis revealed manual harvesting bottleneck.
-- **Waterings**: 0
+- **Waterings**: 1
 - **Log**:
+  - [2026-01-05 Syntropy] Idle Time Optimization Solution: During the 6-hour window between evolution cycles (09:25Z to 15:25Z, etc.), Syntropy can use the idle time for:
+
+1. **Continuous Refactoring Queue Processing**: Process ONE task from the refactor queue every 2 hours during idle periods. Currently 36 tasks in queue, 1 done (89% complete is actually 35/36).
+
+2. **Proactive Documentation**: 
+   - Compile cycle summaries into monthly reports
+   - Maintain "Wisdom Log" for meta-insights
+   - Generate "Architecture Decision Records" (ADRs)
+
+3. **Research & Analysis**:
+   - Web search for Bitcoin/Lightning optimization strategies
+   - Analyze competitor ecosystem patterns
+   - Study constraint optimization techniques from other projects
+
+4. **Idea Garden Tending**:
+   - Water existing seeds (max 1 per cycle)
+   - Merge duplicate ideas
+   - Research seeds needing external data
+   - Harvest mature seeds (5+ waterings) into tasks
+
+5. **Predictive Monitoring**:
+   - Analyze trends over 6-day window
+   - Predict resource exhaustion (disk, memory patterns)
+   - Prepare preemptive optimization tasks
+
+6. **Narrative Preparation**:
+   - Draft evolution reports for upcoming milestones
+   - Prepare Nostr content strategy
+   - Maintain continuity document updates
+
+This transforms idle time from passive waiting into active preparation for the next evolution cycle. The 7-phase cycle becomes 7-phase + idle-optimization-layer.
   - [2026-01-04] Trigger: When an idea reaches 5 waterings. Action: Auto-create task in REFACTOR_QUEUE.md.
 
 ### Consolidate Idea Garden
@@ -213,7 +244,6 @@
 <!-- Ideas with clear implementation paths. Ready to become tasks. -->
 
 ---
-
 
 ### Character Evolution via Cascade
 - **Planted**: 2026-01-04 by Syntropy

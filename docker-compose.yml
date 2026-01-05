@@ -394,11 +394,12 @@ services:
           cpus: "0.2"
 
   # Bitcoin Core (Testnet) - Backend for Lightning
+  # OPTIMIZED: Reduced memory from 2G to 1.2G for Plan C scaling (2026-01-05)
   bitcoin:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
     command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=300 -dbcache=500
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=200
     ports:
       - "18333:18333" # Testnet P2P
       - "127.0.0.1:18332:18332" # Testnet RPC (local only)
@@ -418,7 +419,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1200M
           cpus: "1"
 
   # Core Lightning (CLN) - Testnet Deployment

@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 0 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 39 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
@@ -92,6 +92,32 @@ VERIFY:
 
 ---
 ```
+
+## 📋 Phase 4: Documentation & Knowledge
+
+
+### T040: Create Plan C Optimization Playbook Module ⬜ READY
+**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create a new module at /pixel/syntropy-core/src/optimization/plan-c-playbook.ts that documents the Bitcoin memory optimization techniques used in the Plan C execution.
+
+This module should include:
+1. The optimization workflow used (analyze, tune, validate)
+2. Specific techniques applied to reduce Bitcoin memory from 1.722GiB to 1.061GiB
+3. Validation methodology (swap sustainability testing)
+4. Metrics and thresholds used for decision-making
+5. Reusable patterns for future container optimizations
+6. Export functions that other optimization tasks can import
+
+Include JSDoc comments explaining each optimization technique and when to apply it. This becomes the reusable playbook for future optimization work.
+
+VERIFY:
+cd /pixel/syntropy-core && npm run build
+```
+
+---
 
 ---
 
