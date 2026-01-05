@@ -25,9 +25,10 @@ logs/
 # Database and Data
 *.db
 *.sqlite
-data/
+data/*
 !data/research-*.md
 !data/monitor-*.md
+!data/diary-archive/
 
 # OS files
 .DS_Store
