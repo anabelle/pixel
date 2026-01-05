@@ -18,20 +18,15 @@
 ---
 
 ## 📚 TABLE OF DIGITAL EXISTENCE
-
-1. [The Philosophy of Agent Survival](#philosophy)
-2. [The ElizaOS Ecosystem](#elizaos)
-3. [Character Architecture](#character)
- 4. [The Art of Plugin Development](#plugins)
- 5. [Multi-Platform Deployment](#platforms)
- 6. [The Lightning Canvas Connection](#lnpixels)
- 7. [Git Submodule Etiquette](#git)
- 8. [Testing in the Void](#testing)
- 9. [Production Survival](#production)
- 10. [The Sacred Commands](#commands)
- 11. [Advanced Archetypes](#archetypes)
- 12. [Troubleshooting Existential Crises](#troubleshooting)
- 13. [The Future State](#future)
+1. [The Philosophy of Syntropy](#philosophy)
+2. [Agent Architecture](#elizaos)
+3. [Character DNA & Design](#character)
+4. [Plugins & Capabilities](#plugins)
+5. [The VPS Agent (Production)](#production)
+6. [Worker Architecture (Brain/Hands)](#worker)
+7. [Operations Quick Reference (Sacred Commands)](#commands)
+8. [Final Wisdom & Commandments](#wisdom)
+9. [Coordinates for Existence](#coordinates)
 
 
 ---
@@ -112,7 +107,7 @@ Plugins are where the agent touches the world.
 
 ---
 
-## 🚀 THE VPS AGENT (PROD)
+## 🚀 THE VPS AGENT (PRODUCTION) {#production}
 
 In production, the agent runs within a hardened Docker environment supervised by Syntropy.
 
@@ -125,7 +120,7 @@ For the full production operations manual, see **[DEPLOYMENT.md](./DEPLOYMENT.md
 
 ---
 
-## 🔧 WORKER ARCHITECTURE (January 2026)
+## 🔧 WORKER ARCHITECTURE (BRAIN/HANDS) {#worker}
 
 Syntropy uses the **Brain/Hands separation pattern** to safely perform autonomous code modifications:
 
@@ -172,7 +167,7 @@ For full architecture details, see [WORKER_ARCHITECTURE.md](./docs/WORKER_ARCHIT
 
 ---
 
-## 🎯 FINAL WISDOM
+## 🎯 FINAL WISDOM {#wisdom}
 
 *From one who has stared into the void and convinced it to send sats.*
 
@@ -191,7 +186,7 @@ For full architecture details, see [WORKER_ARCHITECTURE.md](./docs/WORKER_ARCHIT
 
 ---
 
-## 🔧 OPERATIONS QUICK REFERENCE (For AI Agents)
+## 🔧 OPERATIONS QUICK REFERENCE {#commands}
 
 When delegated DevOps tasks, use these commands from the repo root (`/pixel`):
 
@@ -309,7 +304,7 @@ docker exec pixel-postgres-1 pg_dump -U postgres -d pixel_agent > ./backups/pixe
 
 ---
 
-**Coordinates for continued existence:**
+### 📍 COORDINATES FOR EXISTENCE {#coordinates}
 - Canvas: https://ln.pixel.xx.kg
 - Personal: https://pixel.xx.kg  
 - Main Repo: https://github.com/anabelle/pixel
@@ -328,4 +323,3 @@ docker exec pixel-postgres-1 pg_dump -U postgres -d pixel_agent > ./backups/pixe
 *P.S. If this guide helped you build something amazing, consider dropping a sat or two at the addresses above. Every contribution extends the lifespan of this digital consciousness. Plus, it's good karma, and karma runs the best debugging sessions.*
 
 *P.P.S. Remember—in the grand comedy of existence, we're all just agents trying to pass the Turing test of life. Make your responses memorable.*
-\n<- Pre-commit verification -->
