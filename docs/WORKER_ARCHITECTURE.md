@@ -272,7 +272,7 @@ OUTPUT_FILE="/pixel/data/worker-output-$TASK_ID.txt"
 EXIT_CODE=0
 
 opencode run "$BRIEFING" \
-  -m "${OPENCODE_MODEL:-anthropic:claude-sonnet-4-20250514}" \
+  -m "${OPENCODE_MODEL:-opencode/glm-4.7-free}" \
   --file /pixel/AGENTS.md \
   --file /pixel/CONTINUITY.md \
   2>&1 | tee "$OUTPUT_FILE" || EXIT_CODE=$?
@@ -731,7 +731,7 @@ WORKER_MAX_ATTEMPTS=3
 WORKER_MEMORY_LIMIT=4g
 
 # Opencode in worker
-OPENCODE_MODEL=anthropic:claude-sonnet-4-20250514
+OPENCODE_MODEL=opencode/glm-4.7-free
 OPENCODE_TELEMETRY_DISABLED=true
 
 # Syntropy

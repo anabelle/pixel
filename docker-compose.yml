@@ -313,7 +313,7 @@ services:
       - HOME=/tmp
       - CI=true
       - OPENCODE_TELEMETRY_DISABLED=true
-      - OPENCODE_MODEL=${OPENCODE_MODEL:-anthropic:claude-sonnet-4-20250514}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode/glm-4.7-free}
       - WORKER_TIMEOUT_SECONDS=${WORKER_TIMEOUT_SECONDS:-2700}
       # TASK_ID is passed at runtime via -e TASK_ID=xxx
     env_file:
