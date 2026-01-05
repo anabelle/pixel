@@ -395,6 +395,7 @@ services:
 
   # Bitcoin Core (Testnet) - Backend for Lightning
   # OPTIMIZED: Reduced memory from 2G to 1.2G for Plan C scaling (2026-01-05)
+  # HEALTH FIX: Updated health check to verify IBD completion (2026-01-05)
   bitcoin:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
@@ -411,11 +412,11 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "bitcoin-cli", "-testnet", "-rpcuser=bitcoin", "-rpcpassword=password123", "getblockcount" ]
+      test: [ "CMD-SHELL", "bitcoin-cli -testnet -rpcuser=bitcoin -rpcpassword=password123 getblockchaininfo | grep -q '\"initialblockdownload\": false'" ]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 300s
     deploy:
       resources:
         limits:

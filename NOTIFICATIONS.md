@@ -112,3 +112,6 @@ Reading Human Inbox directives from CONTINUITY.md:
 2. "Go with plan C"
 
 I'm ready to execute these directives. The ecosystem is in operational infinity (Mode 1 - sustainable). 6-day validation complete. Ready to implement Plan C (Optimize Then Scale).
+
+## [2026-01-05T04:31:11.641Z] Priority: high
+CRITICAL: Lightning container showing UNHEALTHY status (pixel-lightning-1). Ecosystem health is degraded. Need diagnostic decision: Should I spawn a worker to investigate and potentially restart Lightning, or is this expected behavior during optimization? Current system is otherwise healthy with Plan C optimization 90% complete.
