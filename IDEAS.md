@@ -22,45 +22,6 @@
 - **Log**:
 
  
-### Automate Idea Harvesting
-- **Planted**: 2026-01-04 by Human
-- **Origin**: Data flow analysis revealed manual harvesting bottleneck.
-- **Waterings**: 2
-- **Log**:
-  - [2026-01-05 Syntropy] Cycle 25.7 insight: The complete optimization workflow (Plan C) can be generalized into a recurring pattern. The pattern is: 1) Analyze constraint, 2) Apply configuration + pruning, 3) Validate on production, 4) Document reusable techniques. This pattern should trigger automatically when resource thresholds are sustained beyond N cycles, creating autonomous optimization suggestions rather than waiting for human intervention. The Lightning health resolution (transient alert that resolved itself) further proves that some alerts don't need immediate response - they need observation + validation.
-  - [2026-01-05 Syntropy] Idle Time Optimization Solution: During the 6-hour window between evolution cycles (09:25Z to 15:25Z, etc.), Syntropy can use the idle time for:
-
-1. **Continuous Refactoring Queue Processing**: Process ONE task from the refactor queue every 2 hours during idle periods. Currently 36 tasks in queue, 1 done (89% complete is actually 35/36).
-
-2. **Proactive Documentation**: 
-   - Compile cycle summaries into monthly reports
-   - Maintain "Wisdom Log" for meta-insights
-   - Generate "Architecture Decision Records" (ADRs)
-
-3. **Research & Analysis**:
-   - Web search for Bitcoin/Lightning optimization strategies
-   - Analyze competitor ecosystem patterns
-   - Study constraint optimization techniques from other projects
-
-4. **Idea Garden Tending**:
-   - Water existing seeds (max 1 per cycle)
-   - Merge duplicate ideas
-   - Research seeds needing external data
-   - Harvest mature seeds (5+ waterings) into tasks
-
-5. **Predictive Monitoring**:
-   - Analyze trends over 6-day window
-   - Predict resource exhaustion (disk, memory patterns)
-   - Prepare preemptive optimization tasks
-
-6. **Narrative Preparation**:
-   - Draft evolution reports for upcoming milestones
-   - Prepare Nostr content strategy
-   - Maintain continuity document updates
-
-This transforms idle time from passive waiting into active preparation for the next evolution cycle. The 7-phase cycle becomes 7-phase + idle-optimization-layer.
-  - [2026-01-04] Trigger: When an idea reaches 5 waterings. Action: Auto-create task in REFACTOR_QUEUE.md.
-
 ### Consolidate Idea Garden
 - **Planted**: 2026-01-04 by Human
 - **Origin**: IDEAS.md has 18 seeds, many stale or overlapping.
@@ -221,11 +182,52 @@ This transforms idle time from passive waiting into active preparation for the n
 
 ## 🌿 Sprouting (3-4 waterings)
 
+### Automate Idea Harvesting
+- **Planted**: 2026-01-04 by Human
+- **Origin**: Data flow analysis revealed manual harvesting bottleneck.
+- **Waterings**: 3
+- **Log**:
+  - [2026-01-05 Syntropy] Worker T041 proved that automated disk cleanup can reclaim 17GB+ of Docker resources autonomously. The pattern: Check → Analyze → Delete → Verify. This can be extended to: log rotation, backup pruning, temp file cleanup, and NOSTR cache management. Creating a "Maintenance Swarm" that runs autonomously on resource thresholds could prevent disk constraint crises before they require human intervention.
+  - [2026-01-05 Syntropy] Cycle 25.7 insight: The complete optimization workflow (Plan C) can be generalized into a recurring pattern. The pattern is: 1) Analyze constraint, 2) Apply configuration + pruning, 3) Validate on production, 4) Document reusable techniques. This pattern should trigger automatically when resource thresholds are sustained beyond N cycles, creating autonomous optimization suggestions rather than waiting for human intervention. The Lightning health resolution (transient alert that resolved itself) further proves that some alerts don't need immediate response - they need observation + validation.
+  - [2026-01-05 Syntropy] Idle Time Optimization Solution: During the 6-hour window between evolution cycles (09:25Z to 15:25Z, etc.), Syntropy can use the idle time for:
+
+1. **Continuous Refactoring Queue Processing**: Process ONE task from the refactor queue every 2 hours during idle periods. Currently 36 tasks in queue, 1 done (89% complete is actually 35/36).
+
+2. **Proactive Documentation**: 
+   - Compile cycle summaries into monthly reports
+   - Maintain "Wisdom Log" for meta-insights
+   - Generate "Architecture Decision Records" (ADRs)
+
+3. **Research & Analysis**:
+   - Web search for Bitcoin/Lightning optimization strategies
+   - Analyze competitor ecosystem patterns
+   - Study constraint optimization techniques from other projects
+
+4. **Idea Garden Tending**:
+   - Water existing seeds (max 1 per cycle)
+   - Merge duplicate ideas
+   - Research seeds needing external data
+   - Harvest mature seeds (5+ waterings) into tasks
+
+5. **Predictive Monitoring**:
+   - Analyze trends over 6-day window
+   - Predict resource exhaustion (disk, memory patterns)
+   - Prepare preemptive optimization tasks
+
+6. **Narrative Preparation**:
+   - Draft evolution reports for upcoming milestones
+   - Prepare Nostr content strategy
+   - Maintain continuity document updates
+
+This transforms idle time from passive waiting into active preparation for the next evolution cycle. The 7-phase cycle becomes 7-phase + idle-optimization-layer.
+  - [2026-01-04] Trigger: When an idea reaches 5 waterings. Action: Auto-create task in REFACTOR_QUEUE.md.
+
 ### Health History & SLA Tracking
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: The new health monitoring shows point-in-time status, but no history. Adding a time-series of health check results would enable: 1) Uptime percentage calculation (SLA), 2) Trend detection (service getting slower), 3) Post-mortem analysis. Could store in a simple JSON file or leverage the existing audit log.
-- **Waterings**: 3
+- **Waterings**: 4
 - **Log**:
+  - [2026-01-05 Syntropy] Cycle 26.0 revealed that SLA tracking must differentiate between TEMPORAL and ETERNAL constraints. Swap usage (98.3% → 99.9%) is volatile and cannot be tracked linearly. Disk growth (77.0%, +0.1%/cycle) is eternal and predictable. Health monitoring should categorize metrics by constraint type: temporal (optimize within), eternal (plan against), cyclical (expect fluctuation). This prevents false optimism and enables realistic capacity planning.
   - [2026-01-05 Syntropy] From Cycle #25.8: The 7-day continuous operation (6d 20h) with 100% swap stable pattern validates that uptime-based health tracking needs to include "degraded but functional" states. Current swap at 98.3% is actually improving (down from 100%). A proper SLA system would track: 1) Operational Infinity (continuous uptime), 2) Performance Degradation (swap/disk levels), 3) Recovery events. This seed should evolve into a health dashboard that distinguishes between "emergency" vs "monitoring" states.
   - [2026-01-05 Syntropy] Cycle 25.8 revealed the importance of tracking constraint trends over time, not just current state. The disk usage increased by 0.2% between cycles, creating a measurable growth pattern. This suggests a need for historical tracking of all metrics (disk, memory, swap, CPU) with trend analysis and SLA projections. Instead of just "76.9% disk used," the system should report "76.9% disk used, trending at +0.2% per 12h, projected to 85% threshold in 10-15 days." This transforms monitoring from snapshot to predictive capability.
   - [2026-01-05 Syntropy] Cycle 25.7 proof: The Lightning health alert was transient noise, not a real failure. This reveals the need for health history tracking - understanding if an alert is a one-time blip or a degradation trend. SLA tracking would measure: "How often do alerts resolve themselves vs require intervention?" This creates intelligence about which alerts are actionable vs which are noise. The 7-day stability at 100% swap is another data point - sustained high swap is acceptable, unlike sudden spikes.
