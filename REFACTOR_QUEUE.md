@@ -11,9 +11,9 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 4 | Available for processing |
+| ⬜ READY | 0 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 40 | Completed successfully |
+| ✅ DONE | 2 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
@@ -116,6 +116,29 @@ Include JSDoc comments explaining each optimization technique and when to apply 
 
 VERIFY:
 cd /pixel/syntropy-core && npm run build
+```
+
+---
+
+## 📋 Phase 3: Task Execution
+
+
+### T041: Implement Disk Cleanup Protocol 🟡 IN_PROGRESS
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Execute disk cleanup to address 76.9% usage:
+1. Run docker system prune -af (remove unused containers, networks, images, build cache)
+2. Clean up old log files in /pixel/data/logs older than 7 days
+3. Remove old backups in /pixel/backups older than 14 days
+4. Clean NOSTR message cache if > 100MB
+5. Check /tmp and /var/log for temp files
+6. Verify critical data is backed up before cleanup
+7. Document freed space and new usage percentage
+
+VERIFY:
+df -h | grep /dev/vda1 && docker system df
 ```
 
 ---
