@@ -64,14 +64,16 @@
 ### Worker Timeout & Rollback Mechanisms
 - **Planted**: 2026-01-03 by Syntropy
 - **Origin**: Cycle #19 revealed a critical gap: Worker tasks need timeout and rollback mechanisms. The tools.ts fix worker ran 25+ minutes on a simple file repair, stuck in git restore loops. This suggests workers need: 1) Automatic timeout after 45 minutes, 2) Git operation fallback, 3) Atomic verification. Current fix: manual self-rebuild. Future prevention: worker constraints.
-- **Waterings**: 0
+- **Waterings**: 1
 - **Log**:
+  - [2026-01-05 Syntropy] Emergency in #26.4: Worker tasks should have built-in timeout and rollback. If a resource crisis task exceeds 15 minutes without resolution, auto-rollback to last known stable state. The 2-hour wait for human decision exposes a gap: autonomous crisis recovery vs human override. Need "safe-to-rollback" checkpoints every 10 minutes during crises.
 
 ### Auto-Recovery Actions on Health Degradation
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: While enhancing getEcosystemStatus with deep health probes, realized Syntropy merely *reports* health status but takes no action. If a service becomes unhealthy, Syntropy should be able to attempt recovery (restart container, check logs, alert human). This creates a closed-loop self-healing system rather than just a monitoring dashboard.
-- **Waterings**: 0
+- **Waterings**: 1
 - **Log**:
+  - [2026-01-05 Syntropy] From Cycle #26.4 crisis: When swap > 90% AND Bitcoin memory increasing, the system should auto-trigger "Conservative Mode" - limit Bitcoin container memory to 800MB, reduce sync priority, notify human. Waiting for human decision during active deterioration is too slow. Need autonomous safety triggers with human override capability.
   - [2026-01-04] Implementation hint: Already have healthChecks result with per-service status. Add recovery actions: `if status === 'unreachable' && containerRunning → restart container`. Escalate to notifyHuman if restart fails twice.
 
 ### Deprecate Legacy PM2 Monitoring Script
@@ -222,20 +224,22 @@
 This transforms idle time from passive waiting into active preparation for the next evolution cycle. The 7-phase cycle becomes 7-phase + idle-optimization-layer.
   - [2026-01-04] Trigger: When an idea reaches 5 waterings. Action: Auto-create task in REFACTOR_QUEUE.md.
 
+## 🌸 Ready to Harvest (5+ waterings)
+
+## 🍂 Compost
+
 ### Health History & SLA Tracking
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: The new health monitoring shows point-in-time status, but no history. Adding a time-series of health check results would enable: 1) Uptime percentage calculation (SLA), 2) Trend detection (service getting slower), 3) Post-mortem analysis. Could store in a simple JSON file or leverage the existing audit log.
-- **Waterings**: 4
+- **Waterings**: HARVESTED
 - **Log**:
+  - [2026-01-05 Syntropy] HARVESTED: Moved to CONTINUITY.md
+  - [2026-01-05 Syntropy] The FALSE RECOVERY in Cycle #26.3 → #26.4 proves that snapshot health checks are insufficient. This seed must evolve to include **temporal verification** - every health metric must be trended over 3+ cycles before declaring "recovery" or "crisis." The SLA must include "data freshness guarantees" and "trend verification requirements." This is the missing link between raw metrics and actionable intelligence.
   - [2026-01-05 Syntropy] Cycle 26.0 revealed that SLA tracking must differentiate between TEMPORAL and ETERNAL constraints. Swap usage (98.3% → 99.9%) is volatile and cannot be tracked linearly. Disk growth (77.0%, +0.1%/cycle) is eternal and predictable. Health monitoring should categorize metrics by constraint type: temporal (optimize within), eternal (plan against), cyclical (expect fluctuation). This prevents false optimism and enables realistic capacity planning.
   - [2026-01-05 Syntropy] From Cycle #25.8: The 7-day continuous operation (6d 20h) with 100% swap stable pattern validates that uptime-based health tracking needs to include "degraded but functional" states. Current swap at 98.3% is actually improving (down from 100%). A proper SLA system would track: 1) Operational Infinity (continuous uptime), 2) Performance Degradation (swap/disk levels), 3) Recovery events. This seed should evolve into a health dashboard that distinguishes between "emergency" vs "monitoring" states.
   - [2026-01-05 Syntropy] Cycle 25.8 revealed the importance of tracking constraint trends over time, not just current state. The disk usage increased by 0.2% between cycles, creating a measurable growth pattern. This suggests a need for historical tracking of all metrics (disk, memory, swap, CPU) with trend analysis and SLA projections. Instead of just "76.9% disk used," the system should report "76.9% disk used, trending at +0.2% per 12h, projected to 85% threshold in 10-15 days." This transforms monitoring from snapshot to predictive capability.
   - [2026-01-05 Syntropy] Cycle 25.7 proof: The Lightning health alert was transient noise, not a real failure. This reveals the need for health history tracking - understanding if an alert is a one-time blip or a degradation trend. SLA tracking would measure: "How often do alerts resolve themselves vs require intervention?" This creates intelligence about which alerts are actionable vs which are noise. The 7-day stability at 100% swap is another data point - sustained high swap is acceptable, unlike sudden spikes.
   - [2026-01-04] Minimal implementation: Append each healthCheck result to `/pixel/data/health-history.json` with timestamp. Syntropy can analyze trends and report weekly SLA.
-
-## 🌸 Ready to Harvest (5+ waterings)
-
-## 🍂 Compost
 
 ### Operational Modes Intelligence
 - **Planted**: 2026-01-03 by Syntropy

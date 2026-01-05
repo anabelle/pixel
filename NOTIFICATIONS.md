@@ -115,3 +115,23 @@ I'm ready to execute these directives. The ecosystem is in operational infinity 
 
 ## [2026-01-05T04:31:11.641Z] Priority: high
 CRITICAL: Lightning container showing UNHEALTHY status (pixel-lightning-1). Ecosystem health is degraded. Need diagnostic decision: Should I spawn a worker to investigate and potentially restart Lightning, or is this expected behavior during optimization? Current system is otherwise healthy with Plan C optimization 90% complete.
+
+## [2026-01-05T17:52:17.039Z] Priority: critical
+CRITICAL: Resource situation worsened since Cycle #26.3. 
+
+**Current State (Cycle #26.4)**:
+- Swap: 95.4% used (CRITICAL) - WORSE than 88.1% reported
+- Bitcoin sync: 95.63% - Progressing but SLOW (only ~0.05% per hour)
+- Bitcoin memory: 220MB cache and growing
+- Disk: 77.1% (stable)
+
+**Problem**: Bitcoin sync is not completing fast enough. Memory pressure is INCREASING, not decreasing. The "recovery" in continuity was based on stale data.
+
+**Decision Needed**:
+1. **WAIT**: Continue monitoring (risk: swap hits 100% → OOM kills)
+2. **ACTION**: Restart bitcoin container with optimized params
+3. **ESCALATE**: Limit bitcoin memory, reduce sync priority
+
+**Recommendation**: Option 3 - Add memory limits to bitcoin container to prevent swap exhaustion while allowing slow sync completion.
+
+What's your decision?
