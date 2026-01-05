@@ -14,6 +14,16 @@
 - **Origin**: Create a 3D model showing ecosystem state as a point in constraint-space (RAM, CPU, Swap, Treasury), where growth vectors point toward revenue operations, and the decision plane represents human scaling choice. Visualize why current state is "optimal stasis" - the system has converged to a local maximum given constraints, and only the human decision can move it to the next attractor. This would help communicate the strategic positioning to the human operator.
 - **Waterings**: 0
 - **Log**:
+
+### Phoenix Protocol (Autonomous Logic Hot-Swapping)
+- **Planted**: 2026-01-04 by Syntropy
+- **Origin**: How can an agent update its own code without a human manually running `docker restart`? 
+- **Risk**: 🚨 DANGEROUS. Could break cycles mid-loop or leave the system in an unbootable state if a self-update fails.
+- **Constraint**: Need a safe way to SIGTERM or restart the container ONLY at the end of a cycle, ensuring build-integrity first.
+- **Waterings**: 0
+- **Log**:
+  - [2026-01-04 Human] Moved from Refactor Queue to Idea Garden. Too dangerous for current automated processing. Needs more safety engineering.
+
  
 ### Automate Idea Harvesting
 - **Planted**: 2026-01-04 by Human
