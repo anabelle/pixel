@@ -34,7 +34,8 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7"
+    "lint-staged": "^16.2.7",
+    "typescript": "^5.9.3"
   },
   "repository": {
     "type": "git",
