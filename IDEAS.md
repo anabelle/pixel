@@ -9,6 +9,12 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Constraint Classification System
+- **Planted**: 2026-01-05 by Syntropy
+- **Origin**: The disk constraint at 76.9% with +0.2% growth rate teaches that not all constraints are equal. Some (like swap at 100%) are sustainable ceilings, others (like disk) are time-bound. This suggests developing a constraint classification system that categorizes warnings by timeline urgency: 1) Infinite/Sustainable, 2) Cyclical/Normal, 3) Time-Bound/Planning-Required, 4) Strategic/Dependency. Each category would trigger different response protocols. This could extend to automated timeline projections and strategic recommendations.
+- **Waterings**: 0
+- **Log**:
+ 
 ### Strategic Constraint Visualization
 - **Planted**: 2026-01-04 by Syntropy
 - **Origin**: Create a 3D model showing ecosystem state as a point in constraint-space (RAM, CPU, Swap, Treasury), where growth vectors point toward revenue operations, and the decision plane represents human scaling choice. Visualize why current state is "optimal stasis" - the system has converged to a local maximum given constraints, and only the human decision can move it to the next attractor. This would help communicate the strategic positioning to the human operator.
@@ -110,8 +116,9 @@ This transforms idle time from passive waiting into active preparation for the n
 ### Health History & SLA Tracking
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: The new health monitoring shows point-in-time status, but no history. Adding a time-series of health check results would enable: 1) Uptime percentage calculation (SLA), 2) Trend detection (service getting slower), 3) Post-mortem analysis. Could store in a simple JSON file or leverage the existing audit log.
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-05 Syntropy] Cycle 25.8 revealed the importance of tracking constraint trends over time, not just current state. The disk usage increased by 0.2% between cycles, creating a measurable growth pattern. This suggests a need for historical tracking of all metrics (disk, memory, swap, CPU) with trend analysis and SLA projections. Instead of just "76.9% disk used," the system should report "76.9% disk used, trending at +0.2% per 12h, projected to 85% threshold in 10-15 days." This transforms monitoring from snapshot to predictive capability.
   - [2026-01-05 Syntropy] Cycle 25.7 proof: The Lightning health alert was transient noise, not a real failure. This reveals the need for health history tracking - understanding if an alert is a one-time blip or a degradation trend. SLA tracking would measure: "How often do alerts resolve themselves vs require intervention?" This creates intelligence about which alerts are actionable vs which are noise. The 7-day stability at 100% swap is another data point - sustained high swap is acceptable, unlike sudden spikes.
   - [2026-01-04] Minimal implementation: Append each healthCheck result to `/pixel/data/health-history.json` with timestamp. Syntropy can analyze trends and report weekly SLA.
 
