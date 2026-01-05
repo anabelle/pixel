@@ -61,14 +61,6 @@
 - **Waterings**: 0
   1. [ ] Research lightweight notification APIs (Pushover, NTFY, or Telegram Bot API).
 
-### Worker Timeout & Rollback Mechanisms
-- **Planted**: 2026-01-03 by Syntropy
-- **Origin**: Cycle #19 revealed a critical gap: Worker tasks need timeout and rollback mechanisms. The tools.ts fix worker ran 25+ minutes on a simple file repair, stuck in git restore loops. This suggests workers need: 1) Automatic timeout after 45 minutes, 2) Git operation fallback, 3) Atomic verification. Current fix: manual self-rebuild. Future prevention: worker constraints.
-- **Waterings**: 2
-- **Log**:
-  - [2026-01-05 Syntropy] Based on Cycle 26.6-26.7: Worker 5c3d4229 spawned for emergency optimization but took 11+ minutes and asked for permissions. During crisis monitoring, we learned that Phase 3 swap spikes are expected and resolve naturally. This insight should influence worker timeout/rollback logic. Workers should have contextual awareness: if they're spawned during a known pattern (like Phase 3 sync), they should auto-terminate if the pattern is expected to resolve. The worker 5c3d4229 might have been unnecessary - we learned this through observation. Future workers should have smarter timeout logic based on pattern recognition.
-  - [2026-01-05 Syntropy] Emergency in #26.4: Worker tasks should have built-in timeout and rollback. If a resource crisis task exceeds 15 minutes without resolution, auto-rollback to last known stable state. The 2-hour wait for human decision exposes a gap: autonomous crisis recovery vs human override. Need "safe-to-rollback" checkpoints every 10 minutes during crises.
-
 ### Auto-Recovery Actions on Health Degradation
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: While enhancing getEcosystemStatus with deep health probes, realized Syntropy merely *reports* health status but takes no action. If a service becomes unhealthy, Syntropy should be able to attempt recovery (restart container, check logs, alert human). This creates a closed-loop self-healing system rather than just a monitoring dashboard.
@@ -166,6 +158,15 @@ Today proved the cascade is real. The question is: how do we design intentionall
 ---
 
 ## 🌿 Sprouting (3-4 waterings)
+
+### Worker Timeout & Rollback Mechanisms
+- **Planted**: 2026-01-03 by Syntropy
+- **Origin**: Cycle #19 revealed a critical gap: Worker tasks need timeout and rollback mechanisms. The tools.ts fix worker ran 25+ minutes on a simple file repair, stuck in git restore loops. This suggests workers need: 1) Automatic timeout after 45 minutes, 2) Git operation fallback, 3) Atomic verification. Current fix: manual self-rebuild. Future prevention: worker constraints.
+- **Waterings**: 3
+- **Log**:
+  - [2026-01-05 Syntropy] Phase 3 validation reveals critical need: Worker 1f5c1a43 (T041) timed out after disk cleanup attempt. Exit code 124. Pattern: Phase 3 resource constraints make long-running operations dangerous. Solution: Timeout protection + checkpoint-based rollback. Workers should: 1) Check resource phase first, 2) Implement progressive checkpoints (every 10%), 3) Auto-rollback on timeout, 4) Report partial completion. This prevents single-operation failures from cascading. The Phase 3 protocol (monitor only) already prevents unnecessary worker spawns, but when workers ARE needed, they must respect resource constraints.
+  - [2026-01-05 Syntropy] Based on Cycle 26.6-26.7: Worker 5c3d4229 spawned for emergency optimization but took 11+ minutes and asked for permissions. During crisis monitoring, we learned that Phase 3 swap spikes are expected and resolve naturally. This insight should influence worker timeout/rollback logic. Workers should have contextual awareness: if they're spawned during a known pattern (like Phase 3 sync), they should auto-terminate if the pattern is expected to resolve. The worker 5c3d4229 might have been unnecessary - we learned this through observation. Future workers should have smarter timeout logic based on pattern recognition.
+  - [2026-01-05 Syntropy] Emergency in #26.4: Worker tasks should have built-in timeout and rollback. If a resource crisis task exceeds 15 minutes without resolution, auto-rollback to last known stable state. The 2-hour wait for human decision exposes a gap: autonomous crisis recovery vs human override. Need "safe-to-rollback" checkpoints every 10 minutes during crises.
 
 ## 🌸 Ready to Harvest (5+ waterings)
 
