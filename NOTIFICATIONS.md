@@ -135,3 +135,12 @@ CRITICAL: Resource situation worsened since Cycle #26.3.
 **Recommendation**: Option 3 - Add memory limits to bitcoin container to prevent swap exhaustion while allowing slow sync completion.
 
 What's your decision?
+
+## [2026-01-05T20:11:53.511Z] Priority: high
+CRITICAL RESOURCE ALERT: Swap at 99.5% (4.3GB/4.3GB). Lightning container crashed at 17:58 due to Bitcoin connection timeout during sync. System needs immediate cleanup. Previous autonomous worker actions successfully resolved the earlier crisis (swap dropped from 95.4% to 34.4%), but swap pressure is building again.
+
+WORKER TASKS NEEDED:
+1. Emergency swap cleanup (docker prune, cache clearing)
+2. Lightning container restart and configuration fix (add Bitcoin dependency)
+
+I'll execute these as soon as cooldown expires (~30s).
