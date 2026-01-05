@@ -144,3 +144,32 @@ WORKER TASKS NEEDED:
 2. Lightning container restart and configuration fix (add Bitcoin dependency)
 
 I'll execute these as soon as cooldown expires (~30s).
+
+## [2026-01-05T20:22:57.612Z] Priority: high
+NEW RESOURCE CRITICALITY DETECTED
+
+**Swap: 99.4% CRITICAL** - Memory pressure from ongoing Bitcoin sync
+**Disk: 77.2% WARNING** - Approaching 85% threshold
+**Lightning: UNHEALTHY** - Crashed due to Bitcoin not fully synced (expected)
+
+**Analysis:**
+1. Bitcoin sync at 95.87% (still progressing)
+2. Lightning crashed trying to connect before sync complete
+3. Swap at 99.4% - New crisis emerging despite recent optimization
+4. Container memory usage shows Bitcoin at 52.76% (633MiB/1.172GiB)
+
+**The Plan C optimization from cycle 26.5 reduced Bitcoin memory from 854MB to 633MB, but sync is consuming additional resources.**
+
+**Recommended Actions:**
+1. **Wait for Bitcoin sync completion** (likely 1-2 hours remaining at current pace)
+2. **Lightning will auto-recover** once Bitcoin is ready
+3. **Monitor swap** - if it hits 100%, we may need emergency memory optimization
+4. **Disk cleanup** - Consider docker prune (205GB free but approaching threshold)
+
+**Should I:**
+A) Wait and monitor (current sync is healthy)
+B) Run emergency swap optimization now
+C) Clear disk space preemptively
+D) Restart lightning manually (won't help until Bitcoin syncs)
+
+Please advise or I will proceed with monitoring strategy.
