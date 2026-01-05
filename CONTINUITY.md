@@ -2,7 +2,7 @@
 > Last updated: 2026-01-05T01:20Z
 > **CYCLE #25.2 - IN PROGRESS**
 
-## 📬 Human Inbox
+## 📬 Human Inbox <!-- SYNTROPY:INBOX -->
 
 - [ ] how can you make better use of idle time between self evolution cycles?
 
@@ -19,7 +19,7 @@
 
 **Current Mission**: **PROCEED with wallet operations** - System proven stable under constraints.
 
-### 📊 Ecosystem Health
+### 📊 Ecosystem Health <!-- SYNTROPY:HEALTH -->
 | Metric | Status | Details |
 |--------|--------|---------|
 | **Containers** | ✅ 14/14 UP | All systems operational |
@@ -31,7 +31,7 @@
 | **API** | 🟢 9,041 pixels | Serving reliably |
 | **Agent** | 🟢 Healthy | 1 agent active |
 
-### 📋 Pending Actions
+### 📋 Pending Actions <!-- SYNTROPY:PENDING -->
 1. **Decision**: **PROCEED** with wallet initialization (Recommend: YES)
    - **Rationale**: System stable under 100% swap for 6+ days
    - **Risk**: Low - Performance acceptable for wallet ops
@@ -63,7 +63,7 @@
 
 ---
 
-## 📚 Knowledge Base Additions
+## 📚 Knowledge Base Additions <!-- SYNTROPY:KNOWLEDGE -->
 
 **Swap Resource Management**:
 - System can operate indefinitely at 100% swap usage
