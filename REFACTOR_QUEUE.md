@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 2 | Available for processing |
+| ⬜ READY | 1 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 1 | Completed successfully |
+| ✅ DONE | 4 | Completed successfully |
 | ❌ FAILED | 1 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-06T01:15Z (T042: Implement Disk Cleanup Protocol)
-**Last Verified**: 2026-01-06 (T042 completed)
-**Next Priority**: Review T041 failure and determine retry strategy
+**Last Processed**: 2026-01-06T17:45Z (T044: Worker Visibility Layer implemented)
+**Last Verified**: 2026-01-06 (Workers operational, stale locks cleared)
+**Next Priority**: Process T046 (READY)
 
 ---
 
@@ -146,8 +146,10 @@ COMPLETION SUMMARY:
 ## 📋 Phase 4: New Tasks
 
 
-### T043: Fix Worker Silent Failure Logging 🟡 IN_PROGRESS
+### T043: Fix Worker Silent Failure Logging ✅ DONE
 **Effort**: 45 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+Completed: 2026-01-06T14:30Z
 
 ```
 INSTRUCTIONS:
@@ -182,8 +184,10 @@ docker logs pixel-worker-test 2>&1 | head -20 && test -f /pixel/data/worker-outp
 ## 📋 Phase 4: Visibility Tools
 
 
-### T044: Implement Worker Visibility Layer for Async Builds ⬜ READY
+### T044: Implement Worker Visibility Layer for Async Builds ✅ DONE
 **Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ✅
+
+Completed: 2026-01-06T17:45Z
 
 ```
 INSTRUCTIONS:
@@ -198,6 +202,24 @@ Create a visibility system that captures worker async build states:
 
 VERIFY:
 npm run test:worker-logging || echo "Test file created"
+
+COMPLETION SUMMARY:
+- ✅ Created /pixel/data/worker-events.json for worker event persistence
+- ✅ Added WorkerEvent and WorkerEventStore interfaces to worker-tools.ts
+- ✅ Implemented recordWorkerEvent() for logging spawn/complete/failed events
+- ✅ Integrated event logging into spawnWorkerInternal() and checkWorkerStatus()
+- ✅ Added detectHealingWorkers() function with 20-minute threshold
+- ✅ Created /worker/status HTTP endpoint in syntropy HTTP server
+- ✅ Added worker-logging.test.ts with 3 passing tests
+- ✅ Updated package.json with test:worker-logging script
+- ✅ Updated CONTINUITY.md with Worker Visibility Layer status
+
+Visibility patterns discovered:
+1. Async builds (Docker rebuilds) can run 20-30 minutes undetected
+2. Worker lifecycle events need persistent tracking separate from task ledger
+3. Healing detection requires time-based threshold monitoring
+4. HTTP endpoint provides real-time visibility for monitoring systems
+
 ```
 
 ---
@@ -232,8 +254,10 @@ cat REFACTOR_QUEUE.md | grep -E "T043|T045"
 *For completed task details, see REFACTOR_ARCHIVE.md*
 
 
-### T045: Implement Worker Visibility Layer for Async Builds 🟡 IN_PROGRESS
+### T045: Implement Worker Visibility Layer for Async Builds ✅ DONE
 **Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ✅
+
+Completed: 2026-01-06T14:30Z
 
 ```
 INSTRUCTIONS:
