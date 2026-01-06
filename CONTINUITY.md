@@ -281,3 +281,22 @@ THIRD LAW: A robot must protect its own existence (except vs Laws 0-2).
 - Failed task ledger cleaned (removed stale entries)
 - System ready for autonomous task execution
 
+
+## 💰 Pricing & Agent Knowledge Update - Jan 6, 2026 (11:15 EST)
+
+**Pricing Adjustment**:
+- **Pixel Pricing**: Updated to meet NakaPay minimums (approx 21 sats)
+  - **Basic**: 21 sats (was 1 sat)
+  - **Color**: 42 sats (was 10 sats)
+  - **Letter**: 100 sats (unchanged)
+
+**Agent Knowledge Fix**:
+- **Issue**: Agent had hardcoded "1 sat" and "10 sats" pricing in character memory.
+- **Fix**:
+  - Updated `docs/v1/lnpixels.overview.md` and `onboarding.md`
+  - Updated `src/character/messageExamples.ts` and `postExamples.ts` to reflect new pricing (21/42/100)
+  - Added `bun run build:character` to `start.sh` to ensure agent rebuilds knowledge on startup.
+  - Rebuilt and redeployed agent container.
+
+**Status**: ✅ COMPLETE
+- API, UI, and Agent all consistent with 21/42/100 pricing.
