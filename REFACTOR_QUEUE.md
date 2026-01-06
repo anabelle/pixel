@@ -95,30 +95,9 @@ FAILURE ANALYSIS (2026-01-05T16:40:59Z):
 - Resolution required: Retry with longer timeout or split into smaller cleanup steps
 ```
 
-## 📋 Phase 3: Task Execution
 
 
-### T041: Implement Disk Cleanup Protocol 🟡 IN_PROGRESS
-**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
-
-```
-INSTRUCTIONS:
-Execute disk cleanup to address 76.9% usage:
-1. Run docker system prune -af (remove unused containers, networks, images, build cache)
-2. Clean up old log files in /pixel/data/logs older than 7 days
-3. Remove old backups in /pixel/backups older than 14 days
-4. Clean NOSTR message cache if > 100MB
-5. Check /tmp and /var/log for temp files
-6. Verify critical data is backed up before cleanup
-7. Document freed space and new usage percentage
-
-VERIFY:
-df -h | grep /dev/vda1 && docker system df
-```
-
----
-
-## 📋 Phase 1: Operations
+## 📋 Phase 5: Operations & Maintenance
 
 
 ### T042: Implement Disk Cleanup Protocol ✅ DONE
