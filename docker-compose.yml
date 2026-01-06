@@ -8,8 +8,8 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/pixels.db:/app/pixels.db
-      - ./data/activity.db:/app/activity.db
+      # Mount directory instead of individual files for SQLite WAL mode compatibility
+      - ./data/lnpixels:/app/data
       - ./backups:/app/backups
     environment:
       - PORT=3000
