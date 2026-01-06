@@ -264,3 +264,20 @@ THIRD LAW: A robot must protect its own existence (except vs Laws 0-2).
 **Philosophy**: "When observation reveals validated patterns, preparation becomes action. Geopolitical intelligence is the new frontier."
 
 ═══════════════════════════════════════════════════════════════════════════════
+---
+
+## 🔧 Worker Infrastructure Fix - Jan 6, 2026 (10:26 EST)
+
+**Root Cause Identified**: Worker containers were failing immediately (exit code 1) due to:
+1. `/pixel/logs/opencode_live.log` owned by root (0644), but workers run as UID 1000
+2. Workers crashed on `Permission denied` when trying to append to the shared log
+
+**Fix Applied**:
+- Changed log file permissions to 666 (world-writable)
+- Verified worker execution with successful test task
+
+**Worker Status**: ✅ OPERATIONAL
+- Test task `test-1767713045` completed successfully
+- Failed task ledger cleaned (removed stale entries)
+- System ready for autonomous task execution
+
