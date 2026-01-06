@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 5 | Available for processing |
+| | ⬜ READY | 0 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 4 | Completed successfully |
 | | ❌ FAILED | 3 | Failed, needs human review |
@@ -343,7 +343,7 @@ cd /pixel && npm test -- --testPathPattern="scripts/utilities|scripts/monitoring
 ## 📋 Phase 5: Architecture Evolution
 
 
-### T048: Extract narrative correlation engine to standalone service ⬜ READY
+### T048: Extract narrative correlation engine to standalone service 🟡 IN_PROGRESS
 **Effort**: 2 hours | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T047
 
