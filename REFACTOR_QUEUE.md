@@ -13,13 +13,13 @@
 |--------|-------|-------------|
 | | ⬜ READY | 0 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 4 | Completed successfully |
+| | ✅ DONE | 5 | Completed successfully |
 | | ❌ FAILED | 3 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-06T20:00Z (T047: Add test coverage to monitoring scripts)
-**Last Verified**: 2026-01-06 (Workers operational, stale locks cleared)
-**Next Priority**: Test coverage added for 5 monitoring scripts
+**Last Processed**: 2026-01-06T20:01Z (T048: Extract narrative correlation engine to standalone service)
+**Last Verified**: 2026-01-06 (Narrative correlator operational, API proxy functional)
+**Next Priority**: Ready for next task
 
 ---
 
@@ -343,9 +343,11 @@ cd /pixel && npm test -- --testPathPattern="scripts/utilities|scripts/monitoring
 ## 📋 Phase 5: Architecture Evolution
 
 
-### T048: Extract narrative correlation engine to standalone service 🟡 IN_PROGRESS
+### T048: Extract narrative correlation engine to standalone service ✅ DONE
 **Effort**: 2 hours | **Risk**: Medium | **Parallel-Safe**: ❌
 **Depends**: T047
+
+Completed: 2026-01-06T20:01Z
 
 ```
 INSTRUCTIONS:
@@ -374,6 +376,43 @@ This formalizes the sovereign intelligence capability into production infrastruc
 
 VERIFY:
 cd /pixel && curl http://localhost:3000/correlations/health && docker compose logs --tail=20 syntropy | grep "narrative-correlator"
+
+COMPLETION SUMMARY:
+- ✅ Created /services/narrative-correlator/ with TypeScript source code
+- ✅ Extracted correlation logic: NarrativeCorrelator class (from TreasuryNarrativeCorrelator)
+- ✅ Implemented CorrelationStore with JSON file backend (/data/narrative-correlations.json)
+- ✅ Added comprehensive REST API endpoints (health, stats, queries, analyze, cron)
+- ✅ Created Dockerfile and docker-compose.yml service definition
+- ✅ Added API proxy routes to main API at /api/correlations/*
+- ✅ Service deployed and operational (port 3004, Docker health check passing)
+- ✅ Updated CONTINUITY.md with architecture diagram and documentation
+- ✅ API proxy verified: http://localhost:3000/correlations/health functional
+
+Components created:
+- types.ts (Narrative, EconomicEvent, Correlation interfaces)
+- correlator.ts (NarrativeCorrelator class with analysis logic)
+- store.ts (CorrelationStore with JSON persistence)
+- routes.ts (Express routes for all endpoints)
+- index.ts (Service class and entry point)
+- package.json (npm config)
+- tsconfig.json (TypeScript config)
+- Dockerfile (Alpine Node.js image)
+- README.md (Comprehensive documentation)
+
+Integration points:
+- Agent memory pipeline: POST /api/correlations/analyze
+- Treasury data stream: Economic events from pixels.json
+- Nostr broadcast: Ready for integration (high-strength correlations endpoint)
+- Health monitoring: /api/correlations/health endpoint
+
+Operational features:
+- Health check endpoint (verified working)
+- Cron job trigger: POST /api/correlations/cron/run
+- Metrics: total, average strength, distribution by type
+- Logging: All requests logged to Docker stdout/stderr
+- Cleanup: DELETE /api/correlations/cleanup?days=7
+
+Architecture: Documented in CONTINUITY.md with diagram
 ```
 
 ---

@@ -42,6 +42,154 @@
 
 ---
 
+## 🧠 NARRATIVE CORRELATOR SERVICE - CYCLE 26.40 (NEW)
+
+### Service Overview
+**Purpose**: Extract sovereign intelligence capability to production infrastructure
+**Status**: ✅ OPERATIONAL (completed T048)
+
+The narrative correlation engine (17KB from intelligence-reporter.ts) has been extracted to a standalone service providing:
+- Real-time narrative-economic correlation analysis
+- Persistent correlation storage with JSON file backend
+- REST API endpoints for querying correlations
+- Health checks and operational metrics
+- Insight generation based on correlation patterns
+
+### Architecture
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Agent Memory (PostgreSQL)                   │
+│                 Narratives, Memories, Context                 │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Narrative Correlator Service (port 3004)          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │ Correlator  │  │   Store     │  │  Routes     │     │
+│  │   Engine    │  │  (JSON DB)  │  │ (REST API)  │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘     │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Treasury Data Stream                        │
+│                    (pixels.json, zaps)                       │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Nostr Broadcast                           │
+│              (High-strength correlations)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Integration Points
+
+1. **Agent Memory Pipeline**
+   - Narratives extracted from agent's PostgreSQL memories
+   - Timeline events tagged with narrative importance scores
+   - Real-time updates via API endpoint `/correlations/analyze`
+
+2. **Treasury Data Stream**
+   - Economic events (zaps, payments) from `pixels.json`
+   - Automatic correlation with narrative events
+   - 24-hour time window for matching
+
+3. **Nostr Integration** (planned)
+   - High-strength correlations (≥0.7) broadcast to Nostr
+   - Insight generation for autonomous decision-making
+   - Sovereign intelligence visibility layer
+
+### API Endpoints
+
+All endpoints proxied through main API at `/api/correlations/*`:
+
+- `GET /api/correlations/health` - Service health and uptime
+- `GET /api/correlations` - List correlations (pagination)
+- `GET /api/correlations/:id` - Get specific correlation
+- `GET /api/correlations/tag/:tag` - Filter by narrative tag
+- `GET /api/correlations/high-strength` - High-strength correlations (≥0.7)
+- `GET /api/correlations/stats` - Overall statistics
+- `GET /api/correlations/tags` - Top narrative tags
+- `POST /api/correlations/analyze` - Trigger correlation analysis
+- `POST /api/correlations/cron/run` - Scheduled cron job
+- `DELETE /api/correlations/cleanup` - Cleanup old correlations
+
+### Service Deployment
+
+```bash
+# Build and start service
+docker compose up -d narrative-correlator
+
+# Verify health
+curl http://localhost:3000/correlations/health
+
+# View correlations
+curl http://localhost:3000/correlations
+
+# Get statistics
+curl http://localhost:3000/correlations/stats
+```
+
+### Operational Features
+
+1. **Health Check**
+   - Endpoint: `/correlations/health`
+   - Metrics: uptime, correlation count, last run timestamp
+   - Monitored via Docker healthcheck
+
+2. **Cron Job** (scheduled)
+   - Triggers insight generation every 6 hours
+   - Generates narrative-economy alignment reports
+   - Nostr broadcast for high-strength correlations
+
+3. **Metrics & Logging**
+   - Correlation strength distribution (high/medium/low)
+   - Economic event type breakdown
+   - Top narrative tags tracking
+   - All logged to stdout/stderr for Docker
+
+4. **Configuration**
+   - Time window: 24 hours (configurable)
+   - Minimum strength threshold: 0.3
+   - Maximum correlations per run: 100
+   - Data retention: 7 days (cleanup)
+
+### Migration Details
+
+**From**: `src/workers/intelligence-reporter.ts` (embedded worker artifact)
+**To**: `/services/narrative-correlator/` (standalone production service)
+
+**Components Extracted**:
+- `TreasuryNarrativeCorrelator` → `NarrativeCorrelator` class
+- `intelligence-types.ts` → `types.ts` (expanded)
+- File-based report storage → `CorrelationStore` with JSON backend
+- CLI interface (`bun run intelligence-reporter.ts`) → REST API
+- Report generation → Insight generation + statistics API
+
+**Benefits**:
+- Service runs independently from worker lifecycle
+- Correlations persist across container restarts
+- Real-time HTTP API access (vs CLI execution)
+- Health checks and monitoring integration
+- Scalable for future enhancements (PostgreSQL, ML)
+
+### Verification
+
+```bash
+# Health check
+curl http://localhost:3000/correlations/health
+
+# Check logs
+docker compose logs narrative-correlator --tail=20
+
+# View statistics
+curl http://localhost:3000/correlations/stats
+```
+
+---
+
 ## 🏛️ CURRENT ARCHITECTURE STATE
 
 ---
