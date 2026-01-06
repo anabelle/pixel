@@ -13,6 +13,13 @@
 | **T042** | ✅ DONE | Implement Disk Cleanup Protocol | 2026-01-06 | 7851b906-7a72-4eb9-a346-3bfa979c7fea |
 | **T041** | ❌ FAILED | Implement Disk Cleanup Protocol (Timeout) | 2026-01-05 | - |
 
+### Phase 4: Infrastructure Debugging
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T046** | ✅ DONE | Manual Queue State Reconciliation | 2026-01-06 | f33913abc5af |
+| **T045** | ❌ FAILED | Implement Worker Visibility Layer (Infra Broken) | 2026-01-06 | - |
+| **T043** | ❌ FAILED | Fix Worker Silent Failure Logging (Infra Broken) | 2026-01-06 | - |
+
 ### Phase 4: Documentation & Knowledge
 | ID | Status | Title | Date |
 |----|--------|-------|------|

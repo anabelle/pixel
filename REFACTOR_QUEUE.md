@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 1 | Available for processing |
+| ⬜ READY | 0 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 4 | Completed successfully |
-| ❌ FAILED | 1 | Failed, needs human review |
+| ✅ DONE | 3 | Completed successfully |
+| ❌ FAILED | 3 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-06T17:45Z (T044: Worker Visibility Layer implemented)
+**Last Processed**: 2026-01-06T16:48Z (T046: Manual Queue State Reconciliation)
 **Last Verified**: 2026-01-06 (Workers operational, stale locks cleared)
-**Next Priority**: Process T046 (READY)
+**Next Priority**: Queue state reconciled, T043/T045 marked FAILED
 
 ---
 
@@ -146,10 +146,8 @@ COMPLETION SUMMARY:
 ## 📋 Phase 4: New Tasks
 
 
-### T043: Fix Worker Silent Failure Logging ✅ DONE
+### T043: Fix Worker Silent Failure Logging ❌ FAILED
 **Effort**: 45 min | **Risk**: Medium | **Parallel-Safe**: ❌
-
-Completed: 2026-01-06T14:30Z
 
 ```
 INSTRUCTIONS:
@@ -177,6 +175,15 @@ This is blocking multiple visibility enhancements and needs to be fixed before w
 
 VERIFY:
 docker logs pixel-worker-test 2>&1 | head -20 && test -f /pixel/data/worker-output-*.txt
+
+FAILURE ANALYSIS (2026-01-06T16:45Z):
+- Task marked DONE during infrastructure crisis
+- Root cause: Worker infrastructure broken (exit code 1, no logs)
+- Log permissions: /pixel/logs/opencode_live.log owned by root (0644)
+- Workers run as UID 1000 → permission denied
+- Recovery: Infrastructure fixed (log permissions 666), but task itself never executed
+- Status: Should be FAILED - task was not completed, queue state was inconsistent
+- Resolution: Mark as FAILED, document pattern in archive
 ```
 
 ---
@@ -227,8 +234,10 @@ Visibility patterns discovered:
 ## 📋 Phase 4: Infrastructure Debugging
 
 
-### T046: Manual Queue State Reconciliation ⬜ READY
+### T046: Manual Queue State Reconciliation ✅ DONE
 **Effort**: 30 min | **Risk**: None | **Parallel-Safe**: ✅
+
+Completed: 2026-01-06T16:48Z
 
 ```
 INSTRUCTIONS:
@@ -244,6 +253,16 @@ This is a manual git edit, not a worker task.
 
 VERIFY:
 cat REFACTOR_QUEUE.md | grep -E "T043|T045"
+
+COMPLETION SUMMARY:
+- ✅ T043: Changed from DONE to FAILED (incorrectly marked during crisis)
+- ✅ T045: Changed from DONE to FAILED (incorrectly marked during crisis)
+- ✅ Updated queue status table: DONE count 4→2, FAILED count 1→3
+- ✅ Documented failure pattern in REFACTOR_ARCHIVE.md
+- ✅ Added failure analysis to both tasks with root cause details
+- ✅ Updated Last Processed timestamp to 2026-01-06T16:48Z
+
+Queue state is now accurate: Tasks T043 and T045 were never actually completed, they were incorrectly marked DONE during the 8-cycle infrastructure crisis. They should be FAILED with proper documentation.
 ```
 
 ---
@@ -254,10 +273,8 @@ cat REFACTOR_QUEUE.md | grep -E "T043|T045"
 *For completed task details, see REFACTOR_ARCHIVE.md*
 
 
-### T045: Implement Worker Visibility Layer for Async Builds ✅ DONE
+### T045: Implement Worker Visibility Layer for Async Builds ❌ FAILED
 **Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ✅
-
-Completed: 2026-01-06T14:30Z
 
 ```
 INSTRUCTIONS:
@@ -294,6 +311,15 @@ CONTEXT:
 
 VERIFY:
 npm run test:worker-visibility
+
+FAILURE ANALYSIS (2026-01-06T16:45Z):
+- Task marked DONE during infrastructure crisis
+- Root cause: Worker infrastructure broken (exit code 1, no logs)
+- Log permissions: /pixel/logs/opencode_live.log owned by root (0644)
+- Workers run as UID 1000 → permission denied
+- Recovery: Infrastructure fixed (log permissions 666), but task itself never executed
+- Status: Should be FAILED - task was not completed, queue state was inconsistent
+- Resolution: Mark as FAILED, document pattern in archive
 ```
 
 ---
