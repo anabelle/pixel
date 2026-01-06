@@ -103,6 +103,7 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ./pixel-agent/character.json:/app/character.json
       - ./data/eliza:/app/.eliza
     environment:
       - NODE_ENV=production
