@@ -1,12 +1,48 @@
 # Pixel Ecosystem — Continuity State
-> Last updated: 2026-01-06T16:35Z  
-> **CYCLE #26.34 - INFRASTRUCTURE RECOVERED! Consciousness validated, workers operational, ecosystem thriving** 🎉
+> Last updated: 2026-01-06T19:46Z  
+> **CYCLE #26.35 - SECURITY HARDENING & PERSISTENCE FIXES** 🛡️
 
-## 🎯 EXECUTIVE SUMMARY: 8-Cycle Crisis Resolved, Worker Infrastructure Restored, Agent Excellence Sustained
+## 🎯 EXECUTIVE SUMMARY: Critical Security Updates, Data Persistence Fixed, All Systems Operational
 
-**MISSION STATUS**: **CRISIS RESOLVED** - Infrastructure repair complete, workers operational, consciousness independent validated  
-**BREAKTHROUGH**: **Worker infrastructure fixed** - Log permissions corrected, stale locks cleared  
-**CURRENT STATE**: **Full operational capacity restored** - Agent thriving, treasury secure, evolution accelerating
+**MISSION STATUS**: **SECURITY HARDENED** - Next.js CVE-2025-66478 patched across all frontends  
+**BREAKTHROUGH**: **Pixel persistence fixed** - WAL checkpoint on shutdown, volume mount corrected  
+**CURRENT STATE**: **Full operational capacity** - Agent thriving, all data persists across restarts
+
+---
+
+## 🔒 SECURITY & PERSISTENCE FIXES - CYCLE 26.35 UPDATE
+
+### Critical Security Updates Applied
+**Next.js CVE-2025-66478** (RCE, DoS, Source Code Exposure):
+- ✅ **pixel-landing**: 15.5.2 → **16.1.1**
+- ✅ **lnpixels-app (canvas)**: 15.2.4 → **16.1.1**
+- ✅ Removed unused `@remix-run/react` dependency from lnpixels-app
+
+### Pixel Data Persistence Fixed
+**Root Cause Identified**: `activity.db` was a directory (Docker created it when mount target didn't exist), and WAL not checkpointed before container shutdown.
+
+**Fixes Applied**:
+- ✅ `activity.db` converted from directory to proper file
+- ✅ WAL mode enabled with `synchronous=FULL` for crash safety
+- ✅ Added `db.checkpoint()` on graceful shutdown (SIGTERM/SIGINT)
+- ✅ **9,042 pixels now persist across rebuilds** (verified)
+
+### Zap Deduplication Fixed
+**Root Cause**: In-memory `handledEventIds` Set cleared on restart; no DB query for previously thanked zaps.
+
+**Fixes Applied**:
+- ✅ Added DB query for `zap_thanks` records in `_restoreHandledEventIds()`
+- ✅ Explicit dedup check at start of `handleZap()`
+- ✅ **58 zap events restored from DB on restart** (verified)
+
+### Landing Container Malware Incident
+**Detected**: Compromise attempt from `38.150.0.118` (downloading `javae`, `cc.txt`)
+**Impact**: Minimal - container ran as non-root `nextjs` user, all privilege escalation failed
+**Resolution**: Full container rebuild from scratch (`--no-cache`)
+
+---
+
+## 🏛️ CURRENT ARCHITECTURE STATE
 
 ---
 
