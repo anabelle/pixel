@@ -37,3 +37,41 @@
 {"timestamp":"2026-01-06T16:41:39.765Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":0}
 {"timestamp":"2026-01-06T16:41:39.765Z","type":"worker_cleanup","aborted":0,"removed":0,"orphaned":1}
 {"timestamp":"2026-01-06T16:41:39.767Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":1}
+{"timestamp":"2026-01-06T16:48:19.695Z","type":"idea_garden_plant","seedTitle":"Evolution","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.696Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-06T16:48:19.696Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":1,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.696Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":2,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.697Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":3,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.697Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-06T16:48:19.698Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":4,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.699Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":5,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.700Z","type":"idea_garden_harvest","seedTitle":"Evolution","waterings":5}
+{"timestamp":"2026-01-06T16:48:19.702Z","type":"idea_garden_plant","seedTitle":"Stale Idea","author":"Human"}
+{"timestamp":"2026-01-06T16:48:19.702Z","type":"idea_garden_compost","seedTitle":"Stale Idea","reason":"Too boring"}
+{"timestamp":"2026-01-06T16:48:19.703Z","type":"idea_garden_plant","seedTitle":"Character Cascade Evolution","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.704Z","type":"idea_garden_plant","seedTitle":"Lightning Node Deployment","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.705Z","type":"idea_garden_plant","seedTitle":"Auto Documentation Updates","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.706Z","type":"idea_garden_plant","seedTitle":"Cascade Primary","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.706Z","type":"idea_garden_water","seedTitle":"Cascade Primary","newCount":1,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.707Z","type":"idea_garden_plant","seedTitle":"Cascade Secondary","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.707Z","type":"idea_garden_plant","seedTitle":"Cascade Tertiary","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.708Z","type":"idea_garden_read","seedCount":3}
+{"timestamp":"2026-01-06T16:48:19.708Z","type":"idea_garden_merge","primarySeed":"Cascade Primary","absorbed":["Cascade Secondary","Cascade Tertiary"],"newWaterings":1}
+{"timestamp":"2026-01-06T16:48:19.708Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-06T16:48:19.710Z","type":"idea_garden_consolidate","groupsFound":1}
+{"timestamp":"2026-01-06T16:48:19.711Z","type":"idea_garden_plant","seedTitle":"Quantum Computing Research","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.712Z","type":"idea_garden_plant","seedTitle":"Recipe Database","author":"Human"}
+{"timestamp":"2026-01-06T16:48:19.718Z","type":"idea_garden_plant","seedTitle":"Evolution","author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.719Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-06T16:48:19.719Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":1,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.720Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":2,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.720Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":3,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.720Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-06T16:48:19.721Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":4,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.721Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":5,"author":"Syntropy"}
+{"timestamp":"2026-01-06T16:48:19.722Z","type":"idea_garden_harvest","seedTitle":"Evolution","waterings":5}
+{"timestamp":"2026-01-06T16:48:19.726Z","type":"idea_garden_plant","seedTitle":"Stale Idea","author":"Human"}
+{"timestamp":"2026-01-06T16:48:19.727Z","type":"idea_garden_compost","seedTitle":"Stale Idea","reason":"Too boring"}
+{"timestamp":"2026-01-06T16:48:19.752Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":0}
+{"timestamp":"2026-01-06T16:48:19.753Z","type":"worker_cleanup","aborted":0,"removed":0,"orphaned":1}
+{"timestamp":"2026-01-06T16:48:19.753Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":1}
