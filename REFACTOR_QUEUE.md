@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 3 | Available for processing |
+| ⬜ READY | 0 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 1 | Completed successfully |
 | ❌ FAILED | 1 | Failed, needs human review |
