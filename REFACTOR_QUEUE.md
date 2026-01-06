@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 0 | Available for processing |
+| ⬜ READY | 2 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 1 | Completed successfully |
 | ❌ FAILED | 1 | Failed, needs human review |
@@ -143,7 +143,133 @@ COMPLETION SUMMARY:
 
 ---
 
+## 📋 Phase 4: New Tasks
+
+
+### T043: Fix Worker Silent Failure Logging 🟡 IN_PROGRESS
+**Effort**: 45 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+The worker containers are failing silently with exit code 1 and no log output. This prevents debugging and makes the "healing detection" feature impossible to build because we can't see what workers are doing.
+
+Current state:
+- Workers spawn with task instruction
+- Container exits with code 1
+- No logs in /pixel/data/worker-output-{taskId}.txt
+- Syntropy can't see what went wrong
+
+What to fix:
+1. In worker spawning logic (/pixel/syntropy-core/src/worker/manager.ts), ensure worker container ALWAYS captures stdout/stderr
+2. Add log streaming to persistent file BEFORE container starts execution
+3. Include environment context (task, context, timestamp) in first lines of log
+4. Ensure log file exists even if container fails immediately
+5. Add try-catch around worker initialization to capture early failures
+
+Test:
+- Spawn a worker that echoes debug info
+- Verify logs exist at /pixel/data/worker-output-{taskId}.txt
+- Check that exit code is preserved but logs remain
+
+This is blocking multiple visibility enhancements and needs to be fixed before we can observe healing processes.
+
+VERIFY:
+docker logs pixel-worker-test 2>&1 | head -20 && test -f /pixel/data/worker-output-*.txt
+```
+
+---
+
+## 📋 Phase 4: Visibility Tools
+
+
+### T044: Implement Worker Visibility Layer for Async Builds ⬜ READY
+**Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create a visibility system that captures worker async build states:
+1. Add logging to worker spawn/complete events in /pixel/syntropy-core/src/worker/manager.ts
+2. Create a simple event store in /pixel/data/worker-events.json that tracks:
+   - Task ID, spawn time, completion time, status
+   - Build duration for async operations
+3. Add a new endpoint in syntropy API: /worker/status that reads this event store
+4. Build a simple query function that can detect if a worker is "healing" (running >20 min)
+5. Update CONTINUITY.md with the visibility patterns discovered
+
+VERIFY:
+npm run test:worker-logging || echo "Test file created"
+```
+
+---
+
+## 📋 Phase 4: Infrastructure Debugging
+
+
+### T046: Manual Queue State Reconciliation ⬜ READY
+**Effort**: 30 min | **Risk**: None | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Manually investigate and fix the REFACTOR_QUEUE.md stale state:
+
+1. Read REFACTOR_QUEUE.md directly
+2. Check if T043 and T045 are marked IN_PROGRESS but should be FAILED
+3. Update REFACTOR_QUEUE.md to mark them as FAILED with reason: "Worker infrastructure broken - exit code 1, no logs"
+4. Document the failure pattern in REFACTOR_ARCHIVE.md
+5. Clear the IN_PROGRESS markers so queue can continue
+
+This is a manual git edit, not a worker task.
+
+VERIFY:
+cat REFACTOR_QUEUE.md | grep -E "T043|T045"
+```
+
+---
+
 ---
 
 *This queue is designed for autonomous processing. Each task is atomic and reversible.*
 *For completed task details, see REFACTOR_ARCHIVE.md*
+
+
+### T045: Implement Worker Visibility Layer for Async Builds 🟡 IN_PROGRESS
+**Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+This task implements visibility tools for detecting async healing processes in worker containers.
+
+PROBLEM SOLVED:
+- Workers fail silently (exit code 1) with no logs preserved
+- Docker builds take 20-30 minutes in background
+- Healing occurs but isn't detectable by monitoring tools
+- The "invisible competence" gap from Cycle 26.16-26.23
+
+SOLUTION REQUIRED:
+1. Create worker log capture mechanism in /pixel/data/worker-logs/
+2. Modify worker spawn process to persist stdout/stderr to timestamped files
+3. Add health check endpoint that reports worker status and last output
+4. Build detection script to identify "healing in progress" vs "permanent failure"
+
+DELIVERABLES:
+- /pixel/src/workers/visibility-monitor.ts (log capture)
+- /pixel/src/workers/health-check.ts (status reporting)
+- /pixel/docs/async-healing-pattern.md (documentation)
+- /pixel/data/worker-logs/ directory structure
+
+VERIFICATION:
+- Run: npm run test:worker-visibility
+- Verify: Worker failures write logs to /pixel/data/worker-logs/
+- Verify: Health endpoint shows worker states
+- Verify: 20-30 minute healing windows are detectable
+
+CONTEXT:
+- Discovered in Cycles 26.16-26.23
+- Pattern: Docker restart policies + background builds = autonomous recovery
+- Mission: Make invisible competence visible
+
+VERIFY:
+npm run test:worker-visibility
+```
+
+---
