@@ -300,3 +300,15 @@ THIRD LAW: A robot must protect its own existence (except vs Laws 0-2).
 
 **Status**: ✅ COMPLETE
 - API, UI, and Agent all consistent with 21/42/100 pricing.
+
+## 🩹 Critical Fix: Memories/Audit Crash - Jan 6, 2026 (11:20 EST)
+
+**Incident**:
+- **Symptoms**: `https://pixel.xx.kg/en/memories` and Audit Log expansion caused "Application error: a client-side exception has occurred".
+- **Root Cause**: `audit.json` contained a single "Evolution Report" object (missing `type` field), but frontend components (`SyntropyAuditLog`, `MemoriesPage`) assumed an array of log entries with a mandatory `type` field.
+- **Fix**:
+  - Added specific defensive coding to `src/app/components/SyntropyAuditLog.tsx` and `src/app/[locale]/memories/page.tsx`.
+  - Components now handle missing/undefined `type` and `model` fields gracefully (defaulting to 'UNKNOWN').
+- **Verification**: Verified via browser subagent that pages load and logs expand without crashing.
+
+**Status**: ✅ RESOLVED
