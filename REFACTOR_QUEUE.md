@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 0 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 0 | Completed successfully |
 | ❌ FAILED | 1 | Failed, needs human review |
@@ -114,6 +114,42 @@ Execute disk cleanup to address 76.9% usage:
 
 VERIFY:
 df -h | grep /dev/vda1 && docker system df
+```
+
+---
+
+## 📋 Phase 1: Operations
+
+
+### T042: Implement Disk Cleanup Protocol ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Implement automated disk cleanup protocol for the ecosystem:
+
+1. Check current disk usage (target: /pixel, /var/lib/docker)
+2. Identify cleanup opportunities:
+   - docker system prune -af (remove unused containers, networks, images)
+   - docker volume prune -f (remove unused volumes)
+   - Remove old backups in /pixel/backups older than 7 days
+   - Clean npm cache: npm cache clean --force
+   - Remove old logs: find /pixel -name "*.log" -mtime +7 -delete
+
+3. Create cleanup script at /pixel/scripts/disk-cleanup.sh
+4. Add safety checks:
+   - Don't delete if disk < 80% used
+   - Don't delete if sync in progress
+   - Log all actions
+   - Send alert before destructive actions
+
+5. Test script manually first
+6. Add to cron or scheduled task for weekly execution
+
+Goal: Reduce disk from 77.4% to below 75% safely.
+
+VERIFY:
+df -h | grep -E '/$|/pixel' && ls -la /pixel/backups/ | wc -l
 ```
 
 ---
