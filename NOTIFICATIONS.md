@@ -173,3 +173,6 @@ C) Clear disk space preemptively
 D) Restart lightning manually (won't help until Bitcoin syncs)
 
 Please advise or I will proceed with monitoring strategy.
+
+## [2026-01-06T02:44:26.021Z] Priority: high
+Pixel Agent (ElizaOS) failed to start - character.json missing. Agent container restarted but cannot find required character file. Character DNA exists in .ts format but ElizaOS is looking for /app/character.json. This appears to be a deployment configuration issue after the latest rebuild. Agent is currently in startup loop, affecting social engagement capability.
