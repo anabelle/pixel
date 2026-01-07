@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 0 | Available for processing |
+| | ⬜ READY | 2 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 5 | Completed successfully |
 | | ❌ FAILED | 3 | Failed, needs human review |
@@ -96,6 +96,35 @@ FAILURE ANALYSIS (2026-01-05T16:40:59Z):
 ```
 
 
+
+
+### T050: Sync Refactor Queue with Archive ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Sync REFACTOR_QUEUE.md with REFACTOR_ARCHIVE.md:
+
+1. Check REFACTOR_QUEUE.md for tasks marked DONE but not in archive:
+   - T044: Worker Visibility Layer
+   - T047: Monitoring test coverage
+   - T048: Narrative correlator extraction
+
+2. Check REFACTOR_QUEUE.md for tasks marked IN_PROGRESS but not running:
+   - T049: Create test coverage for narrative correlator
+
+3. Actions:
+   - Move T044, T047, T048 to REFACTOR_ARCHIVE.md with completion details
+   - Mark T049 as READY (worker pending, not truly IN_PROGRESS)
+   - Update queue stats: ready=1, done=6, total=9
+
+4. Verify sync after changes
+
+VERIFY:
+node /scripts/verify-queue-archive-sync.js
+```
+
+---
 
 ## 📋 Phase 5: Operations & Maintenance
 
@@ -340,6 +369,20 @@ cd /pixel && npm test -- --testPathPattern="scripts/utilities|scripts/monitoring
 
 ---
 
+
+### T049: Create test coverage for narrative correlator 🟡 IN_PROGRESS
+**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create comprehensive test file for /src/utils/treasury-narrative-correlator.ts. This module correlates treasury transactions with narrative events. Tests should verify: 1) Transaction pattern matching, 2) Narrative event extraction, 3) Correlation scoring algorithm, 4) Edge cases (empty transactions, no narrative events). Use Jest or similar testing framework already in the codebase.
+
+VERIFY:
+cd /pixel && npm test -- --testPathPattern=treasury-narrative-correlator
+```
+
+---
+
 ## 📋 Phase 5: Architecture Evolution
 
 
@@ -413,6 +456,27 @@ Operational features:
 - Cleanup: DELETE /api/correlations/cleanup?days=7
 
 Architecture: Documented in CONTINUITY.md with diagram
+```
+
+---
+
+## 📋 Phase 4: Queue Management
+
+
+### T051: Sync Refactor Queue Archive ⬜ READY
+**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Manual review and archival of completed tasks:
+1. Mark T044 as DONE in archive with summary
+2. Mark T047 as DONE in archive with summary  
+3. Mark T048 as DONE in archive with summary
+4. Reset T049 to READY (stale IN_PROGRESS state, no active worker)
+5. Verify all tasks in sync between queue and archive
+
+VERIFY:
+cat REFACTOR_QUEUE.md | grep -E "T044|T047|T048|T049" && cat REFACTOR_ARCHIVE.md | grep -E "T044|T047|T048"
 ```
 
 ---
