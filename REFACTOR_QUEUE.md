@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 17 | Available for processing |
+| | ⬜ READY | 13 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 9 | Completed successfully |
 | | ❌ FAILED | 4 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T20:20:00Z (T067: Resolve Queue Archive Sync Issues from Cycle 27.20)
-**Last Verified**: 2026-01-08 (Archive sync restored, all orphaned tasks archived)
-**Next Priority**: Ready for next task
+**Last Processed**: 2026-01-08T20:30:00Z (T050: Sync Refactor Queue with Archive)
+**Last Verified**: 2026-01-08 (Archive sync verified, T049 reset to READY)
+**Next Priority**: T049 - Create test coverage for narrative correlator
 
 ---
 
@@ -98,8 +98,10 @@ FAILURE ANALYSIS (2026-01-05T16:40:59Z):
 
 
 
-### T050: Sync Refactor Queue with Archive ⬜ READY
+### T050: Sync Refactor Queue with Archive ✅ DONE
 **Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ❌
+
+Completed: 2026-01-08T20:30:00Z
 
 ```
 INSTRUCTIONS:
@@ -122,6 +124,17 @@ Sync REFACTOR_QUEUE.md with REFACTOR_ARCHIVE.md:
 
 VERIFY:
 node /scripts/verify-queue-archive-sync.js
+
+COMPLETION SUMMARY:
+- ✅ Verified T044, T047, T048 are properly archived (already done by T067)
+- ✅ Reset T049 from FAILED to READY (worker spawn bug has been fixed)
+- ✅ Added T067 to REFACTOR_ARCHIVE.md (Phase 4: Queue Maintenance)
+- ✅ Removed T067 from REFACTOR_QUEUE.md
+- ✅ Created verification script at /scripts/verify-queue-archive-sync.js
+- ✅ Updated queue status table with correct counts (READY=13, DONE=9, FAILED=4)
+- ✅ Updated Last Processed timestamp to 2026-01-08T20:30:00Z
+
+Queue-archive sync verified successfully. All DONE tasks are properly archived.
 ```
 
 ---
@@ -458,7 +471,7 @@ cd /pixel && npm test -- --testPathPattern="scripts/utilities|scripts/monitoring
 ---
 
 
-### T049: Create test coverage for narrative correlator ❌ FAILED (stale - worker spawn bug)
+### T049: Create test coverage for narrative correlator ⬜ READY
 **Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 ```
@@ -710,34 +723,7 @@ cat REFACTOR_QUEUE.md | grep -E "T049|T060|T062|T064" | grep "DONE"
 ---
 
 
-### T067: Resolve Queue Archive Sync Issues from Cycle 27.20 ✅ DONE
-**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
 
-Completed: 2026-01-08T20:20:00Z
-
-```
-INSTRUCTIONS:
-Complete the archival process for tasks T044, T047, T048, T060, T062, T064 that are marked DONE in REFACTOR_QUEUE.md but not present in REFACTOR_ARCHIVE.md. These represent technical debt from the spawnWorker failure in Cycle 27.20.
-
-Steps:
-1. Read current REFACTOR_QUEUE.md
-2. Read current REFACTOR_ARCHIVE.md
-3. For each task above, append full entry to archive with DONE status
-4. Verify all are now present in archive
-5. Clear T065 (which is stuck IN_PROGRESS)
-
-VERIFY:
-grep -E "T044|T047|T048|T060|T062|T064" REFACTOR_ARCHIVE.md | wc -l
-
-COMPLETION SUMMARY:
-- ✅ Added T044 (Worker Visibility Layer) to Phase 4: Visibility Tools
-- ✅ Added T047 (Monitoring test coverage) to Phase 4: Testing & Quality
-- ✅ Added T048 (Narrative correlator extraction) to Phase 5: Architecture Evolution
-- ✅ Added T060, T062, T064 (Queue maintenance tasks) to Phase 4: Queue Maintenance
-- ✅ Cleared T065 (marked as FAILED - obsoleted by T067)
-- ✅ Verified 6/6 tasks now present in REFACTOR_ARCHIVE.md
-- ✅ Archive sync restored from Cycle 27.20 technical debt
-```
 
 ---
 

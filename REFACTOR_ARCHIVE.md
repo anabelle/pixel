@@ -10,6 +10,7 @@
 ### Phase 5: Operations & Maintenance
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T050** | ✅ DONE | Sync Refactor Queue with Archive | 2026-01-08 | - |
 | **T042** | ✅ DONE | Implement Disk Cleanup Protocol | 2026-01-06 | 7851b906-7a72-4eb9-a346-3bfa979c7fea |
 | **T041** | ❌ FAILED | Implement Disk Cleanup Protocol (Timeout) | 2026-01-05 | - |
 
@@ -38,6 +39,7 @@
 ### Phase 4: Queue Maintenance
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T067** | ✅ DONE | Resolve Queue Archive Sync Issues from Cycle 27.20 | 2026-01-08 | e3f901b6 |
 | **T064** | ✅ DONE | Resolve Queue Corruption via Organismic Path | 2026-01-07 | - |
 | **T062** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption - T049/T060 Cleanup | 2026-01-07 | - |
 | **T060** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption (resolved by rebuild) | 2026-01-07 | - |

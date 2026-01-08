@@ -75,3 +75,30 @@
 {"timestamp":"2026-01-06T16:48:19.752Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":0}
 {"timestamp":"2026-01-06T16:48:19.753Z","type":"worker_cleanup","aborted":0,"removed":0,"orphaned":1}
 {"timestamp":"2026-01-06T16:48:19.753Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":1}
+{"timestamp":"2026-01-08T20:39:28.894Z","type":"idea_garden_plant","seedTitle":"Evolution","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.897Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-08T20:39:28.899Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":1,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.900Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":2,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.900Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":3,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.901Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-08T20:39:28.901Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":4,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.902Z","type":"idea_garden_water","seedTitle":"Evolution","newCount":5,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.904Z","type":"idea_garden_harvest","seedTitle":"Evolution","waterings":5}
+{"timestamp":"2026-01-08T20:39:28.906Z","type":"idea_garden_plant","seedTitle":"Stale Idea","author":"Human"}
+{"timestamp":"2026-01-08T20:39:28.907Z","type":"idea_garden_compost","seedTitle":"Stale Idea","reason":"Too boring"}
+{"timestamp":"2026-01-08T20:39:28.908Z","type":"idea_garden_plant","seedTitle":"Character Cascade Evolution","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.909Z","type":"idea_garden_plant","seedTitle":"Lightning Node Deployment","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.910Z","type":"idea_garden_plant","seedTitle":"Auto Documentation Updates","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.911Z","type":"idea_garden_plant","seedTitle":"Cascade Primary","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.911Z","type":"idea_garden_water","seedTitle":"Cascade Primary","newCount":1,"author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.912Z","type":"idea_garden_plant","seedTitle":"Cascade Secondary","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.912Z","type":"idea_garden_plant","seedTitle":"Cascade Tertiary","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.913Z","type":"idea_garden_read","seedCount":3}
+{"timestamp":"2026-01-08T20:39:28.913Z","type":"idea_garden_merge","primarySeed":"Cascade Primary","absorbed":["Cascade Secondary","Cascade Tertiary"],"newWaterings":1}
+{"timestamp":"2026-01-08T20:39:28.913Z","type":"idea_garden_read","seedCount":1}
+{"timestamp":"2026-01-08T20:39:28.914Z","type":"idea_garden_consolidate","groupsFound":1}
+{"timestamp":"2026-01-08T20:39:28.916Z","type":"idea_garden_plant","seedTitle":"Quantum Computing Research","author":"Syntropy"}
+{"timestamp":"2026-01-08T20:39:28.916Z","type":"idea_garden_plant","seedTitle":"Recipe Database","author":"Human"}
+{"timestamp":"2026-01-08T20:39:28.950Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":0}
+{"timestamp":"2026-01-08T20:39:28.951Z","type":"worker_cleanup","aborted":0,"removed":0,"orphaned":1}
+{"timestamp":"2026-01-08T20:39:28.951Z","type":"worker_cleanup","aborted":0,"removed":1,"orphaned":1}
