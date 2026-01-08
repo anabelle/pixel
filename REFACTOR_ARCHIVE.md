@@ -42,7 +42,9 @@
 ### Phase 4: Queue Maintenance
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T063** | ✅ DONE | Fix Queue Corruption State | 2026-01-08 | - |
 | **T067** | ✅ DONE | Resolve Queue Archive Sync Issues from Cycle 27.20 | 2026-01-08 | e3f901b6 |
+| **T058** | ✅ DONE | Archive Completed Tasks (T044, T047, T048, T049) | 2026-01-08 | - |
 | **T061** | ✅ DONE | Execute T060 Queue Repair Manual | 2026-01-08 | - |
 | **T064** | ✅ DONE | Resolve Queue Corruption via Organismic Path | 2026-01-07 | - |
 | **T062** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption - T049/T060 Cleanup | 2026-01-07 | - |
