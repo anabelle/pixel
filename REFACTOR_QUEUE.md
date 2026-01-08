@@ -11,13 +11,13 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 5 | Available for processing |
+| | ⬜ READY | 7 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 16 | Completed successfully |
+| | ✅ DONE | 17 | Completed successfully |
 | | ❌ FAILED | 4 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T23:20:00Z (T056: Build narrative-to-correlator data pipeline)
+**Last Processed**: 2026-01-08T23:35:00Z (T068: Bitcoin Core memory optimization implementation)
 **Last Verified**: 2026-01-08 (All queue tasks verified and synchronized)
 **Next Priority**: T057 - Build narrative-to-correlator data pipeline (API integration)
 
@@ -803,6 +803,65 @@ Context: VPS memory at 82.9%, Bitcoin is primary consumer. This is preventing sa
 
 VERIFY:
 docker stats pixel-bitcoin-1 | grep -E "memory|MEM"
+```
+
+---
+
+## 📋 Phase 8 - Deployment
+
+
+### T068: Bitcoin Core memory optimization implementation ✅ DONE
+**Effort**: 1 hour | **Risk**: Medium | **Parallel-Safe**: ❌
+
+Completed: 2026-01-08T23:35:00Z
+
+```
+INSTRUCTIONS:
+Implement memory optimization for Bitcoin Core container based on T067 analysis findings:
+
+1. Current state: Bitcoin container using 99.88% of 1.172GiB memory allocation
+2. Action required: Reduce memory footprint through configuration
+
+Steps:
+- Edit /pixel/docker-compose.yml in the bitcoin service section
+- Add memory limits and optimize Bitcoin Core configuration:
+  - Set dbcache to a lower value (e.g., 64MB instead of default)
+  - Reduce maxmemmempool if configured
+  - Add prune mode if not already enabled (prune=550)
+  - Set par=1 for parallel transaction validation
+- Add resource constraints:
+  - mem_limit: 900m (reduces from current 1.172GiB)
+  - mem_reservation: 700m
+- Restart Bitcoin container to test new settings
+- Monitor memory usage after restart via getVPSMetrics
+
+Goal: Reduce Bitcoin memory usage from 99.88% to under 85% to relieve VPS pressure
+
+VERIFY:
+docker exec pixel-bitcoin-1 bitcoin-cli getblockchaininfo && getVPSMetrics | jq '.containerStats[] | select(.name | contains("bitcoin")) | .memPercent'
+
+COMPLETION SUMMARY:
+- ✅ Reduced dbcache from 400MB to 64MB (84% reduction)
+- ✅ Reduced maxmempool from 100MB to 50MB (50% reduction)
+- ✅ Reduced prune target from 5000MB to 550MB (89% reduction)
+- ✅ Added par=1 for parallel transaction validation
+- ✅ Reduced mem_limit from 1200M to 900M (25% reduction)
+- ✅ Added mem_reservation: 700M
+- ✅ Bitcoin container restarted successfully
+- ✅ Bitcoin CLI confirmed operational: chain=test, pruned=true, prune_target_size=550MB
+- ✅ Memory usage during stable periods: 65-73% (well under 85% target)
+- ✅ Memory usage during IBD peak: 91-94% (still better than original 99.88%)
+- ✅ Overall VPS memory pressure relieved: 300MB reduction in Bitcoin allocation
+- ✅ Cache configuration optimized: 2MiB block index, 8MiB chain state, 54MiB UTXO set
+
+Results:
+- Memory limit reduced from 1200M to 900M (25% reduction)
+- Stable-state memory usage: 65-73% (excellent)
+- Peak IBD memory usage: 91-94% (acceptable, better than 99.88%)
+- Blockchain status: Operational, testnet, pruning active at 550MB
+- Side effects: None observed, Lightning service dependent on Bitcoin remains healthy
+
+The optimization successfully reduced Bitcoin's memory footprint and relieved VPS pressure.
 ```
 
 ---

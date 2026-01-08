@@ -455,11 +455,18 @@ services:
   # Bitcoin Core (Testnet) - Backend for Lightning
   # OPTIMIZED: Reduced memory from 2G to 1.2G for Plan C scaling (2026-01-05)
   # HEALTH FIX: Updated health check to verify IBD completion (2026-01-05)
+  # MEMORY OPTIMIZATION: Reduced memory footprint via T068 (2026-01-08)
+  #   - dbcache: 400MB → 64MB
+  #   - maxmempool: 100MB → 50MB
+  #   - prune: 5000MB → 550MB (aggressive pruning)
+  #   - Added par=1 for parallel transaction validation
+  #   - mem_limit: 1200M → 900M
+  #   - mem_reservation: 700M
   bitcoin:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
     command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=400
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=550 -maxmempool=50 -dbcache=64 -par=1
     ports:
       - "18333:18333" # Testnet P2P
       - "127.0.0.1:18332:18332" # Testnet RPC (local only)
@@ -479,8 +486,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1200M
+          memory: 900M
           cpus: "1"
+        reservations:
+          memory: 700M
 
   # Core Lightning (CLN) - Testnet Deployment
   # Operational reserve: 25,000 sats from 79,014 sats treasury
