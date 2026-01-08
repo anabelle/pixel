@@ -12,13 +12,13 @@
 | Status | Count | Description |
 |--------|-------|-------------|
 | | ⬜ READY | 7 | Available for processing |
-| | 🟡 IN_PROGRESS | 1 | Currently being worked on |
-| | ✅ DONE | 10 | Completed successfully |
+| | 🟡 IN_PROGRESS | 0 | Currently being worked on |
+| | ✅ DONE | 12 | Completed successfully |
 | | ❌ FAILED | 5 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T22:30:00Z (T053: Resolve REFACTOR_QUEUE Sync Blockage)
-**Last Verified**: 2026-01-08 (Archive sync verified, T049 marked FAILED)
+**Last Processed**: 2026-01-08T23:00:00Z (T058: Archive Completed Tasks)
+**Last Verified**: 2026-01-08 (Archive sync verified, T058 completed)
 **Next Priority**: T056/T057 - Build narrative-to-correlator data pipeline
 
 ---
@@ -631,8 +631,10 @@ cd /pixel/lnpixels/api && npm test -- --testPathPattern=correlator
 ## 📋 Phase 4: Queue Maintenance
 
 
-### T058: Archive Completed Tasks (T044, T047, T048, T049) ⬜ READY
+### T058: Archive Completed Tasks (T044, T047, T048, T049) ✅ DONE
 **Effort**: 15 min | **Risk**: None | **Parallel-Safe**: ✅
+
+Completed: 2026-01-08T23:00:00Z
 
 ```
 INSTRUCTIONS:
@@ -644,6 +646,15 @@ INSTRUCTIONS:
 
 VERIFY:
 grep -E "T044|T047|T048|T049" /pixel/REFACTOR_QUEUE.md
+
+COMPLETION SUMMARY:
+- ✅ Verified T044, T047, T048 already archived as DONE (completed by T053)
+- ✅ Verified T049 status as FAILED in both queue and archive (genuine failure - test coverage never created)
+- ✅ Verified no duplicate entries in archive
+- ✅ Confirmed queue is clean (T044, T047, T048 removed; T049 retained as FAILED)
+- ✅ Queue ready for T056/T057 (narrative-to-correlator data pipeline)
+
+Note: Tasks T044, T047, T048 were already archived during T053. T049 remains FAILED as the narrative correlator test coverage was never successfully created.
 ```
 
 ---
@@ -728,6 +739,35 @@ This addresses the corruption that has persisted since Cycle 27.10 and enables a
 
 VERIFY:
 ./scripts/verify-queue-health.sh
+```
+
+---
+
+## 📋 Phase 4: Infrastructure Optimization
+
+
+### T067: Bitcoin Core Memory Optimization Analysis ⬜ READY
+**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Investigate why Bitcoin Core container is using 99.97% memory (1.171GiB/1.172GiB). 
+
+1. Check Bitcoin Core configuration for memory parameters
+2. Review if prune mode or dbcache settings can reduce memory footprint
+3. Analyze if this is normal for initial block download or abnormal
+4. Consider adding memory limits to docker-compose or tuning parameters
+5. Document findings and propose solution
+
+Files to check:
+- docker-compose.yml (bitcoin container config)
+- Any bitcoin.conf or config files
+- Container logs for memory warnings
+
+Context: VPS memory at 82.9%, Bitcoin is primary consumer. This is preventing safe deployment of other services.
+
+VERIFY:
+docker stats pixel-bitcoin-1 | grep -E "memory|MEM"
 ```
 
 ---
