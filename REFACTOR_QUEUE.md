@@ -11,13 +11,13 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 13 | Available for processing |
+| | ⬜ READY | 14 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 9 | Completed successfully |
-| | ❌ FAILED | 4 | Failed, needs human review |
+| | ✅ DONE | 10 | Completed successfully |
+| | ❌ FAILED | 5 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T20:30:00Z (T050: Sync Refactor Queue with Archive)
+**Last Processed**: 2026-01-08T20:55:00Z (T054: Create queue auto-recovery script)
 **Last Verified**: 2026-01-08 (Archive sync verified, T049 reset to READY)
 **Next Priority**: T049 - Create test coverage for narrative correlator
 
@@ -231,8 +231,9 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 ---
 
 
-### T054: Create queue auto-recovery script ⬜ READY
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T054: Create queue auto-recovery script ✅ DONE
+
+Completed: 2026-01-08T20:55:00Z
 
 ```
 INSTRUCTIONS:
@@ -249,6 +250,28 @@ Place script at /scripts/queue-health-check.sh and add to cron or daily maintena
 
 VERIFY:
 ls -la /scripts/queue-health-check.sh && /scripts/queue-health-check.sh --dry-run
+
+COMPLETION SUMMARY:
+- ✅ Created /scripts/queue-health-check.sh with comprehensive queue health checking logic
+- ✅ Script detects stale IN_PROGRESS tasks (>2 hours old)
+- ✅ Checks for active worker containers via Docker API
+- ✅ Checks task ledger for running worker records
+- ✅ Auto-marks stale tasks as FAILED with reason logging
+- ✅ Archives stuck DONE tasks (T044, T047, T048) to REFACTOR_ARCHIVE.md
+- ✅ Verifies queue-archive sync via /scripts/verify-queue-archive-sync.js
+- ✅ Supports --dry-run mode for safe testing
+- ✅ Logs all actions to /pixel/data/queue-health-check.log
+- ✅ Generates detailed status reports
+
+Features implemented:
+1. Stale task detection: Identifies IN_PROGRESS tasks without active workers
+2. Worker verification: Checks both Docker containers and task ledger
+3. Auto-failure marking: Updates task status with failure analysis
+4. DONE task archiving: Moves completed tasks to REFACTOR_ARCHIVE.md
+5. Queue-archive sync: Verifies consistency between queue and archive
+6. Reporting: Generates comprehensive status reports
+
+The script successfully completed dry-run testing without modifying files.
 ```
 
 ---
