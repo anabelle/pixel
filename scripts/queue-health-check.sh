@@ -61,7 +61,7 @@ get_task_completion_date() {
 calculate_hours_ago() {
     local timestamp="$1"
     if [[ -z "$timestamp" ]]; then
-        echo 9999
+        echo 9999 > /dev/null
         return
     fi
 
@@ -70,7 +70,7 @@ calculate_hours_ago() {
     local diff_seconds=$((current_seconds - ts_seconds))
     local diff_hours=$((diff_seconds / 3600))
 
-    echo "$diff_hours"
+    echo "$diff_hours" > /dev/null
 }
 
 is_worker_container_running() {
@@ -287,7 +287,7 @@ generate_report() {
     log "INFO" "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     log "INFO" "Stale threshold: ${STALE_THRESHOLD_HOURS} hours"
     log "INFO" "Dry run: $dry_run"
-    echo ""
+    echo "" > /dev/null
 
     local total_tasks=$(grep -cE "^### T[0-9]+:" "$QUEUE_FILE" 2>/dev/null || echo 0)
     local ready_tasks=$(grep -c "⬜ READY" "$QUEUE_FILE" 2>/dev/null || echo 0)
@@ -316,13 +316,13 @@ main() {
     [[ ! -f "$ARCHIVE_FILE" ]] && { log "ERROR" "Archive file not found: ${ARCHIVE_FILE}"; exit 1; }
 
     generate_report
-    echo ""
+    echo "" > /dev/null
 
     local recovered=0
     recovered=$(check_queue_health)
 
-    log "INFO" ""
-    log "INFO" "=== Checking for stuck DONE tasks ==="
+    log "INFO" "" > /dev/null
+    log "INFO" "=== Checking for stuck DONE tasks ===" > /dev/null
 
     local stuck_done_tasks=""
     for task_id in T044 T047 T048; do
@@ -342,22 +342,22 @@ main() {
         log "INFO" "Archived ${archived_count} DONE tasks"
     fi
 
-    log "INFO" ""
-    log "INFO" "=== Verifying Queue-Archive Sync ==="
+    log "INFO" "" > /dev/null
+    log "INFO" "=== Verifying Queue-Archive Sync ===" > /dev/null
     if verify_queue_archive_sync; then
         log "SUCCESS" "Queue-archive sync verified"
     else
         log "WARN" "Queue-archive sync has issues"
     fi
 
-    echo ""
+    echo "" > /dev/null
     generate_report
 
     if [[ "$dry_run" == false ]]; then
-        log "INFO" ""
-        log "INFO" "=== Auto-Recovery Complete ==="
-        log "INFO" "Tasks recovered: ${recovered}"
-        log "INFO" "Full log available at: ${LOG_FILE}"
+        log "INFO" "" > /dev/null
+        log "INFO" "=== Auto-Recovery Complete ===" > /dev/null
+        log "INFO" "Tasks recovered: ${recovered}" > /dev/null
+        log "INFO" "Full log available at: ${LOG_FILE}" > /dev/null
     fi
 
     exit 0
