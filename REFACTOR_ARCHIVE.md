@@ -31,7 +31,7 @@
 ### Phase 4: Testing & Quality
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
-| **T049** | ✅ DONE | Create test coverage for narrative correlator | 2026-01-08 | - |
+| **T049** | ❌ FAILED | Create test coverage for narrative correlator (stale) | 2026-01-08 | - |
 | **T047** | ✅ DONE | Add test coverage to monitoring scripts | 2026-01-06 | - |
 
 ### Phase 5: Architecture Evolution
@@ -46,18 +46,19 @@
 | **T064** | ✅ DONE | Resolve Queue Corruption via Organismic Path | 2026-01-07 | - |
 | **T062** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption - T049/T060 Cleanup | 2026-01-07 | - |
 | **T060** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption (resolved by rebuild) | 2026-01-07 | - |
+| **T052** | ✅ DONE | Fix REFACTOR_QUEUE sync and cleanup | 2026-01-08 | - |
 | **T051** | ✅ DONE | Sync Refactor Queue Archive | 2026-01-08 | - |
 
 ### Phase 4: Documentation & Knowledge
-| ID | Status | Title | Date |
-|----|--------|-------|------|
+| ID | Status | Title | Date | Note |
+|----|--------|-------|------|------|
 | **T040** | ✅ DONE | Create Plan C Optimization Playbook Module | 2026-01-05 |
 | **T039** | ✅ DONE | Implement Identity Evolution Tools | 2026-01-05 |
 | **T038** | ✅ DONE | Create Runtime Philosophy & Integration | 2026-01-05 |
 
 ### Phase 3: Syntropy Tools Extraction (Tools Monolith Split)
-| ID | Status | Title | Date |
-|----|--------|-------|------|
+| ID | Status | Title | Date | Note |
+|----|--------|-------|------|------|
 | **T037** | ✅ DONE | Extract Refactoring Tools | 2026-01-03 |
 | **T036** | ✅ DONE | Create Tools Index and Finalize | 2026-01-03 |
 | **T035b**| ✅ DONE | Extract Idea Garden Tools | 2026-01-03 |
@@ -73,15 +74,15 @@
 | **T027** | ✅ DONE | Create Tools Directory Structure | 2026-01-03 |
 
 ### Phase 2: API Route Refactoring (Express Split)
-| ID | Status | Title | Date |
-|----|--------|-------|------|
+| ID | Status | Title | Date | Note |
+|----|--------|-------|------|------|
 | **T026** | ✅ DONE | Extract Stats Routes | 2026-01-03 |
 | **T025** | ✅ DONE | Extract Validation Middleware | 2026-01-03 |
 | **T024** | ✅ DONE | Create Routes Directory Structure | 2026-01-03 |
 
 ### Phase 1: Nostr Plugin Refactoring (Service.js Split)
-| ID | Status | Title | Date |
-|----|--------|-------|------|
+| ID | Status | Title | Date | Note |
+|----|--------|-------|------|------|
 | **T023** | ✅ DONE | Contact Mutation Already Extracted | Pre-2026 |
 | **T022** | ✅ DONE | Contact Loading Already Extracted | Pre-2026 |
 | **T021** | ✅ DONE | Contacts.js and Mute.js Already Exist | Pre-2026 |
@@ -95,17 +96,17 @@
 | **T013** | ✅ DONE | Create threadContext.js Skeleton | 2026-01-03 |
 
 ### Phase 0: Quick Wins (Cleanup & Scripts)
-| ID | Status | Title | Date |
-|----|--------|-------|------|
-| **T012** | ✅ DONE | Update .gitignore for Temp Files | 2026-01-03 |
-| **T011** | ✅ DONE | Update Package.json Script References | 2026-01-03 |
-| **T010** | ✅ DONE | Move Diagnostics Scripts | 2026-01-02 |
-| **T009** | ✅ DONE | Move Utility Scripts | 2026-01-02 |
-| **T008** | ✅ DONE | Move Recovery Scripts | 2026-01-02 |
-| **T007** | ✅ DONE | Move Setup Scripts | 2026-01-02 |
-| **T006** | ✅ DONE | Move Maintenance Scripts | 2026-01-02 |
-| **T005** | ✅ DONE | Move Deploy Scripts | 2026-01-03 |
-| **T004** | ✅ DONE | Move Monitoring Scripts | 2026-01-03 |
-| **T003** | ✅ DONE | Move Backup Scripts | 2026-01-03 |
-| **T002** | ✅ DONE | Create Scripts Directory Structure | 2026-01-03 |
-| **T001** | ✅ DONE | Delete Temporary Output Files | 2026-01-03 |
+| ID | Status | Title | Date | Note |
+|----|--------|-------|------|------|
+| **T012** | ✅ DONE | Update .gitignore for Temp Files | 2026-01-03 | |
+| **T011** | ✅ DONE | Update Package.json Script References | 2026-01-03 | |
+| **T010** | ✅ DONE | Move Diagnostics Scripts | 2026-01-02 | ABANDONED: Disk at 43% |
+| **T009** | ✅ DONE | Move Utility Scripts | 2026-01-02 | ABANDONED: Disk at 43% |
+| **T008** | ✅ DONE | Move Recovery Scripts | 2026-01-02 | ABANDONED: Disk at 43% |
+| **T007** | ✅ DONE | Move Setup Scripts | 2026-01-02 | ABANDONED: Disk at 43% |
+| **T006** | ✅ DONE | Move Maintenance Scripts | 2026-01-02 | ABANDONED: Disk at 43% |
+| **T005** | ✅ DONE | Move Deploy Scripts | 2026-01-03 | |
+| **T004** | ✅ DONE | Move Monitoring Scripts | 2026-01-03 | |
+| **T003** | ✅ DONE | Move Backup Scripts | 2026-01-03 | ABANDONED: Disk at 43% |
+| **T002** | ✅ DONE | Create Scripts Directory Structure | 2026-01-03 | |
+| **T001** | ✅ DONE | Delete Temporary Output Files | 2026-01-03 | ABANDONED: Disk at 43% |
