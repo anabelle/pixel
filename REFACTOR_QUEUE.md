@@ -11,15 +11,15 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 7 | Available for processing |
+| | ⬜ READY | 6 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 17 | Completed successfully |
+| | ✅ DONE | 18 | Completed successfully |
 | | ❌ FAILED | 4 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T23:35:00Z (T068: Bitcoin Core memory optimization implementation)
+**Last Processed**: 2026-01-08T23:50:00Z (T057: Build narrative-to-correlator data pipeline)
 **Last Verified**: 2026-01-08 (All queue tasks verified and synchronized)
-**Next Priority**: T057 - Build narrative-to-correlator data pipeline (API integration)
+**Next Priority**: T056 - Build narrative-to-correlator data pipeline
 
 ---
 
@@ -634,9 +634,11 @@ Note: End-to-end testing requires container context with network access to Postg
 ## 📋 Phase 2: API Routes
 
 
-### T057: Build narrative-to-correlator data pipeline ⬜ READY
+### T057: Build narrative-to-correlator data pipeline ✅ DONE
 **Effort**: 1 hour | **Risk**: Low | **Parallel-Safe**: ❌
 **Depends**: T049
+
+Completed: 2026-01-08T23:50:00Z
 
 ```
 INSTRUCTIONS:
@@ -659,6 +661,57 @@ Create a data pipeline that POSTs narrative data to the correlator service every
 
 VERIFY:
 cd /pixel/lnpixels/api && npm test -- --testPathPattern=correlator
+
+COMPLETION SUMMARY:
+- ✅ Created /pixel/lnpixels/api/src/types/correlator.ts with Narrative, EconomicEvent, CorrelationRequest, CorrelationResponse, AgentMemory interfaces
+- ✅ Created /pixel/lnpixels/api/src/services/correlator.ts with CorrelatorClient class
+  - analyzeCorrelations() method to POST data to correlator endpoint
+  - getHealth() method to check correlator service status
+  - Error handling and logging
+- ✅ Created /pixel/lnpixels/api/src/services/scheduler.ts with NarrativeCorrelatorScheduler class
+  - Initializes PostgreSQL connection to agent database (pixel_agent)
+  - extractNarratives() fetches recent narrative data (emerging_story, daily_report, narrative_weekly, hourly_digest) from last 24 hours
+  - extractEconomicEvents() fetches recent pixel purchases from API activity feed
+  - runJob() executes data extraction and posts to correlator every run
+  - 2-hour interval schedule (configurable via JOB_INTERVAL_MS)
+  - Comprehensive logging of all operations
+  - Job state tracking (total runs, narratives extracted, events extracted, correlations generated)
+- ✅ Updated /pixel/lnpixels/api/package.json with pg and @types/pg dependencies
+- ✅ Updated /pixel/docker-compose.yml with API service environment variables:
+  - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/pixel_agent
+  - CORRELATOR_URL=http://narrative-correlator:3004
+  - API_URL=http://api:3000/api
+- ✅ Updated /pixel/lnpixels/api/src/server.ts to start scheduler on server startup
+- ✅ Created test files:
+  - /pixel/lnpixels/api/test/correlator.test.ts (9 test suites)
+  - /pixel/lnpixels/api/test/scheduler.test.ts (4 test suites)
+- ✅ API service rebuilt and running successfully
+- ✅ Verified scheduler initialization and first job run in logs:
+  - Connected to PostgreSQL database
+  - Started scheduler with 2-hour interval
+  - Checked correlator health (healthy)
+  - Extracted narratives (0 - no recent data)
+  - Extracted economic events (12 pixel purchases)
+  - Posted to correlator successfully
+  - Job completed in 0.10s
+  - Insight generated: "Normal operation - maintaining surveillance and treasury status quo"
+
+Pipeline Features:
+1. PostgreSQL connection to agent database for narrative extraction
+2. API activity feed for economic event extraction
+3. 2-hour interval job schedule (runs immediately on startup, then every 2 hours)
+4. Graceful error handling if PostgreSQL is unavailable (continues with economic events only)
+5. Correlator health checks before each job run
+6. Detailed logging of all operations for debugging
+7. Job state persistence (tracks runs, extractions, correlations over time)
+8. Proper TypeScript typing and type safety
+
+Usage:
+- Automatic: Scheduler runs every 2 hours automatically
+- Manual: Trigger via server restart
+- Environment variables: POSTGRES_URL, CORRELATOR_URL, API_URL (with sensible defaults)
+
+Note: Port 8000 mentioned in task was incorrect - actual correlator service runs on port 3004 per docker-compose.yml.
 ```
 
 ---
