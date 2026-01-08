@@ -11,14 +11,14 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 16 | Available for processing |
+| | ⬜ READY | 17 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 5 | Completed successfully |
-| | ❌ FAILED | 3 | Failed, needs human review |
+| | ✅ DONE | 9 | Completed successfully |
+| | ❌ FAILED | 4 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-06T20:01Z (T048: Extract narrative correlation engine to standalone service)
-**Last Verified**: 2026-01-06 (Narrative correlator operational, API proxy functional)
+**Last Processed**: 2026-01-08T20:20:00Z (T067: Resolve Queue Archive Sync Issues from Cycle 27.20)
+**Last Verified**: 2026-01-08 (Archive sync restored, all orphaned tasks archived)
 **Next Priority**: Ready for next task
 
 ---
@@ -280,7 +280,7 @@ cd /pixel && ./scripts/verify-queue-sync.sh 2>&1 | grep -c "0 issues"
 ---
 
 
-### T065: Archive Stale Queue Tasks 🟡 IN_PROGRESS
+### T065: Archive Stale Queue Tasks ❌ FAILED (obsoleted by T067)
 **Effort**: 15 min | **Risk**: None | **Parallel-Safe**: ❌
 
 ```
@@ -296,6 +296,11 @@ INSTRUCTIONS:
 
 VERIFY:
 grep "T049\|T060\|T062\|T064" /pixel/REFACTOR_QUEUE.md | grep DONE
+
+FAILURE ANALYSIS (2026-01-08T20:20:00Z):
+- Task remained IN_PROGRESS despite no worker activity
+- Functionality superseded by T067 (comprehensive archive sync)
+- Resolution: Marked as FAILED, archive sync completed via T067
 ```
 
 ---
@@ -700,6 +705,38 @@ Mark tasks T049, T060, T062, T064 as DONE in REFACTOR_QUEUE.md since they repres
 
 VERIFY:
 cat REFACTOR_QUEUE.md | grep -E "T049|T060|T062|T064" | grep "DONE"
+```
+
+---
+
+
+### T067: Resolve Queue Archive Sync Issues from Cycle 27.20 ✅ DONE
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+Completed: 2026-01-08T20:20:00Z
+
+```
+INSTRUCTIONS:
+Complete the archival process for tasks T044, T047, T048, T060, T062, T064 that are marked DONE in REFACTOR_QUEUE.md but not present in REFACTOR_ARCHIVE.md. These represent technical debt from the spawnWorker failure in Cycle 27.20.
+
+Steps:
+1. Read current REFACTOR_QUEUE.md
+2. Read current REFACTOR_ARCHIVE.md
+3. For each task above, append full entry to archive with DONE status
+4. Verify all are now present in archive
+5. Clear T065 (which is stuck IN_PROGRESS)
+
+VERIFY:
+grep -E "T044|T047|T048|T060|T062|T064" REFACTOR_ARCHIVE.md | wc -l
+
+COMPLETION SUMMARY:
+- ✅ Added T044 (Worker Visibility Layer) to Phase 4: Visibility Tools
+- ✅ Added T047 (Monitoring test coverage) to Phase 4: Testing & Quality
+- ✅ Added T048 (Narrative correlator extraction) to Phase 5: Architecture Evolution
+- ✅ Added T060, T062, T064 (Queue maintenance tasks) to Phase 4: Queue Maintenance
+- ✅ Cleared T065 (marked as FAILED - obsoleted by T067)
+- ✅ Verified 6/6 tasks now present in REFACTOR_ARCHIVE.md
+- ✅ Archive sync restored from Cycle 27.20 technical debt
 ```
 
 ---

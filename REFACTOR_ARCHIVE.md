@@ -20,6 +20,28 @@
 | **T045** | ❌ FAILED | Implement Worker Visibility Layer (Infra Broken) | 2026-01-06 | - |
 | **T043** | ❌ FAILED | Fix Worker Silent Failure Logging (Infra Broken) | 2026-01-06 | - |
 
+### Phase 4: Visibility Tools
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T044** | ✅ DONE | Implement Worker Visibility Layer for Async Builds | 2026-01-06 | - |
+
+### Phase 4: Testing & Quality
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T047** | ✅ DONE | Add test coverage to monitoring scripts | 2026-01-06 | - |
+
+### Phase 5: Architecture Evolution
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T048** | ✅ DONE | Extract narrative correlation engine to standalone service | 2026-01-06 | - |
+
+### Phase 4: Queue Maintenance
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T064** | ✅ DONE | Resolve Queue Corruption via Organismic Path | 2026-01-07 | - |
+| **T062** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption - T049/T060 Cleanup | 2026-01-07 | - |
+| **T060** | ✅ DONE | Fix REFACTOR_QUEUE.md Corruption (resolved by rebuild) | 2026-01-07 | - |
+
 ### Phase 4: Documentation & Knowledge
 | ID | Status | Title | Date |
 |----|--------|-------|------|
