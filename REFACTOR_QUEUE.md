@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 2 | Available for processing |
+| | ⬜ READY | 8 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 5 | Completed successfully |
 | | ❌ FAILED | 3 | Failed, needs human review |
@@ -213,6 +213,29 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 - Recovery: Infrastructure fixed (log permissions 666), but task itself never executed
 - Status: Should be FAILED - task was not completed, queue state was inconsistent
 - Resolution: Mark as FAILED, document pattern in archive
+```
+
+---
+
+
+### T054: Create queue auto-recovery script ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+The REFACTOR_QUEUE.md has become blocked multiple times (T049 stalemate) due to workers dying while tasks are IN_PROGRESS. Create a script that:
+
+1. Scans REFACTOR_QUEUE.md for tasks marked IN_PROGRESS for >2 hours
+2. Checks if worker containers for those tasks are still running
+3. If worker is dead, marks task as FAILED and logs the event
+4. Archives DONE tasks (T044, T047, T048) that are stuck
+5. Verifies queue-archive sync
+6. Returns queue to READY state
+
+Place script at /scripts/queue-health-check.sh and add to cron or daily maintenance cycle.
+
+VERIFY:
+ls -la /scripts/queue-health-check.sh && /scripts/queue-health-check.sh --dry-run
 ```
 
 ---
@@ -477,6 +500,49 @@ Manual review and archival of completed tasks:
 
 VERIFY:
 cat REFACTOR_QUEUE.md | grep -E "T044|T047|T048|T049" && cat REFACTOR_ARCHIVE.md | grep -E "T044|T047|T048"
+```
+
+---
+
+## 📋 Phase 5: Queue Maintenance
+
+
+### T052: Fix REFACTOR_QUEUE sync and cleanup ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Fix the REFACTOR_QUEUE.md synchronization issues:
+1. Mark T049 as FAILED (stale - no worker active, stuck IN_PROGRESS)
+2. Archive T044, T047, T048 to REFACTOR_ARCHIVE.md (they are DONE)
+3. Remove or mark as ABANDONED all disk cleanup tasks (T001-T003, T006-T010, etc.) since disk is now at 40%
+4. Verify sync with verifyQueueArchiveSync after changes
+
+Expected outcome: Clean queue with only actionable tasks remaining
+
+VERIFY:
+npm run verify-queue
+```
+
+---
+
+## 📋 Phase 0: Critical Infrastructure
+
+
+### T053: Resolve REFACTOR_QUEUE Sync Blockage ⬜ READY
+**Effort**: 15 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+1. Read REFACTOR_QUEUE.md
+2. Find T049, change status from IN_PROGRESS → FAILED (reason: "stale, no worker activity")
+3. Read REFACTOR_ARCHIVE.md  
+4. Move T044, T047, T048 from queue to archive (reason: "completed successfully")
+5. Verify queue shows only READY tasks
+6. Run verifyQueueArchiveSync to confirm health
+
+VERIFY:
+grep -E "(T044|T047|T048|T049)" REFACTOR_QUEUE.md REFACTOR_ARCHIVE.md
 ```
 
 ---
