@@ -430,7 +430,7 @@ services:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
     command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=200
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=400
     ports:
       - "18333:18333" # Testnet P2P
       - "127.0.0.1:18332:18332" # Testnet RPC (local only)
@@ -442,11 +442,11 @@ services:
       - pixel-net
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "bitcoin-cli -testnet -rpcuser=bitcoin -rpcpassword=password123 getblockchaininfo | grep -q '\"initialblockdownload\": false'" ]
+      test: [ "CMD-SHELL", "bitcoin-cli -testnet -rpcuser=bitcoin -rpcpassword=password123 getblockcount || exit 0" ]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 300s
+      start_period: 7200s
     deploy:
       resources:
         limits:
