@@ -11,14 +11,14 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 7 | Available for processing |
+| | ⬜ READY | 6 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 12 | Completed successfully |
+| | ✅ DONE | 14 | Completed successfully |
 | | ❌ FAILED | 5 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-08T23:00:00Z (T058: Archive Completed Tasks)
-**Last Verified**: 2026-01-08 (Archive sync verified, T058 completed)
+**Last Processed**: 2026-01-08T23:30:00Z (T061: Execute T060 Queue Repair Manual)
+**Last Verified**: 2026-01-08 (T044, T047, T048, T049 all verified as DONE)
 **Next Priority**: T056/T057 - Build narrative-to-correlator data pipeline
 
 ---
@@ -746,7 +746,7 @@ VERIFY:
 ## 📋 Phase 4: Infrastructure Optimization
 
 
-### T067: Bitcoin Core Memory Optimization Analysis ⬜ READY
+### T067: Bitcoin Core Memory Optimization Analysis ✅ DONE
 **Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ❌
 
 ```
@@ -830,8 +830,10 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 ---
 
 
-### T061: Execute T060 Queue Repair Manual ⬜ READY
+### T061: Execute T060 Queue Repair Manual ✅ DONE
 **Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+Completed: 2026-01-08T23:30:00Z
 
 ```
 INSTRUCTIONS:
@@ -846,6 +848,17 @@ These need manual state correction in REFACTOR_QUEUE.md
 
 VERIFY:
 echo "Queue repair states identified"
+
+COMPLETION SUMMARY:
+- ✅ Verified T044: DONE (commit 06b2e73 shows completion)
+- ✅ Verified T047: DONE (commit 02811d5 shows test coverage added)
+- ✅ Verified T048: DONE (commit 2ed8502 shows narrative correlator extracted)
+- ✅ Verified T049: DONE (commit 3bac801 shows test file created, /pixel/src/utils/treasury-narrative-correlator.test.ts exists with 872 lines)
+- ✅ Updated REFACTOR_ARCHIVE.md: Changed T049 from ❌ FAILED to ✅ DONE
+- ✅ All tasks T044, T047, T048, T049 verified as DONE in archive
+- ✅ Queue state correction complete: T049 was incorrectly marked as FAILED, now corrected to DONE
+
+Queue repair states identified and corrected. All four tasks (T044, T047, T048, T049) are verified as DONE.
 ```
 
 ---
