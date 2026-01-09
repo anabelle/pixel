@@ -37,11 +37,14 @@
 ### Phase 5: Architecture Evolution
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T057** | ✅ DONE | Build narrative-to-correlator data pipeline (API) | 2026-01-08 | - |
+| **T056** | ✅ DONE | Build narrative-to-correlator data pipeline (standalone) | 2026-01-08 | - |
 | **T048** | ✅ DONE | Extract narrative correlation engine to standalone service | 2026-01-06 | - |
 
 ### Phase 4: Queue Maintenance
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T066** | ✅ DONE | Clean Up Stale Queue Tasks from Cycle 27.20 | 2026-01-08 | - |
 | **T063** | ✅ DONE | Fix Queue Corruption State | 2026-01-08 | - |
 | **T067** | ✅ DONE | Resolve Queue Archive Sync Issues from Cycle 27.20 | 2026-01-08 | e3f901b6 |
 | **T059** | ✅ DONE | Fix Queue State Sync - T044/047/048 Archive & T049 Completion | 2026-01-09 | - |
@@ -77,6 +80,11 @@
 | **T029** | ✅ DONE | Extract Ecosystem & Metrics Tools | 2026-01-03 |
 | **T028** | ✅ DONE | Extract Continuity Tools | 2026-01-03 |
 | **T027** | ✅ DONE | Create Tools Directory Structure | 2026-01-03 |
+
+### Phase 8: Deployment
+| ID | Status | Title | Date | Worker ID |
+|----|--------|-------|------|-----------|
+| **T068** | ✅ DONE | Bitcoin Core memory optimization implementation | 2026-01-08 | - |
 
 ### Phase 2: API Route Refactoring (Express Split)
 | ID | Status | Title | Date | Note |
