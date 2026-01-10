@@ -617,7 +617,7 @@ Note: Tasks T044, T047, T048 were already archived during T053. T049 remains FAI
 ---
 
 
-### T072: Resolve T071 Timeout and Archive T069 ⬜ READY
+### T072: Resolve T071 Timeout and Archive T069 🟡 IN_PROGRESS
 **Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 ```
