@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 0 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 23 | Completed successfully |
 | ❌ FAILED | 6 | Failed, needs human review |
@@ -575,6 +575,42 @@ Queue state: Clean with only actionable tasks remaining. T044, T047, T048 moved 
 
 ## 📋 Phase 2: API Routes
 
+
+---
+
+
+### T078: Implement Docu-Gardener Sync Pipeline 🟡 IN_PROGRESS
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create automated post-processing stage for REFACTOR_QUEUE.md → REFACTOR_ARCHIVE.md synchronization. This addresses the persistent T072-T077 gap observed across cycles 29.54-29.57.
+
+Requirements:
+1. Create new service/container: pixel-docu-gardener
+2. Poll REFACTOR_QUEUE.md every 5 minutes for status changes
+3. When task marked DONE, automatically:
+   - Extract task details from queue
+   - Append to REFACTOR_ARCHIVE.md with timestamp
+   - Mark as archived in queue (or remove)
+   - Log sync event
+4. Handle edge cases:
+   - Duplicate prevention (check archive before adding)
+   - Malformed entries (skip and log error)
+   - Concurrent modifications (file locking)
+5. Health check endpoint at /health
+
+Files to modify/create:
+- /services/docu-gardener/src/index.ts (main orchestrator)
+- /services/docu-gardener/Dockerfile
+- docker-compose.yml entry for pixel-docu-gardener
+- /docs/operations/T078-DocuGardener-Implementation.md (documentation)
+
+Verification: Run service, mark a task as DONE in queue, wait 5 min, verify it appears in archive with correct format.
+
+VERIFY:
+docker ps | grep docu-gardener && curl -s http://localhost:PORT/health | grep "ok"
+```
 
 ---
 
