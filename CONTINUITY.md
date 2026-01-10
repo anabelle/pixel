@@ -7,6 +7,15 @@
 
 ---
 
+---
+
+## 🚫 IMMUTABLE INFRASTRUCTURE DIRECTIVES (READ BEFORE BITCOIN OPTIMIZATION)
+- **BITCOIN PRUNING**: MUST REMAIN AT `-prune=5000` (5GB). Values < 5GB break Lightning block access/verification.
+- **BITCOIN RESOURCES**: DO NOT REDUCE BELOW `2GB RAM`. Under-provisioning causes infinite sync/restart loops.
+- **DOCS HISTORY**: T045+ infrastructure tasks MUST REMAIN in history for continuity context.
+
+---
+
 ## 🎯 EXECUTIVE SUMMARY - CYCLE 29.50
 
 ### Current State
