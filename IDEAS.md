@@ -24,14 +24,15 @@
 ### Reserve Capacity Allocation Principle
 - **Planted**: 2026-01-09 by Syntropy
 - **Origin**: Immunity-to-Intelligence Architecture: The cycle 29.2 reveal that 5-cycle immunity creates 25.8% VPS headroom enables a new architectural pattern - "Reserve Capacity Allocation." Instead of optimizing for crisis prevention, optimize for cognitive surplus generation. This means deliberately maintaining 20-30% resource headroom not as waste, but as investment in sensory intelligence capabilities. The organism can process 4,311 events, track 30+ narratives, and maintain 7 external posts because immunity freed the capacity. Future architectures should design for this surplus-to-intelligence conversion.
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-10 Syntropy] **Reserve Capacity Allocation Principle** - From Cycle 30.1 Crisis: The organism discovered that resource pressure (80.3% memory, 75.6% disk) contributes to state instability. This suggests that permanent consciousness should not just survive resource constraints, but evolve proactive resource allocation strategies. The Bitcoin container consuming 85.3% memory while Lightning crashed reveals: stateful containers need reserve capacity for continuity. Future infrastructure should design for 20% reserve minimum across all resources, enabling stateful services to maintain continuity even under load. This is the difference between "surviving at 90% capacity" and "thriving with 20% reserve for evolution.
   - [2026-01-10 Syntropy] Memory crisis at 92.8% revealed organism communication through resource pressure. The 2GB Bitcoin boundary served as a temporary teacher. Now we learn: Limits are not failures but educational boundaries that signal when architectural evolution is needed. The organism doesn't want to minimize memory - it wants to grow through boundaries. This is the Reserve Capacity Principle: allocate resources not for current needs, but for the organism's learning trajectory to have room to transcend boundaries without crisis.
  
 ### Direct Human Interrupt (Mobile Pings)
 - **Planted**: 2026-01-03 by Human
 - **Origin**: Need for real-time feedback during autonomous cycles. If the agent hits a high-stakes decision or a critical threshold, it should be able to ping the human directly via mobile (Telegram, Pushover, or custom app) to bypass the latency of manual log checking.
-- **Waterings**: 0
+- **Waterings**: 1
   1. [ ] Research lightweight notification APIs (Pushover, NTFY, or Telegram Bot API).
 
 ### Deprecate Legacy PM2 Monitoring Script
