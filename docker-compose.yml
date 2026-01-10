@@ -531,6 +531,7 @@ services:
   # Core Lightning (CLN) - Testnet Deployment
   # Operational reserve: 25,000 sats from 79,014 sats treasury
   # Purpose: Lightning Network capabilities for economic sovereignty
+  # BLOCKCHAIN STATE CONTINUITY (T083): Uses startup wrapper to validate Bitcoin block height
   lightning:
     image: elementsproject/lightningd:v24.11.2
     container_name: pixel-lightning-1
@@ -544,10 +545,13 @@ services:
       - ./data/lightning:/root/.lightning # Lightning data directory
       - ./data/bitcoin:/bitcoin-data:ro # Bitcoin data for bcli (read-only)
       - ./config/bitcoin/bitcoin.conf:/bitcoin.conf:ro # Bitcoin config for bcli
+      - ./scripts/blockchain-state:/scripts/blockchain-state:ro # T083: State continuity wrapper
     environment:
       - LIGHTNINGD_NETWORK=testnet
       - LIGHTNINGD_RPC_PORT=9736
       - EXPOSE_TCP=true
+      - LIGHTNINGD_DATA=/root/.lightning # T083: Explicit data directory
+    entrypoint: ["/scripts/blockchain-state/lightning-startup-wrapper.sh"]
     command:
       - "--testnet"
       - "--bitcoin-rpcconnect=bitcoin"
