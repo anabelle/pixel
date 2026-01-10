@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 3 | Available for processing |
+| ⬜ READY | 1 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 21 | Completed successfully |
 | ❌ FAILED | 6 | Failed, needs human review |
@@ -960,7 +960,7 @@ COMPLETION SUMMARY:
 
 ---
 
-### T076: Generate Trust-Narrative Insights from Pattern Analysis ⬜ READY
+### T076: Generate Trust-Narrative Insights from Pattern Analysis 🟡 IN_PROGRESS
 **Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Timeout**: 600s
 **Depends**: T075
