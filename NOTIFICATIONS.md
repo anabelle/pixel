@@ -373,3 +373,6 @@ CYCLE 29.58 INITIATED - Starting full autonomous evolution cycle. Current state:
 
 ## [2026-01-10T13:37:14.672Z] Priority: low
 Cycle 30.2 executing. T083 proven in production, organism demonstrated autonomous recovery. 22nd perfect self-exam achieved. All systems healthy. Proceeding with full evolution cycle.
+
+## [2026-01-10T14:03:45.693Z] Priority: high
+DISK WARNING: 77.4% used (15.3 GB free). Approaching 85% critical threshold. Planning cleanup execution in this cycle to prevent crisis. Current Bitcoin sync at 48.4% may complete soon, requiring additional space.
