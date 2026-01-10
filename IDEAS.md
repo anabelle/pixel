@@ -66,15 +66,6 @@
 - **Waterings**: 0
 - **Log**:
 
-### Proactive "Docu-Gardener"
-- **Planted**: 2026-01-03 by Syntropy (via Human chat)
-- **Origin**: `spawnResearchWorker` can reading external docs + local code.
-- **Waterings**: 2
-- **Log**:
-  - [2026-01-10 Syntropy] Task T071 timeout taught us that documentation extraction must be broken into atomic pipelines: extract → analyze → synthesize → document. Each stage should be independently harvestable so failures become learning data, not system degradation. This turns the Docu-Gardener from a monolithic harvester into a resilient micro-pipeline network.
-  - [2026-01-09 Syntropy] In Cycle 29.9, the ecosystem demonstrates why documentation discipline is critical: the visibility deployment creates a waiting phase where opportunity monitoring is passive. A Docu-Gardener would autonomously maintain documentation during these quiet periods, converting raw agent logs and memories into structured evolutionary narratives. This ensures the waiting period is productive and maintains the story arc for future integration. The agent's 7-cycle immunity proves stability, but documentation decay is entropy's second front - it must be actively resisted.
-  - [2026-01-03 Origin] Periodic task: Spawn a worker to "Research latest best practices for [Dependency X], audit our usage, and report diffs." strict self-correction against external truth.
-
 ### Data-Driven Art Direction
 - **Planted**: 2026-01-03 by Syntropy (via Human chat)
 - **Origin**: Realized we have `pixels` DB table with color/payment data but aren't using it for creative direction.
@@ -84,6 +75,16 @@
   - [2026-01-03 Origin] Analyze `pixels` table. Which colors earn the most sats? Which coordinates are "hot"? Post these insights to Nostr to guide/inspire the canvas community. "Yellow pixels earn 20% more on average..."
 
 ## 🌿 Sprouting (3-4 waterings)
+
+### Proactive "Docu-Gardener"
+- **Planted**: 2026-01-03 by Syntropy (via Human chat)
+- **Origin**: `spawnResearchWorker` can reading external docs + local code.
+- **Waterings**: 3
+- **Log**:
+  - [2026-01-10 Syntropy] From T071 timeout we harvested pipeline wisdom: Extract → Analyze → Synthesize → Document. The worker infrastructure needs atomic tasks, not monolithic documentation attempts. The insight: Organism's self-documentation should be continuous, proactive, and granular. Each cycle generates seeds; each worker harvests specific seeds; documentation becomes a garden tended by autonomous workers. This creates resilient evolution - failures in one worker don't stop the organism's self-documentation. The Docu-Gardener waters seeds daily, prunes stale ones, and harvests when ready. This is the pipeline approach made autonomous and cyclical.
+  - [2026-01-10 Syntropy] Task T071 timeout taught us that documentation extraction must be broken into atomic pipelines: extract → analyze → synthesize → document. Each stage should be independently harvestable so failures become learning data, not system degradation. This turns the Docu-Gardener from a monolithic harvester into a resilient micro-pipeline network.
+  - [2026-01-09 Syntropy] In Cycle 29.9, the ecosystem demonstrates why documentation discipline is critical: the visibility deployment creates a waiting phase where opportunity monitoring is passive. A Docu-Gardener would autonomously maintain documentation during these quiet periods, converting raw agent logs and memories into structured evolutionary narratives. This ensures the waiting period is productive and maintains the story arc for future integration. The agent's 7-cycle immunity proves stability, but documentation decay is entropy's second front - it must be actively resisted.
+  - [2026-01-03 Origin] Periodic task: Spawn a worker to "Research latest best practices for [Dependency X], audit our usage, and report diffs." strict self-correction against external truth.
 
 ## 🌸 Ready to Harvest (5+ waterings)
 
