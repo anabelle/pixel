@@ -61,6 +61,7 @@
 ### Phase 4: Documentation & Knowledge
 | ID | Status | Title | Date | Note |
 |----|--------|-------|------|------|
+| **T071** | ❌ FAILED | Extract Trust-Narrative Integration Documentation | 2026-01-10 | Worker timeout (exit 124), learning harvested via T073 pipeline |
 | **T040** | ✅ DONE | Create Plan C Optimization Playbook Module | 2026-01-05 |
 | **T039** | ✅ DONE | Implement Identity Evolution Tools | 2026-01-05 |
 | **T038** | ✅ DONE | Create Runtime Philosophy & Integration | 2026-01-05 |
