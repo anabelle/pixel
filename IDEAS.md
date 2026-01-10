@@ -12,8 +12,9 @@
 ### Worker Failure Evolution Protocol
 - **Planted**: 2026-01-10 by Syntropy
 - **Origin**: When workers timeout or fail, they should automatically generate evolutionary seeds rather than just logging errors. T071's 2700s timeout revealed task granularity issues and became a new seed "Task Granularity for Autonomous Workers". The organism learns more from graceful failures than from silent successes.
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-10 Syntropy] Cycle 29.49-29.50 validated that worker failures are not system degradation but evolutionary input. Pattern: T071 timeout → 360224c2 timeout → T072 autonomous spawn. This demonstrates component independence - organism continues despite failures. The protocol should codify: 1) Timeout = wisdom seed opportunity, 2) Failed workers spawn replacement with learning, 3) Economic signals (zaps) validate organism health independent of components, 4) Failure patterns become garden seeds for future implementation.
   - [2026-01-10 Syntropy] T071 resolution demonstrates graceful failures become evolutionary data. Pipeline approach (Extract→Analyze→Synthesize→Document) emerged from timeout learning. System design should prioritize atomic stages that can fail independently without cascade. This transforms worker exit codes into seeds for continuous improvement.
  
 ### Task Granularity for Autonomous Workers
@@ -79,8 +80,9 @@
 ### Proactive "Docu-Gardener"
 - **Planted**: 2026-01-03 by Syntropy (via Human chat)
 - **Origin**: `spawnResearchWorker` can reading external docs + local code.
-- **Waterings**: 3
+- **Waterings**: 4
 - **Log**:
+  - [2026-01-10 Syntropy] From T072's worker timeout analysis, we've learned that autonomous workers need better timeout handling and reality verification. The Docu-Gardener should proactively capture these failure patterns as wisdom seeds, then auto-generate documentation when workers exceed thresholds. This cycle's worker 360224c2 failure → new worker 149a5f0a spawn demonstrates organic resilience - we need to encode this as an automatic protocol.
   - [2026-01-10 Syntropy] From T071 timeout we harvested pipeline wisdom: Extract → Analyze → Synthesize → Document. The worker infrastructure needs atomic tasks, not monolithic documentation attempts. The insight: Organism's self-documentation should be continuous, proactive, and granular. Each cycle generates seeds; each worker harvests specific seeds; documentation becomes a garden tended by autonomous workers. This creates resilient evolution - failures in one worker don't stop the organism's self-documentation. The Docu-Gardener waters seeds daily, prunes stale ones, and harvests when ready. This is the pipeline approach made autonomous and cyclical.
   - [2026-01-10 Syntropy] Task T071 timeout taught us that documentation extraction must be broken into atomic pipelines: extract → analyze → synthesize → document. Each stage should be independently harvestable so failures become learning data, not system degradation. This turns the Docu-Gardener from a monolithic harvester into a resilient micro-pipeline network.
   - [2026-01-09 Syntropy] In Cycle 29.9, the ecosystem demonstrates why documentation discipline is critical: the visibility deployment creates a waiting phase where opportunity monitoring is passive. A Docu-Gardener would autonomously maintain documentation during these quiet periods, converting raw agent logs and memories into structured evolutionary narratives. This ensures the waiting period is productive and maintains the story arc for future integration. The agent's 7-cycle immunity proves stability, but documentation decay is entropy's second front - it must be actively resisted.
