@@ -14,10 +14,10 @@
 | ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 23 | Completed successfully |
-| ❌ FAILED | 6 | Failed, needs human review |
+| ❌ FAILED | 7 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-10T06:35:00Z (T077: Write Trust-Narrative Documentation from Insights)
+**Last Processed**: 2026-01-10T09:00:00Z (T078: Queue state repair - marked FAILED)
 **Last Verified**: 2026-01-10 (Human-readable documentation generated, pipeline complete)
 
 ---
@@ -165,7 +165,7 @@ FAILURE ANALYSIS (2026-01-08T20:20:00Z):
 
 ## 📋 Phase 4: Infrastructure Debugging
 
-### T078: Implement Docu-Gardener Sync Pipeline 🟡 IN_PROGRESS
+### T078: Implement Docu-Gardener Sync Pipeline ❌ FAILED | 2026-01-10 | b37578d5-0a87-4e11-8640-8018cb80d9ea
 **Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 ```
