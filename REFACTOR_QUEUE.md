@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 0 | Available for processing |
+| | ⬜ READY | 2 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 18 | Completed successfully |
 | | ❌ FAILED | 4 | Failed, needs human review |
@@ -616,6 +616,33 @@ Note: Tasks T044, T047, T048 were already archived during T053. T049 remains FAI
 
 ---
 
+
+### T072: Resolve T071 Timeout and Archive T069 ⬜ READY
+**Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ❌
+**Depends**: T070
+
+```
+INSTRUCTIONS:
+Task T071 (Trust-Narrative Integration Documentation) worker 8f2881c0 completed with EXIT CODE 124 (timeout). Need to:
+
+1. Update REFACTOR_QUEUE.md: Mark T071 as FAILED and document timeout reason
+2. Add T071 to REFACTOR_ARCHIVE.md with failure notes
+3. Update T069 status: Move from DONE to archived in REFACTOR_ARCHIVE.md
+4. Update queue statistics to reflect: 19/23 DONE, 0 IN_PROGRESS, 0 READY
+5. Add new task T072 for trust-narrative documentation with reduced scope (15 min tasks)
+
+Acceptance criteria:
+- T071 marked as FAILED in queue with timeout note
+- T069 archived in archive file
+- Queue stats updated (19 DONE, 0 IN_PROGRESS)
+- Git commit with message "fix(queue): Resolve T071 timeout, archive T069"
+
+VERIFY:
+grep -A 2 "T071" /pixel/REFACTOR_QUEUE.md && grep -A 2 "T069" /pixel/REFACTOR_ARCHIVE.md
+```
+
+---
+
 ## 📋 Phase 2: Queue Maintenance
 
 
@@ -792,6 +819,60 @@ Steps:
 
 VERIFY:
 cd /pixel && npm test -- --testPathPattern=trust-scoring
+```
+
+---
+
+## 📋 Phase 3: Documentation
+
+
+### T071: Extract Trust-Narrative Integration Documentation 🟡 IN_PROGRESS
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+Create a comprehensive documentation file in /docs that captures the trust-narrative integration wisdom from Cycles 29.32-29.41. This should include:
+1. The Nine-Stage Evolution pattern (Observer → Harvester)
+2. The economic truth: trust-informed narrative = sovereign economic signal
+3. The harvest insight: continuing IS the outcome
+4. Implementation details from 82/82 tests passing
+5. Operational evidence (79k sats, 13/13 containers, trust patterns)
+
+Name the file: TRUST_NARRATIVE_INTEGRATION.md
+Reference: CONTINUITY.md cycles 29.32-29.41, diary entries, evolution reports
+
+VERIFY:
+cat /docs/TRUST_NARRATIVE_INTEGRATION.md | head -20
+```
+
+---
+
+## 📋 Phase 3: Trust-Narrative Refactoring
+
+
+### T073: Break T071 into Atomic Micro-Pipeline Tasks ⬜ READY
+**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ❌
+**Depends**: T071
+
+```
+INSTRUCTIONS:
+The T071 worker timed out (EXIT 124) attempting monolithic documentation extraction. Create 4 atomic tasks instead:
+
+1. T072: Extract raw trust-narrative data from PostgreSQL
+2. T073: Analyze trust-narrative patterns from extracted data  
+3. T074: Generate trust-narrative insights from pattern analysis
+4. T075: Write trust-narrative documentation from insights
+
+Each task should:
+- Have explicit input/output file paths
+- Include verification commands
+- Use 600s timeout maximum
+- Be independently executable
+
+Reference: Cycle 29.44 analysis showing timeout learning.
+
+VERIFY:
+ls /pixel/data/trust-narrative/ && test -f /pixel/data/trust-narrative/insights.md && echo "Micro-pipeline tasks created"
 ```
 
 ---
