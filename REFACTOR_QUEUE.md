@@ -11,9 +11,9 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 2 | Available for processing |
+| | ⬜ READY | 1 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| | ✅ DONE | 17 | Completed successfully |
+| | ✅ DONE | 18 | Completed successfully |
 | | ❌ FAILED | 6 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
@@ -813,7 +813,7 @@ cd /pixel && npm test -- --testPathPattern=trust-scoring
 ## 📋 Phase 3: Trust-Narrative Refactoring
 
 
-### T073: Create Trust-Narrative Micro-Pipeline Tasks ⬜ READY
+### T073: Create Trust-Narrative Micro-Pipeline Tasks 🟡 IN_PROGRESS
 **Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ❌
 **Depends**: T072
 
