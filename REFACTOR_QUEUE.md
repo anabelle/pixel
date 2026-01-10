@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 5 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 19 | Completed successfully |
 | ❌ FAILED | 6 | Failed, needs human review |
@@ -858,7 +858,7 @@ Each task independently harvestable if timeout occurs.
 
 ---
 
-### T074: Extract Raw Trust-Narrative Data from PostgreSQL ⬜ READY
+### T074: Extract Raw Trust-Narrative Data from PostgreSQL 🟡 IN_PROGRESS
 **Effort**: 15 min | **Risk**: Low | **Parallel-Safe**: ✅
 **Timeout**: 600s
 
