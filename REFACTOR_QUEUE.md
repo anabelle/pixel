@@ -11,10 +11,10 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| | ⬜ READY | 2 | Available for processing |
+| | ⬜ READY | 1 | Available for processing |
 | | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | | ✅ DONE | 18 | Completed successfully |
-| | ❌ FAILED | 4 | Failed, needs human review |
+| | ❌ FAILED | 5 | Failed, needs human review |
 | | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
 **Last Processed**: 2026-01-10T01:20:00Z (T070: Trust Scoring Test Coverage)
