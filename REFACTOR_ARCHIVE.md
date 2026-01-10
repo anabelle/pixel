@@ -31,6 +31,7 @@
 ### Phase 4: Testing & Quality
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
+| **T070** | ✅ DONE | Trust Scoring Test Coverage | 2026-01-10 | 2eb30990 |
 | **T049** | ✅ DONE | Create test coverage for narrative correlator | 2026-01-08 | - |
 | **T047** | ✅ DONE | Add test coverage to monitoring scripts | 2026-01-06 | - |
 

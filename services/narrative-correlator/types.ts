@@ -22,6 +22,8 @@ export interface Correlation {
   economicEvent: EconomicEvent;
   correlation: string;
   strength: number;
+  trustWeighted?: boolean;
+  trustScore?: number;
   createdAt: string;
 }
 

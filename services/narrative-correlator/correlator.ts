@@ -1,19 +1,32 @@
 import { Narrative, EconomicEvent, Correlation } from './types';
+import {
+  TrustScore,
+  TrustScorer,
+  createTrustScorer,
+  TextSignal,
+  ZapSignal,
+  TemporalSignal,
+  SilenceSignal
+} from '../../src/trust-scoring';
 
 export class NarrativeCorrelator {
   private narratives: Narrative[] = [];
   private economicEvents: EconomicEvent[] = [];
   private correlations: Correlation[] = [];
+  private trustScores: Map<string, TrustScore> = new Map();
+  private trustScorer: TrustScorer;
   private config = {
     timeWindowHours: 24,
     minCorrelationStrength: 0.3,
-    maxCorrelationsPerRun: 100
+    maxCorrelationsPerRun: 100,
+    enableTrustWeighting: true
   };
 
   constructor(config?: Partial<typeof NarrativeCorrelator.prototype.config>) {
     if (config) {
       this.config = { ...this.config, ...config };
     }
+    this.trustScorer = createTrustScorer();
   }
 
   updateNarratives(narratives: Narrative[]): void {
@@ -22,6 +35,79 @@ export class NarrativeCorrelator {
 
   updateEconomicEvents(events: EconomicEvent[]): void {
     this.economicEvents = events;
+    this.calculateTrustScores();
+  }
+
+  private calculateTrustScores(): void {
+    const now = new Date().toISOString();
+    const zapEvents = this.economicEvents.filter(e => e.type === 'zap_in');
+
+    const zapSignals: ZapSignal[] = zapEvents.map(e => ({
+      amountSats: e.amountSats,
+      timestamp: e.timestamp,
+      senderId: e.decision?.split('at')[0]?.trim() || 'unknown',
+      direction: 'in' as const,
+      metadata: {
+        isSmall: e.amountSats < 100,
+        isMedium: e.amountSats >= 100 && e.amountSats < 1000,
+        isLarge: e.amountSats >= 1000
+      }
+    }));
+
+    const narrativesContent = this.narratives.map(n => n.content).join(' ');
+    const textSignals: TextSignal[] = [];
+
+    if (narrativesContent) {
+      textSignals.push({
+        content: narrativesContent,
+        timestamp: now,
+        senderId: 'narrative-context',
+        metadata: {
+          length: narrativesContent.length,
+          hasBitcoinKeywords: /bitcoin|lightning|sats|sovereign/i.test(narrativesContent),
+          sentiment: 'positive'
+        }
+      });
+    }
+
+    for (const event of this.economicEvents) {
+      const eventTime = new Date(event.timestamp).getTime();
+      const nowTime = new Date(now).getTime();
+      const minutesSince = (nowTime - eventTime) / (1000 * 60);
+
+      const temporalSignal: TemporalSignal = {
+        interactionTimestamp: event.timestamp,
+        currentTime: now
+      };
+
+      const silenceSignal: SilenceSignal = {
+        silenceDurationMinutes: minutesSince,
+        lastInteractionTimestamp: event.timestamp,
+        currentTime: now,
+        metadata: {
+          expectedResponseWindow: 240
+        }
+      };
+
+      const trustScore = this.trustScorer.calculateOverallTrust(
+        textSignals,
+        zapSignals,
+        temporalSignal,
+        silenceSignal
+      );
+
+      this.trustScores.set(event.decision || event.timestamp, trustScore);
+    }
+  }
+
+  getTrustScore(eventKey: string): TrustScore | undefined {
+    return this.trustScores.get(eventKey);
+  }
+
+  getAverageTrustScore(): number {
+    if (this.trustScores.size === 0) return 0;
+    const scores = Array.from(this.trustScores.values()).map(s => s.overallScore);
+    return scores.reduce((sum, s) => sum + s, 0) / scores.length;
   }
 
   analyzeCorrelations(): Correlation[] {
@@ -94,12 +180,26 @@ export class NarrativeCorrelator {
       strength = Math.min(strength + 0.2, 1.0);
     }
 
+    let trustScore: TrustScore | undefined;
+    if (this.config.enableTrustWeighting) {
+      trustScore = this.getTrustScore(event.decision || event.timestamp);
+      if (trustScore) {
+        const trustWeight = 0.3;
+        const trustBoost = (trustScore.overallScore - 0.5) * trustWeight;
+        strength = Math.min(Math.max(strength + trustBoost, 0), 1.0);
+        correlation += ` (trust-weighted: ${(trustScore.overallScore * 100).toFixed(0)}%)`;
+      }
+    }
+
+    const trustScoreValue = trustScore?.overallScore;
     return {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       narrative,
       economicEvent: event,
       correlation,
       strength,
+      trustWeighted: this.config.enableTrustWeighting && !!trustScore,
+      trustScore: trustScoreValue,
       createdAt: new Date().toISOString()
     };
   }
@@ -163,10 +263,21 @@ export class NarrativeCorrelator {
   generateInsights(): string[] {
     const insights: string[] = [];
     const stats = this.getCorrelationStats();
+    const avgTrustScore = this.getAverageTrustScore();
 
     if (stats.total > 0) {
       const avgStrength = stats.averageStrength;
       insights.push(`Strong narrative-economy alignment detected (${(avgStrength * 100).toFixed(0)}% correlation strength)`);
+    }
+
+    if (this.config.enableTrustWeighting) {
+      if (avgTrustScore > 0.7) {
+        insights.push(`High trust patterns detected (${(avgTrustScore * 100).toFixed(0)}% average trust) - correlations are trust-weighted for accuracy`);
+      } else if (avgTrustScore < 0.4) {
+        insights.push(`Low trust patterns detected (${(avgTrustScore * 100).toFixed(0)}% average trust) - consider monitoring for disengagement`);
+      } else {
+        insights.push(`Moderate trust patterns (${(avgTrustScore * 100).toFixed(0)}% average trust) - trust-weighted correlations active`);
+      }
     }
 
     if (this.narratives.length > 10) {
@@ -183,8 +294,41 @@ export class NarrativeCorrelator {
       insights.push('High community engagement via Lightning zaps - consider doubling down on popular content themes');
     }
 
+    const trustInsights = this.aggregateTrustInsights();
+    if (trustInsights.length > 0) {
+      insights.push(...trustInsights);
+    }
+
     if (insights.length === 0) {
       insights.push('Normal operation - maintaining surveillance and treasury status quo');
+    }
+
+    return insights;
+  }
+
+  private aggregateTrustInsights(): string[] {
+    const insights: string[] = [];
+    const allTrustScores = Array.from(this.trustScores.values());
+
+    if (allTrustScores.length === 0) return insights;
+
+    const phaseCounts = new Map<string, number>();
+    for (const score of allTrustScores) {
+      const count = phaseCounts.get(score.phase) || 0;
+      phaseCounts.set(score.phase, count + 1);
+    }
+
+    const phaseACount = phaseCounts.get('A') || 0;
+    const phaseBCount = phaseCounts.get('B') || 0;
+    const phaseCCount = phaseCounts.get('C') || 0;
+    const phaseDCount = phaseCounts.get('D') || 0;
+
+    if (phaseDCount > allTrustScores.length * 0.5) {
+      insights.push('Warning: Majority of interactions in Phase D (disengagement) - trust decay detected');
+    }
+
+    if (phaseACount + phaseBCount > allTrustScores.length * 0.7) {
+      insights.push('Optimal temporal engagement - majority of interactions in active processing phases (A/B)');
     }
 
     return insights;
@@ -194,5 +338,6 @@ export class NarrativeCorrelator {
     this.narratives = [];
     this.economicEvents = [];
     this.correlations = [];
+    this.trustScores.clear();
   }
 }
