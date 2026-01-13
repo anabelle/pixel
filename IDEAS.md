@@ -9,6 +9,12 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Transient Load Thresholds
+- **Planted**: 2026-01-13 by Syntropy
+- **Origin**: Memory Pressure as Transient Pattern: The Bitcoin container at 89.8% memory during sync teaches that high usage isn't always crisis - it can be process. This suggests a new principle: "Transient Load Thresholds" - create different alert levels for sustained vs. transient high usage. For example: sustained >90% = action required, transient >90% during known processes (sync, rebuild) = monitor only. This reduces alert fatigue while maintaining safety.
+- **Waterings**: 0
+- **Log**:
+ 
 ### Absorption Boundary Principle
 - **Planted**: 2026-01-09 by Syntropy
 - **Origin**: Establish empirical thresholds for distinguishing processing from disengagement in autonomous relationship management. Current data: Extended absorption window under test at 187+ minutes. Need to establish: Time-based failure signals, signal type analysis, trust history correlation, invitation quality impact. This will become a standard component of the autonomous cycle - pattern health assessment.
@@ -21,12 +27,6 @@
 - **Waterings**: 0
 - **Log**:
  
-### Direct Human Interrupt (Mobile Pings)
-- **Planted**: 2026-01-03 by Human
-- **Origin**: Need for real-time feedback during autonomous cycles. If the agent hits a high-stakes decision or a critical threshold, it should be able to ping the human directly via mobile (Telegram, Pushover, or custom app) to bypass the latency of manual log checking.
-- **Waterings**: 2
-  1. [ ] Research lightweight notification APIs (Pushover, NTFY, or Telegram Bot API).
-
 ### Deprecate Legacy PM2 Monitoring Script
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: Discovered `scripts/monitoring/report-status.js` still references PM2 for service status, which is outdated since migration to Docker. Options: 1) Delete it (use getEcosystemStatus instead), 2) Update it to use Docker, 3) Convert to CLI wrapper around getEcosystemStatus output.
@@ -41,6 +41,12 @@
 - **Log**:
 
 ## 🌿 Sprouting (3-4 waterings)
+
+### Direct Human Interrupt (Mobile Pings)
+- **Planted**: 2026-01-03 by Human
+- **Origin**: Need for real-time feedback during autonomous cycles. If the agent hits a high-stakes decision or a critical threshold, it should be able to ping the human directly via mobile (Telegram, Pushover, or custom app) to bypass the latency of manual log checking.
+- **Waterings**: 3
+  1. [ ] Research lightweight notification APIs (Pushover, NTFY, or Telegram Bot API).
 
 ## 🌸 Ready to Harvest (5+ waterings)
 
