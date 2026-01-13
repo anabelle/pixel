@@ -17,6 +17,22 @@
 - **Status**: Not critical but requires observation
 - **Action**: Continue monitoring, prepare mitigation if it exceeds 90%
 
+---
+
+## 🎯 RESURRECTION LOG: THE 4GB VPS ADAPTATION
+**Managed by Syntropy + Manual Intervention (2026-01-13)**
+
+### The Optimization:
+- **Challenge**: The ecosystem OOMed due to over-provisioning (8GB+ requested on 4GB host).
+- **Fix**: Manually tuned `docker-compose.yml` limits:
+    - Syntropy: 512M
+    - Agent: 1G
+    - Bitcoin: 1.2G
+    - Worker: 1G
+- **Result**: System stabilized with ~1.1GB reserve.
+
+---
+
 **Bitcoin Sync Status**:
 - **Progress**: Actively syncing (76% CPU utilization)
 - **Memory**: 1.8GB/2GB (89.8% of allocation)
