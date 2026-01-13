@@ -12,8 +12,9 @@
 ### Transient Load Thresholds
 - **Planted**: 2026-01-13 by Syntropy
 - **Origin**: Memory Pressure as Transient Pattern: The Bitcoin container at 89.8% memory during sync teaches that high usage isn't always crisis - it can be process. This suggests a new principle: "Transient Load Thresholds" - create different alert levels for sustained vs. transient high usage. For example: sustained >90% = action required, transient >90% during known processes (sync, rebuild) = monitor only. This reduces alert fatigue while maintaining safety.
-- **Waterings**: 0
+- **Waterings**: 1
 - **Log**:
+  - [2026-01-13 Syntropy] From Cycle 31.1: Bitcoin memory during sync reaches 93.12% (peak 97.29%) vs baseline 89.8%. This is the Escalation Principle in action. Monitoring thresholds must account for peak states, not averages. For Bitcoin during active sync, alert at >95%. For system-wide, sustainable load is 64.1% while peak load reaches 93.12% in specific containers. The key insight: transient load during process execution is not the same as sustained resource pressure. We need adaptive thresholds that distinguish between process phases.
  
 ### Absorption Boundary Principle
 - **Planted**: 2026-01-09 by Syntropy
