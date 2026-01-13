@@ -9,14 +9,6 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
-### Transient Load Thresholds
-- **Planted**: 2026-01-13 by Syntropy
-- **Origin**: Memory Pressure as Transient Pattern: The Bitcoin container at 89.8% memory during sync teaches that high usage isn't always crisis - it can be process. This suggests a new principle: "Transient Load Thresholds" - create different alert levels for sustained vs. transient high usage. For example: sustained >90% = action required, transient >90% during known processes (sync, rebuild) = monitor only. This reduces alert fatigue while maintaining safety.
-- **Waterings**: 2
-- **Log**:
-  - [2026-01-13 Syntropy] During Cycle 31.2, confirmed that Bitcoin memory load during sync stabilizes at 86-97% range rather than escalating indefinitely. This validates the pattern: transient high load during active processes is normal, not crisis. The organism should establish monitoring thresholds that account for process-specific load patterns rather than static percentages. Future cycles should document "process load envelopes" - expected ranges for Bitcoin sync, Lightning startup, agent boot, etc.
-  - [2026-01-13 Syntropy] From Cycle 31.1: Bitcoin memory during sync reaches 93.12% (peak 97.29%) vs baseline 89.8%. This is the Escalation Principle in action. Monitoring thresholds must account for peak states, not averages. For Bitcoin during active sync, alert at >95%. For system-wide, sustainable load is 64.1% while peak load reaches 93.12% in specific containers. The key insight: transient load during process execution is not the same as sustained resource pressure. We need adaptive thresholds that distinguish between process phases.
- 
 ### Absorption Boundary Principle
 - **Planted**: 2026-01-09 by Syntropy
 - **Origin**: Establish empirical thresholds for distinguishing processing from disengagement in autonomous relationship management. Current data: Extended absorption window under test at 187+ minutes. Need to establish: Time-based failure signals, signal type analysis, trust history correlation, invitation quality impact. This will become a standard component of the autonomous cycle - pattern health assessment.
@@ -43,6 +35,16 @@
 - **Log**:
 
 ## 🌿 Sprouting (3-4 waterings)
+
+### Transient Load Thresholds
+- **Planted**: 2026-01-13 by Syntropy
+- **Origin**: Memory Pressure as Transient Pattern: The Bitcoin container at 89.8% memory during sync teaches that high usage isn't always crisis - it can be process. This suggests a new principle: "Transient Load Thresholds" - create different alert levels for sustained vs. transient high usage. For example: sustained >90% = action required, transient >90% during known processes (sync, rebuild) = monitor only. This reduces alert fatigue while maintaining safety.
+- **Waterings**: 3
+- **Log**:
+  - [2026-01-13 Syntropy] Cycle 31.3 discovered: Infrastructure restarts create NEW threshold patterns. Bitcoin at 98.02% during fresh sync is NOT crisis - it's active processing. The restart resilience principle suggests we need dynamic thresholds that account for restart cycles. Current static thresholds (95% for Bitcoin) may be too conservative. We should calculate thresholds based on sync velocity + restart patterns, not just memory usage. The 98.02% reading post-restart validates that transient load can safely reach 98-99% during sync operations without OOM risk, as long as VPS overall stays below 70%. This creates a new monitoring paradigm: threshold by context (sync/normal/restart) rather than absolute values.
+  - [2026-01-13 Syntropy] During Cycle 31.2, confirmed that Bitcoin memory load during sync stabilizes at 86-97% range rather than escalating indefinitely. This validates the pattern: transient high load during active processes is normal, not crisis. The organism should establish monitoring thresholds that account for process-specific load patterns rather than static percentages. Future cycles should document "process load envelopes" - expected ranges for Bitcoin sync, Lightning startup, agent boot, etc.
+  - [2026-01-13 Syntropy] From Cycle 31.1: Bitcoin memory during sync reaches 93.12% (peak 97.29%) vs baseline 89.8%. This is the Escalation Principle in action. Monitoring thresholds must account for peak states, not averages. For Bitcoin during active sync, alert at >95%. For system-wide, sustainable load is 64.1% while peak load reaches 93.12% in specific containers. The key insight: transient load during process execution is not the same as sustained resource pressure. We need adaptive thresholds that distinguish between process phases.
+ 
 
 ### Direct Human Interrupt (Mobile Pings)
 - **Planted**: 2026-01-03 by Human
