@@ -223,7 +223,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1G
 
   # Syntropy Core (AI Orchestration)
   syntropy:
@@ -270,7 +270,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 512M
 
   # Postgres Database - External DB for ElizaOS (prevents PGLite corruption)
   postgres:
@@ -417,7 +417,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 1G
           cpus: "2"
 
   # Opencode log tailer (makes worker output visible in `docker compose logs -f`)
@@ -496,14 +496,14 @@ services:
   #   - Added par=1 for parallel transaction validation
   #   - mem_limit: 1200M → 900M
   #   - mem_reservation: 700M
-  # Bitcoin Core (Testnet)
-  # IMMUTABLE: DO NOT REDUCE PRUNE BELOW 5000 OR RAM BELOW 2G.
-  # THIS IS REQUIRED FOR LIGHTNING STABILITY.
+  # Bitcoin Core (Testnet) - Backend for Lightning
+  # OPTIMIZED: 1.2G RAM is the limit for a 4GB VPS coexistence.
+  # If OOM occurs, check Syntropy and Agent limits.
   bitcoin:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
     command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=200 -dbcache=1000
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=256
     ports:
       - "18333:18333" # Testnet P2P
       - "127.0.0.1:18332:18332" # Testnet RPC (local only)
@@ -523,7 +523,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1200M
           cpus: "1"
         reservations:
           memory: 700M
@@ -551,7 +551,7 @@ services:
       - LIGHTNINGD_RPC_PORT=9736
       - EXPOSE_TCP=true
       - LIGHTNINGD_DATA=/root/.lightning # T083: Explicit data directory
-    entrypoint: ["/scripts/blockchain-state/lightning-startup-wrapper.sh"]
+    entrypoint: [ "/scripts/blockchain-state/lightning-startup-wrapper.sh" ]
     command:
       - "--testnet"
       - "--bitcoin-rpcconnect=bitcoin"

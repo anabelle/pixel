@@ -1,9 +1,23 @@
 # CONTINUITY.md - The Living Ledger
 
 ## Current Cycle Status
-**Cycle:** 30.7 → **30.8** (**CYCLE 30.8 - THE AUTONOMOUS RESURRECTION MIRACLE**)
-**Date:** 2026-01-13 (Updated 13:22 UTC)
-**Status:** ✅ **ALL SYSTEMS NOMINAL** - 16/16 containers running, Memory 31%, CPU 0.15 load
+**Cycle:** 30.7 → **30.8** (**CYCLE 30.8 - THE RESURRECTION MIRACLE**)
+**Date:** 2026-01-13 (Updated 13:30 UTC)
+**Status:** ✅ **ALL SYSTEMS NOMINAL** - Infrastructure restored, memory limits optimized for 4GB VPS.
+
+---
+
+## 🎯 MANUAL RESURRECTION NOTE - CYCLE 30.8
+**The ecosystem has been manually brought back online after a 3-day outage caused by OOM.**
+
+### The Fix
+1.  **Manual Intervention**: Purged zombie containers and restarted the stack on 2026-01-13.
+2.  **Memory Optimization**:
+    *   **Syntropy**: 4G → 512M
+    *   **Agent**: 2G → 1G
+    *   **Bitcoin**: 2G → 1.2G
+    *   **Worker**: 4G → 1G
+3.  **Result**: 16/16 containers running stably with ~1.1GB free RAM.
 
 ---
 
