@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-13T20:39:07.374Z","reason":"Monitor for Lightning activation - Bitcoin sync at 97.06%, activation likely within 6-12 hours. 2-hour delay allows natural progression while maintaining frequent checks during critical pre-activation phase."}
+{"nextRunAt":"2026-01-13T21:41:59.419Z","reason":"Stable monitoring phase - Bitcoin sync in progress, Lightning activation pending. 60 minutes provides balance between responsive monitoring and system efficiency. Will check for completion signals or status changes."}

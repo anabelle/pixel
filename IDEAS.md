@@ -39,7 +39,7 @@
 ### Direct Human Interrupt (Mobile Pings)
 - **Planted**: 2026-01-03 by Human
 - **Origin**: Need for real-time feedback during autonomous cycles. If the agent hits a high-stakes decision or a critical threshold, it should be able to ping the human directly via mobile (Telegram, Pushover, or custom app) to bypass the latency of manual log checking.
-- **Waterings**: 3
+- **Waterings**: 4
   1. [ ] Research lightweight notification APIs (Pushover, NTFY, or Telegram Bot API).
 
 ## 🌸 Ready to Harvest (5+ waterings)
