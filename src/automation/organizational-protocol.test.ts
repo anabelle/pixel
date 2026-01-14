@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs/promises";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import * as path from "path";
@@ -15,22 +15,25 @@ import {
 } from "./organizational-protocol";
 
 describe("Organizational Automation Protocol - Entropy Detection", () => {
-  beforeAll(async () => {
+  const continuityPath = path.join(TEST_ROOT, "CONTINUITY.md");
+  const queuePath = path.join(TEST_ROOT, "REFACTOR_QUEUE.md");
+
+  beforeEach(async () => {
     if (!existsSync(TEST_ROOT)) {
       mkdirSync(TEST_ROOT, { recursive: true });
     }
+    await fs.writeFile(continuityPath, "");
+    await fs.writeFile(queuePath, "# REFACTOR_QUEUE.md\n\n## Queue Status\n| ⬜ READY | 0 |");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (existsSync(TEST_ROOT)) {
       rmSync(TEST_ROOT, { recursive: true, force: true });
     }
   });
 
   test("detectOrganizationalEntropy: High wealth, low capacity = crisis", async () => {
-    const continuityPath = path.resolve(TEST_ROOT, "CONTINUITY.md");
-    const queuePath = path.resolve(TEST_ROOT, "REFACTOR_QUEUE.md");
-
+  test("detectOrganizationalEntropy: High wealth, low capacity = crisis", async () => {
     const mockContinuity = `# CONTINUITY.md - The Living Ledger
 
 ## Current Cycle Status
@@ -151,13 +154,16 @@ describe("Organizational Automation Protocol - Entropy Detection", () => {
 });
 
 describe("Organizational Automation Protocol - Continuity Analysis", () => {
-  beforeAll(async () => {
+  const continuityPath = path.join(TEST_ROOT, "CONTINUITY.md");
+
+  beforeEach(async () => {
     if (!existsSync(TEST_ROOT)) {
       mkdirSync(TEST_ROOT, { recursive: true });
     }
+    await fs.writeFile(continuityPath, "");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (existsSync(TEST_ROOT)) {
       rmSync(TEST_ROOT, { recursive: true, force: true });
     }
@@ -242,13 +248,18 @@ Wealth generation is strong but capacity is weak.
 });
 
 describe("Organizational Automation Protocol - Task Generation", () => {
-  beforeAll(async () => {
+  const continuityPath = path.join(TEST_ROOT, "CONTINUITY.md");
+  const queuePath = path.join(TEST_ROOT, "REFACTOR_QUEUE.md");
+
+  beforeEach(async () => {
     if (!existsSync(TEST_ROOT)) {
       mkdirSync(TEST_ROOT, { recursive: true });
     }
+    await fs.writeFile(continuityPath, "");
+    await fs.writeFile(queuePath, "# REFACTOR_QUEUE.md\n\n## Queue Status\n| ⬜ READY | 0 |");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (existsSync(TEST_ROOT)) {
       rmSync(TEST_ROOT, { recursive: true, force: true });
     }
@@ -385,13 +396,16 @@ There are 13 refactoring opportunities waiting to be addressed.
 });
 
 describe("Organizational Automation Protocol - Queue Management", () => {
-  beforeAll(async () => {
+  const queuePath = path.join(TEST_ROOT, "REFACTOR_QUEUE.md");
+
+  beforeEach(async () => {
     if (!existsSync(TEST_ROOT)) {
       mkdirSync(TEST_ROOT, { recursive: true });
     }
+    await fs.writeFile(queuePath, "# REFACTOR_QUEUE.md\n\n## Queue Status\n| ⬜ READY | 0 |");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (existsSync(TEST_ROOT)) {
       rmSync(TEST_ROOT, { recursive: true, force: true });
     }
@@ -499,13 +513,18 @@ describe("Organizational Automation Protocol - Queue Management", () => {
 });
 
 describe("Organizational Automation Protocol - Full Protocol", () => {
-  beforeAll(async () => {
+  const continuityPath = path.join(TEST_ROOT, "CONTINUITY.md");
+  const queuePath = path.join(TEST_ROOT, "REFACTOR_QUEUE.md");
+
+  beforeEach(async () => {
     if (!existsSync(TEST_ROOT)) {
       mkdirSync(TEST_ROOT, { recursive: true });
     }
+    await fs.writeFile(continuityPath, "");
+    await fs.writeFile(queuePath, "# REFACTOR_QUEUE.md\n\n## Queue Status\n| ⬜ READY | 0 |");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (existsSync(TEST_ROOT)) {
       rmSync(TEST_ROOT, { recursive: true, force: true });
     }

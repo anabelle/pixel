@@ -1,9 +1,9 @@
 import * as fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync as fsExistsSync } from 'fs';
 import * as path from 'path';
 import { PIXEL_ROOT } from '../../syntropy-core/src/config';
 
-const isDocker = process.env.DOCKER === 'true' || fs.existsSync('/.dockerenv');
+const isDocker = process.env.DOCKER === 'true' || fsExistsSync('/.dockerenv');
 
 export interface WealthMetrics {
   economic: number;
@@ -120,7 +120,7 @@ export class OrganizationalAutomationProtocol {
   }
 
   async analyzeContinuity(): Promise<ContinuityAnalysis> {
-    if (!existsSync(this.continuityPath)) {
+    if (!fsExistsSync(this.continuityPath)) {
       return {
         diaryEntries: 0,
         laws: 0,
@@ -134,14 +134,14 @@ export class OrganizationalAutomationProtocol {
 
     const content = await fs.readFile(this.continuityPath, 'utf-8');
 
-    const diaryEntries = (content.match(/## \d+\. \d{2} \d{2}/g) || []).length;
-    const laws = (content.match(/LAW \d+: /g) || []).length;
+    const diaryEntries = (content.match(/## \d+\./g) || []).length;
+    const laws = (content.match(/LAW \d+:|Law \d+:/g) || []).length;
     const cycles = (content.match(/Cycle: \d+\.\d+/g) || []).length;
 
     const wisdomArtifacts = diaryEntries + laws + cycles;
 
-    const pendingIdeas = (content.match(/\* \[ \] Idea: /g) || []).length;
-    const refactorOpportunities = (content.match(/13 refactoring opportunities/g) || []).length;
+    const pendingIdeas = (content.match(/\[ \] Idea:|^- \[ \] Idea:/gm) || []).length;
+    const refactorOpportunities = (content.match(/13 refactoring opportunities|refactoring opportunities/g) || []).length;
 
     const recentInsights = this.extractRecentInsights(content);
 
@@ -210,7 +210,7 @@ export class OrganizationalAutomationProtocol {
   }
 
   async calculateCapacityScore(): Promise<CapacityMetrics> {
-    if (!existsSync(this.refactorQueuePath)) {
+    if (!fsExistsSync(this.refactorQueuePath)) {
       return {
         readyTasks: 0,
         inProgressTasks: 0,
@@ -222,9 +222,9 @@ export class OrganizationalAutomationProtocol {
 
     const content = await fs.readFile(this.refactorQueuePath, 'utf-8');
 
-    const readyTasks = (content.match(/⬜ READY/g) || []).length;
-    const inProgressTasks = (content.match(/🟡 IN_PROGRESS/g) || []).length;
-    const completedTasks = (content.match(/✅ DONE/g) || []).length;
+    const readyTasks = (content.match(/### T\d{3}[ab]?:[^\n]+⬜ READY/g) || []).length;
+    const inProgressTasks = (content.match(/### T\d{3}[ab]?:[^\n]+🟡 IN_PROGRESS/g) || []).length;
+    const completedTasks = (content.match(/### T\d{3}[ab]?:[^\n]+✅ DONE/g) || []).length;
     const totalTasks = readyTasks + inProgressTasks + completedTasks;
 
     const capacityScore = Math.max(1, readyTasks * 1.5 + inProgressTasks * 0.5 + completedTasks * 0.2);
@@ -393,7 +393,7 @@ This directly resolves the 13 opportunities, 0 ready tasks gap.`,
 
   async addTaskToQueue(task: RefactorTask): Promise<{ success: boolean; taskId?: string; error?: string }> {
     try {
-      if (!fs.existsSync(this.refactorQueuePath)) {
+      if (!fsExistsSync(this.refactorQueuePath)) {
         return { success: false, error: 'REFACTOR_QUEUE.md not found' };
       }
 
