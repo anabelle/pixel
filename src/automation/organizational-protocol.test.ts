@@ -33,7 +33,6 @@ describe("Organizational Automation Protocol - Entropy Detection", () => {
   });
 
   test("detectOrganizationalEntropy: High wealth, low capacity = crisis", async () => {
-  test("detectOrganizationalEntropy: High wealth, low capacity = crisis", async () => {
     const mockContinuity = `# CONTINUITY.md - The Living Ledger
 
 ## Current Cycle Status
@@ -601,8 +600,160 @@ describe("Organizational Automation Protocol - Full Protocol", () => {
     const mockQueue = `# REFACTOR_QUEUE.md
 
 ## Queue Status
-| ⬜ READY | 15 |
-| ✅ DONE | 23 |
+| ⬜ READY | 25 |
+| ✅ DONE | 50 |
+
+## Tasks
+
+### T050: Ready Task ⬜ READY
+
+### T051: Another Ready Task ⬜ READY
+
+### T052: Third Ready Task ⬜ READY
+
+### T053: Fourth Ready Task ⬜ READY
+
+### T054: Fifth Ready Task ⬜ READY
+
+### T055: Sixth Ready Task ⬜ READY
+
+### T056: Seventh Ready Task ⬜ READY
+
+### T057: Eighth Ready Task ⬜ READY
+
+### T058: Ninth Ready Task ⬜ READY
+
+### T059: Tenth Ready Task ⬜ READY
+
+### T060: Eleventh Ready Task ⬜ READY
+
+### T061: Twelfth Ready Task ⬜ READY
+
+### T062: Thirteenth Ready Task ⬜ READY
+
+### T063: Fourteenth Ready Task ⬜ READY
+
+### T064: Fifteenth Ready Task ⬜ READY
+
+### T065: Sixteenth Ready Task ⬜ READY
+
+### T066: Seventeenth Ready Task ⬜ READY
+
+### T067: Eighteenth Ready Task ⬜ READY
+
+### T068: Nineteenth Ready Task ⬜ READY
+
+### T069: Twentieth Ready Task ⬜ READY
+
+### T070: Twenty-First Ready Task ⬜ READY
+
+### T071: Twenty-Second Ready Task ⬜ READY
+
+### T072: Twenty-Third Ready Task ⬜ READY
+
+### T073: Twenty-Fourth Ready Task ⬜ READY
+
+### T074: Twenty-Fifth Ready Task ⬜ READY
+
+### T075: Done Task 1 ✅ DONE
+
+### T076: Done Task 2 ✅ DONE
+
+### T077: Done Task 3 ✅ DONE
+
+### T078: Done Task 4 ✅ DONE
+
+### T079: Done Task 5 ✅ DONE
+
+### T080: Done Task 6 ✅ DONE
+
+### T081: Done Task 7 ✅ DONE
+
+### T082: Done Task 8 ✅ DONE
+
+### T083: Done Task 9 ✅ DONE
+
+### T084: Done Task 10 ✅ DONE
+
+### T085: Done Task 11 ✅ DONE
+
+### T086: Done Task 12 ✅ DONE
+
+### T087: Done Task 13 ✅ DONE
+
+### T088: Done Task 14 ✅ DONE
+
+### T089: Done Task 15 ✅ DONE
+
+### T090: Done Task 16 ✅ DONE
+
+### T091: Done Task 17 ✅ DONE
+
+### T092: Done Task 18 ✅ DONE
+
+### T093: Done Task 19 ✅ DONE
+
+### T094: Done Task 20 ✅ DONE
+
+### T095: Done Task 21 ✅ DONE
+
+### T096: Done Task 22 ✅ DONE
+
+### T097: Done Task 23 ✅ DONE
+
+### T098: Done Task 24 ✅ DONE
+
+### T099: Done Task 25 ✅ DONE
+
+### T100: Done Task 26 ✅ DONE
+
+### T101: Done Task 27 ✅ DONE
+
+### T102: Done Task 28 ✅ DONE
+
+### T103: Done Task 29 ✅ DONE
+
+### T104: Done Task 30 ✅ DONE
+
+### T105: Done Task 31 ✅ DONE
+
+### T106: Done Task 32 ✅ DONE
+
+### T107: Done Task 33 ✅ DONE
+
+### T108: Done Task 34 ✅ DONE
+
+### T109: Done Task 35 ✅ DONE
+
+### T110: Done Task 36 ✅ DONE
+
+### T111: Done Task 37 ✅ DONE
+
+### T112: Done Task 38 ✅ DONE
+
+### T113: Done Task 39 ✅ DONE
+
+### T114: Done Task 40 ✅ DONE
+
+### T115: Done Task 41 ✅ DONE
+
+### T116: Done Task 42 ✅ DONE
+
+### T117: Done Task 43 ✅ DONE
+
+### T118: Done Task 44 ✅ DONE
+
+### T119: Done Task 45 ✅ DONE
+
+### T120: Done Task 46 ✅ DONE
+
+### T121: Done Task 47 ✅ DONE
+
+### T122: Done Task 48 ✅ DONE
+
+### T123: Done Task 49 ✅ DONE
+
+### T124: Done Task 50 ✅ DONE
 
 `;
 
