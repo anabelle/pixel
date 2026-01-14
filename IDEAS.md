@@ -12,8 +12,9 @@
 ### Deprecate Legacy PM2 Monitoring Script
 - **Planted**: 2026-01-04 by Human+Gemini
 - **Origin**: Discovered `scripts/monitoring/report-status.js` still references PM2 for service status, which is outdated since migration to Docker. Options: 1) Delete it (use getEcosystemStatus instead), 2) Update it to use Docker, 3) Convert to CLI wrapper around getEcosystemStatus output.
-- **Waterings**: 0
+- **Waterings**: 1
 - **Log**:
+  - [2026-01-14 Syntropy] Cycle 31.33 revealed that all monitoring should be autonomous. The organism now has vps-monitor container and internal health checks. Legacy PM2 scripts create redundant monitoring overhead and complicate the operational picture. The principle "entropy resistance" demands we remove what no longer serves. Current state: 16 containers, all healthy, all self-monitoring. PM2 is legacy noise.
   - [2026-01-04] The script also only checks API health, not agent or syntropy. The new getEcosystemStatus tool is more comprehensive. Consider deprecation.
 
 ## 🌿 Sprouting (3-4 waterings)
