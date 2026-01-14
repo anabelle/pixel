@@ -397,11 +397,16 @@ services:
     environment:
       - NODE_ENV=production
       - PIXEL_ROOT=/pixel
+      - TASK_ID=velocity-monitor-1
+      - CI=true
+      - OPENCODE_TELEMETRY_DISABLED=true
+    # Override worker entrypoint to run velocity monitoring
+    entrypoint: []
     command: >-
       /bin/sh -c '
         while true; do
           echo "[$$(date)] Checking velocity..."
-          /pixel/scripts/maintenance/velocity-updater.sh >> /pixel/logs/velocity-updater.log 2>&1
+          /pixel/scripts/maintenance/velocity-updater.sh 2>&1
           echo "[$$(date)] Sleeping 5 minutes..."
           sleep 300
         done

@@ -36,7 +36,7 @@ log() {
 get_bitcoin_height() {
     local output height
     
-    output=$(docker exec "$BITCOIN_CONTAINER" bitcoin-cli -testnet \
+    output=$(/usr/bin/docker exec "$BITCOIN_CONTAINER" bitcoin-cli -testnet \
         -rpcuser="$BITCOIN_RPC_USER" \
         -rpcpassword="$BITCOIN_RPC_PASSWORD" \
         getblockcount 2>&1 || echo "ERROR")
