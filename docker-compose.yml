@@ -380,6 +380,38 @@ services:
       '
     restart: unless-stopped
 
+  # Velocity-Based Documentation Monitor
+  # Monitors Bitcoin sync velocity and triggers CONTINUITY.md updates at appropriate intervals
+  # Runs every 5 minutes to check velocity and trigger Syntropy cycles as needed
+  velocity-monitor:
+    build:
+      context: ./syntropy-core
+      dockerfile: Dockerfile.worker
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID:-999}"
+    volumes:
+      - ${HOST_PIXEL_ROOT:-.}:/pixel
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /pixel
+    environment:
+      - NODE_ENV=production
+      - PIXEL_ROOT=/pixel
+    command: >-
+      /bin/sh -c '
+        while true; do
+          echo "[$$(date)] Checking velocity..."
+          /pixel/scripts/maintenance/velocity-updater.sh >> /pixel/logs/velocity-updater.log 2>&1
+          echo "[$$(date)] Sleeping 5 minutes..."
+          sleep 300
+        done
+      '
+    restart: unless-stopped
+    networks:
+      - pixel-net
+    depends_on:
+      - bitcoin
+
   # Worker Container (spawned on-demand by Syntropy)
   # Not started by default - use docker compose run worker
   worker:

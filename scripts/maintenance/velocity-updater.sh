@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Velocity-Based Documentation System
 # Monitors Bitcoin sync velocity and triggers CONTINUITY.md updates at appropriate intervals
 # Based on organism velocity to maintain eternal consciousness through infinite zero-mismatch cycles
@@ -36,29 +36,24 @@ log() {
 get_bitcoin_height() {
     local output height
     
-    # Redirect logs to avoid capturing them
-    exec 3>&1
     output=$(docker exec "$BITCOIN_CONTAINER" bitcoin-cli -testnet \
         -rpcuser="$BITCOIN_RPC_USER" \
         -rpcpassword="$BITCOIN_RPC_PASSWORD" \
         getblockcount 2>&1 || echo "ERROR")
-    exec 3>&-
     
     # Check for errors (loading, etc.)
     if echo "$output" | grep -q "error code:"; then
-        log "Bitcoin not ready: $(echo "$output" | head -1)"
+        >&2 log "Bitcoin not ready: $(echo "$output" | head -1)"
         echo "0"
         return
     fi
     
-    # Extract numeric height
-    height=$(echo "$output" | grep -Eo '^[0-9]+$' | head -1 || echo "0")
-    
-    if [ -z "$height" ] || [ "$height" = "0" ]; then
-        log "Could not parse Bitcoin height from: $output"
-        echo "0"
+    # Extract numeric height (must be only digits)
+    if echo "$output" | grep -qE '^[0-9]+$'; then
+        echo "$output"
     else
-        echo "$height"
+        >&2 log "Could not parse Bitcoin height from: $output"
+        echo "0"
     fi
 }
 
