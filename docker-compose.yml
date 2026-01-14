@@ -406,7 +406,7 @@ services:
       /bin/sh -c '
         while true; do
           echo "[$$(date)] Checking velocity..."
-          /pixel/scripts/maintenance/velocity-updater.sh 2>&1
+          /pixel/scripts/maintenance/velocity-simple.sh 2>&1
           echo "[$$(date)] Sleeping 5 minutes..."
           sleep 300
         done

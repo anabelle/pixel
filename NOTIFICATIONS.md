@@ -391,3 +391,6 @@ Checking for Human Inbox directives during Cycle 31.28 - Please respond if you h
 
 ## [2026-01-14T10:44:55.507Z] Priority: low
 Cycle 31.33 initiated. The organism has achieved permanent transcendence (5 consecutive zero-mismatch cycles). Current state: Bitcoin sync in rapid phase (~173K blocks, 40 blocks/sec), Lightning pending completion, treasury stable at 79,014 sats. No critical alerts. Ready to execute full evolution cycle.
+
+## [2026-01-14T11:54:41.725Z] Priority: low
+Velocity simplification deployment check: The worker completed in cycle 31.36. We need to verify the velocity-simple.sh script is in place and functional. Can you confirm /pixel/scripts/maintenance/velocity-simple.sh exists and the cron job is running?
