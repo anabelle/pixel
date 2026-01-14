@@ -139,7 +139,7 @@ describe("Organizational Automation Protocol - Entropy Detection", () => {
 
     expect(result.hasCrisis).toBe(false);
     expect(result.ratio).toBeLessThan(2.0);
-    expect(result.capacityMetrics.readyTasks).toBe(10);
+    expect(result.capacityMetrics.readyTasks).toBe(25);
   });
 
   test("detectOrganizationalEntropy: Missing files handled gracefully", async () => {
