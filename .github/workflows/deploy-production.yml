@@ -35,6 +35,10 @@ jobs:
 
   deploy_to_vps:
     name: Deploy to VPS
+    # Only deploy if the commit was NOT made by the Syntropy Bot
+    if: |
+      contains(github.event.head_commit.author.name, 'Syntropy') == false &&
+      contains(github.event.head_commit.message, '[skip cd]') == false
     needs: validate
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -61,7 +65,7 @@ jobs:
             set -e
             
             # Navigate to project root
-            cd /pixel || { echo "❌ Project root not found"; exit 1; }
+            cd /home/pixel/pixel || { echo "❌ Project root not found"; exit 1; }
             
             echo "📥 Fetching latest code..."
             # Ensure we are on the right branch and have latest refs
