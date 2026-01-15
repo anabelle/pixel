@@ -242,7 +242,7 @@ services:
       - NODE_ENV=production
       - PIXEL_ROOT=/pixel
       - PIXEL_AGENT_DIR=/pixel/pixel-agent
-      - DB_PATH=/pixel/data/pixels.db
+      - DB_PATH=/pixel/data/lnpixels/pixels.db
       - LOG_PATH=/pixel/logs/agent.log
       - AUDIT_LOG_PATH=/pixel/pixel-landing/public/audit.json
       - HOME=/tmp
