@@ -7,18 +7,42 @@ on:
       - '**.md'
       - 'docs/**'
 
-# Prevent concurrent deployments which could race condition on the VPS lock
+# Prevent concurrent deployments
 concurrency:
   group: production_deploy
   cancel-in-progress: false
 
 env:
   VPS_USER: pixel
-  VPS_HOST: pixel.xx.kg
+  VPS_HOST: 65.181.125.80
 
 jobs:
+  # Skip deployment if commit is from Syntropy Bot (server-side commits)
+  check_author:
+    name: Check Commit Author
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Check if human commit
+        id: check
+        run: |
+          AUTHOR="${{ github.event.head_commit.author.name }}"
+          MESSAGE="${{ github.event.head_commit.message }}"
+          
+          # Skip if authored by Syntropy or has skip marker
+          if [[ "$AUTHOR" == *"Syntropy"* ]] || [[ "$MESSAGE" == *"[skip cd]"* ]] || [[ "$MESSAGE" == *"[skip ci]"* ]]; then
+            echo "Skipping deploy: commit from Syntropy or has skip marker"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "Human commit detected, proceeding with deploy"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          fi
+
   validate:
-    name: Validate Ecosystem
+    name: Validate Syntropy Core
+    needs: check_author
+    if: needs.check_author.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,21 +51,18 @@ jobs:
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
-      - name: Install dependencies
-        run: bun install
-      - name: Run Ecosystem Tests
-        run: npm test
-      # Add more validations here as they become available
+      # Only run syntropy-core tests (they don't need external services)
+      - name: Install Syntropy dependencies
+        run: cd syntropy-core && bun install
+      - name: Run Syntropy Tests
+        run: cd syntropy-core && bun test
 
   deploy_to_vps:
     name: Deploy to VPS
-    # Only deploy if the commit was NOT made by the Syntropy Bot
-    if: |
-      contains(github.event.head_commit.author.name, 'Syntropy') == false &&
-      contains(github.event.head_commit.message, '[skip cd]') == false
-    needs: validate
+    needs: [check_author, validate]
+    if: needs.check_author.outputs.should_deploy == 'true'
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Setup SSH
@@ -53,34 +74,33 @@ jobs:
 
       - name: Deploy via Git Strategy
         run: |
-          echo "🚀 Initiating Ultra-Resilient Deployment to ${{ env.VPS_HOST }}..."
-          
-          # We use a pure Git strategy on the VPS. 
-          # 1. Fetch latest state
-          # 2. Hard reset to match remote (Safe Single Source of Truth)
-          # 3. Update submodules
-          # 4. Rebuild & Restart
+          echo "🚀 Deploying to VPS..."
           
           ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "bash -s" << 'EOF'
             set -e
-            
-            # Navigate to project root
-            cd /home/pixel/pixel || { echo "❌ Project root not found"; exit 1; }
+            cd /home/pixel/pixel || exit 1
             
             echo "📥 Fetching latest code..."
-            # Ensure we are on the right branch and have latest refs
             git fetch origin master
-            
-            echo "🔄 Synchronizing state (Hard Reset)..."
-            # This is the "Ultra Resilient" part: We do NOT try to merge on deploy.
-            # We treat the repo as the source of truth.
             git reset --hard origin/master
             
             echo "📦 Updating submodules..."
             git submodule update --init --recursive
             
-            echo "🏗️  Executing Safe Deploy Script..."
-            # Pass strict execution
-            ./scripts/safe-deploy.sh
+            echo "🏗️  Rebuilding containers..."
+            docker compose build syntropy agent web landing
             
+            echo "🔄 Restarting services..."
+            docker compose up -d --remove-orphans
+            
+            echo "⏳ Waiting for services to start..."
+            sleep 10
+            
+            echo "🔄 Reloading nginx..."
+            docker exec pixel-nginx-1 nginx -s reload || docker restart pixel-nginx-1
+            
+            echo "🧹 Cleaning up..."
+            docker image prune -f
+            
+            echo "✅ Deployment complete!"
           EOF
