@@ -5,9 +5,11 @@
 [submodule "pixel-agent"]
 	path = pixel-agent
 	url = https://github.com/anabelle/pixel-agent.git
+	branch = master
 [submodule "pixel-landing"]
 	path = pixel-landing
 	url = https://github.com/anabelle/pixel-landing.git
+	branch = master
 [submodule "syntropy-core"]
 	path = syntropy-core
 	url = https://github.com/anabelle/syntropy-core.git
