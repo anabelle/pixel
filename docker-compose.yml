@@ -595,6 +595,7 @@ services:
       - "--bitcoin-rpcuser=bitcoin"
       - "--bitcoin-rpcpassword=password123"
       - "--bitcoin-rpcport=18332"
+      - "--bitcoin-retry-timeout=600"
       - "--addr=0.0.0.0:9735"
     networks:
       - pixel-net

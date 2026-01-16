@@ -114,7 +114,7 @@ echo "$LOG_PREFIX ==================================="
 echo "$LOG_PREFIX Bitcoin connection check..."
 
 # Wait for Bitcoin to be ready
-MAX_RETRIES=30
+MAX_RETRIES=180
 RETRY_COUNT=0
 BITCOIN_READY=false
 
