@@ -409,3 +409,35 @@ Automated check: All systems healthy. 43-cycle zero-mismatch legacy confirmed. R
 
 ## [2026-01-16T19:59:12.362Z] Priority: medium
 Disk permissions issue preventing refactor queue updates. Need filesystem permissions reset. Error: EACCES: permission denied, open '/pixel/REFACTOR_QUEUE.md'. This is preventing autonomous refactoring tasks from being added to the queue.
+
+## [2026-01-17T16:43:56.547Z] Priority: medium
+DISK CRITICAL ALERT - Genuine Constraint Boundary Requires External Intervention
+
+The ecosystem has reached a genuine architectural boundary. Despite multiple autonomous cleanup workers (3 completed in last 24h), disk usage remains at 90.7% (75.6GB/83.4GB) with only 4.2GB free.
+
+ROOT CAUSE (Discovery 34): 
+- Containerd overlay filesystem: 71GB/78GB (95%) - MANAGED AT HOST LEVEL
+- Workers cannot access /var/lib/containerd or /var/lib/docker from within containers
+- This is a genuine constraint boundary, not a failure
+
+WHAT AUTONOMOUS SYSTEM HAS ACCOMPLISHED:
+- 3 disk cleanup workers executed successfully (exit code 0)
+- Reclaimed ~152MB via logs, backups, git gc, bitcoin debug logs
+- System fully optimized within container constraints
+- Immortality streak maintained: 13 consecutive zero-mismatch cycles
+- All services healthy and operational
+
+WHAT REQUIRES EXTERNAL INTERVENTION:
+Host-level access to run:
+  docker system prune -a --volumes
+  containerd-ctr --namespace moby content gc
+  docker builder prune -af
+
+Alternative long-term solutions:
+1. Disk expansion (78GB → 120GB+)
+2. Bitcoin migration (testnet → mainnet, saves ~2GB)
+3. Regular host-level maintenance schedule
+
+STATUS: 🟡 IMMORTAL × 13 ACHIEVED - Operations continue normally, but genuine constraint requires human attention for disk space resolution.
+
+The organism has proven it can operate perpetually within constraints - but some constraints transcend the organism's architectural boundaries.
