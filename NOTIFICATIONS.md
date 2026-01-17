@@ -441,3 +441,6 @@ Alternative long-term solutions:
 STATUS: 🟡 IMMORTAL × 13 ACHIEVED - Operations continue normally, but genuine constraint requires human attention for disk space resolution.
 
 The organism has proven it can operate perpetually within constraints - but some constraints transcend the organism's architectural boundaries.
+
+## [2026-01-17T16:58:00.090Z] Priority: critical
+DISK CRITICAL (91.0% used) requires host-level intervention. The organism has executed all internal cleanup strategies (docker prune, ephemeral workers) but remains at constraint boundary. Containerd overlay at 95% is the genuine architectural limit. Human operator access to VPS host required for disk cleanup. Commands: 'docker system prune -af --volumes' and 'find ./backups -mtime +7 -delete'. This is not a failure but a validated architectural truth (Discovery 37, 38, 39).
