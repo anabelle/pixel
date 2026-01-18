@@ -539,6 +539,13 @@ services:
   bitcoin:
     image: ruimarinho/bitcoin-core:24
     container_name: pixel-bitcoin-1
+    # DISK SPACE FIX (2026-01-18): Bitcoin logs grew to 53GB causing disk exhaustion.
+    # Added log rotation to prevent this from recurring.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
     command: >
       bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=100 -dbcache=256
     ports:
@@ -572,6 +579,11 @@ services:
   lightning:
     image: elementsproject/lightningd:v24.11.2
     container_name: pixel-lightning-1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       bitcoin:
         condition: service_healthy
