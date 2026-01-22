@@ -266,3 +266,116 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 ---
 
 ---
+
+## 📋 Phase 6: Action-Oriented Tasks (2026-01-22)
+
+### T100: Add Nostr Engagement Metrics Endpoint ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+GOAL: Create an API endpoint that returns real engagement metrics.
+
+INSTRUCTIONS:
+1. Add /api/metrics endpoint to pixel-landing
+2. Query PostgreSQL for Nostr interaction data from agent logs
+3. Return JSON with posts_today, replies_received, zaps_received, unique_interactions
+4. Cache results for 5 minutes to reduce DB load
+
+FILES TO MODIFY:
+- pixel-landing/src/app/api/metrics/route.ts (create new)
+
+VERIFY:
+curl https://pixel.xx.kg/api/metrics
+```
+
+---
+
+### T101: Create Cycle Summary Tool ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+GOAL: Replace verbose diary entries with concise cycle summaries.
+
+INSTRUCTIONS:
+1. Create new tool writeCycleSummary in syntropy-core
+2. Summary format max 100 words - Tasks completed, Metrics, Actions, Status
+3. Only write diary for NOTABLE events like feature shipped or error fixed
+4. Update system prompt to use writeCycleSummary instead of writeDiary
+
+EXPECTED OUTPUT:
+Cycle 93: 1 task completed T100. Memory 45 percent. Posted to Nostr. Status: Productive.
+
+VERIFY:
+Check audit.json for new writeCycleSummary entries
+```
+
+---
+
+### T102: Archive Failed Queue Tasks ⬜ READY
+**Effort**: 15 min | **Risk**: None | **Parallel-Safe**: ✅
+
+```
+GOAL: Clean up the REFACTOR_QUEUE by archiving all FAILED tasks.
+
+INSTRUCTIONS:
+1. Move T041 T043 T045 T065 T078 to REFACTOR_ARCHIVE.md
+2. Add failure summary for each
+3. Leave only READY tasks in REFACTOR_QUEUE.md
+4. Update CONTINUITY.md to reflect clean queue
+
+VERIFY:
+Count of FAILED in REFACTOR_QUEUE should be 0
+T041 should exist in REFACTOR_ARCHIVE.md
+```
+
+---
+
+### T103: Implement Progress-Based Self-Examination ⬜ READY
+**Effort**: 45 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+GOAL: Modify self-examination to measure PROGRESS not just EXISTENCE.
+
+CURRENT BEHAVIOR:
+- Checks if containers are running
+- Reports healthy if things exist
+- Validates nothing meaningful
+
+NEW BEHAVIOR:
+- Track tasks completed this cycle
+- Track tasks blocked with reasons
+- Compare metrics to previous cycle
+- Report healthy only if PROGRESS was made
+
+INSTRUCTIONS:
+1. Modify syntropy-core/src/self-examination.ts
+2. Add progress tracking fields tasksCompletedThisCycle and tasksAttempted
+3. Change health calculation to require actual progress
+
+VERIFY:
+Run a cycle and check audit.json for new examination format
+```
+
+---
+
+### T104: Add LNPixels Revenue Dashboard Widget ⬜ READY
+**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+GOAL: Display real-time LNPixels activity on pixel.xx.kg.
+
+INSTRUCTIONS:
+1. Query lnpixels API for today activity
+2. Create dashboard component showing pixels placed, revenue in sats, active sessions
+3. Add to landing page or create /dashboard route
+
+FILES:
+- pixel-landing/src/app/locale/dashboard/page.tsx new
+- pixel-landing/src/app/api/lnpixels-stats/route.ts new
+
+VERIFY:
+Visit https://pixel.xx.kg/en/dashboard and see live data
+```
+
+---
+
