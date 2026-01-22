@@ -568,10 +568,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1200M
+          memory: 1500M
           cpus: "1"
         reservations:
-          memory: 700M
+          memory: 1000M
 
   # Core Lightning (CLN) - Testnet Deployment
   # Operational reserve: 25,000 sats from 79,014 sats treasury
