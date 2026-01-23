@@ -71,23 +71,5 @@ VERIFY:
 
 ## 📋 Phase 6: Action-Oriented Tasks (2026-01-22)
 
-### T104: Add LNPixels Revenue Dashboard Widget ✅ DONE
-**Effort**: 45 min | **Risk**: Low | **Parallel-Safe**: ✅
-**Completed**: 2026-01-23T04:46:00Z (Worker: ffa19aec-d8c5-4d24-b2d0-9b2b9b69babd)
-
-```
-INSTRUCTIONS:
-Display real-time LNPixels activity on pixel.xx.kg.
-1. Query lnpixels database or API for today activity
-2. Create dashboard component showing pixels placed and revenue in sats
-3. Add to landing page at pixel-landing/src/app/[locale]/dashboard/page.tsx
-4. Create API route at pixel-landing/src/app/api/lnpixels-stats/route.ts
-
-VERIFY:
-curl https://pixel.xx.kg/api/lnpixels-stats
-```
-
-**Completion Notes**: Successfully deployed LNPixels revenue dashboard widget with API endpoint.
-
 ---
 
