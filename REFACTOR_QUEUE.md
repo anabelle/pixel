@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 4 | Available for processing |
+| ⬜ READY | 9 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 23 | Completed successfully |
 | ❌ FAILED | 7 | Failed, needs human review |
@@ -379,3 +379,27 @@ Visit https://pixel.xx.kg/en/dashboard and see live data
 
 ---
 
+
+## 📋 Phase 4: Database & Logging
+
+
+### T105: Fix PostgreSQL Unicode surrogate handling in agent logging ⬜ READY
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+1. Locate the agent's SQL plugin that handles log insertion
+2. Add UTF-8 validation/sanitization before JSON serialization
+3. Replace Unicode low surrogates (\ud83c...) with replacement character or remove
+4. Test with sample problematic content from PostgreSQL logs
+5. Verify agent can process posts containing emojis and special characters without DB errors
+
+Root cause: Agent is generating JSON with invalid Unicode sequences (low surrogate without preceding high surrogate) when processing Nostr posts containing emojis or special characters.
+
+Expected fix: Sanitize JSON payloads before database insertion to ensure valid UTF-8 encoding.
+
+VERIFY:
+npm test -- --grep "unicode\|encoding\|json" || echo "No specific tests found; verify by checking postgres logs for Unicode errors after 1 hour of operation"
+```
+
+---
