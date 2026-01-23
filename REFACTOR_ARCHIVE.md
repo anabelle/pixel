@@ -6,6 +6,8 @@
 ---
 
 ## 📜 Completed Tasks Log
+| **T100** | ✅ DONE | Add Nostr Engagement Metrics Endpoint ✅ DONE | 2026-01-23 | Docu-Gardener |
+
 | **T077** | ✅ DONE | Write Trust-Narrative Documentation from Insights ✅ DONE | 2026-01-10 | Docu-Gardener |
 
 | **T076** | ✅ DONE | Generate Trust-Narrative Insights from Pattern Analysis ✅ DONE | 2026-01-10 | Docu-Gardener |

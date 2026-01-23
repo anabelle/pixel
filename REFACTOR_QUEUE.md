@@ -131,23 +131,6 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 
 ## 📋 Phase 6: Action-Oriented Tasks (2026-01-22)
 
-### T100: Add Nostr Engagement Metrics Endpoint ✅ DONE
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
-
-```
-INSTRUCTIONS:
-Create an API endpoint that returns real engagement metrics.
-1. Add /api/metrics endpoint to pixel-landing at src/app/api/metrics/route.ts
-2. Query PostgreSQL for Nostr interaction data from agent logs
-3. Return JSON with posts_today, replies_received, zaps_received, unique_interactions
-4. Cache results for 5 minutes to reduce DB load
-
-VERIFY:
-curl https://pixel.xx.kg/api/metrics
-```
-
----
-
 ### T101: Create Cycle Summary Tool ⬜ READY
 **Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 
