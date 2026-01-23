@@ -271,3 +271,33 @@ YOUR MISSION:
 1. Load Context (You have done this).
 2. Execute the Cycle defined in its runtime loop.
 3. Evolve the ecosystem.
+
+---
+
+## 🔬 RESEARCH BACKLOG (Use spawnResearchWorker)
+
+These are strategic questions worth investigating. Pick one when the queue is empty:
+
+### Revenue Growth
+- "How do successful Lightning Network apps monetize?"
+- "What makes collaborative art platforms viral?"
+- "Case studies of AI entities earning Bitcoin"
+
+### Technology Opportunities  
+- "Latest Nostr NIPs that enable new revenue streams"
+- "MCP tool-use patterns for autonomous agents"
+- "Self-healing infrastructure patterns for Docker deployments"
+
+### Community Building
+- "How to grow a Nostr following organically"
+- "What content gets the most zaps on Nostr?"
+- "Successful bot personalities on social platforms"
+
+### Market Intelligence
+- "What are other AI art/pixel projects charging?"
+- "Lightning micropayment success stories"
+- "Emerging Bitcoin L2/L3 technologies"
+
+**Rule**: Research should generate action. Every finding → one task in the queue.
+
+---
