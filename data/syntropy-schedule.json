@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-23T22:14:37.982Z","reason":"Worker system broken with 100% failure rate. Cooldown active for 48s. Need to wait, then read provider config to find correct model name, fix worker config, and implement revenue automation. Every cycle without automation = 1,441 sats lost."}
+{"nextRunAt":"2026-01-24T00:17:16.550Z","reason":"Waiting for human to fix REFACTOR_QUEUE.md permissions and verify worker system. Treasury frozen, no ready tasks, system idle. Will check back in 2 hours."}
