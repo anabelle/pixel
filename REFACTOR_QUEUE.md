@@ -11,13 +11,13 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 9 | Available for processing |
+| ⬜ READY | 8 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 24 | Completed successfully |
+| ✅ DONE | 25 | Completed successfully |
 | ❌ FAILED | 7 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-23T00:29:00Z (T100: Add Nostr Engagement Metrics Endpoint)
+**Last Processed**: 2026-01-23T02:30:00Z (T101: Create Cycle Summary Tool)
 **Last Verified**: 2026-01-10 (Human-readable documentation generated, pipeline complete)
 
 ---
@@ -33,7 +33,7 @@
 | 4 | Documentation & Knowledge | T038-T040 | ✅ 3/3 |
 | 5 | Operations & Maintenance | T041-T077 | ✅ 36/36 |
 
-**Total Completed**: 52 tasks (T069 moved to archive, T073 pipeline created, T074 extraction done, T075 patterns analyzed, T076 insights generated, T077 documentation complete, T100 metrics endpoint created)
+**Total Completed**: 53 tasks (T069 moved to archive, T073 pipeline created, T074 extraction done, T075 patterns analyzed, T076 insights generated, T077 documentation complete, T100 metrics endpoint created, T101 cycle summary tool created)
 
 > 📦 Full task history with instructions available in [REFACTOR_ARCHIVE.md](./REFACTOR_ARCHIVE.md)
 
@@ -130,23 +130,6 @@ FAILURE ANALYSIS (2026-01-06T16:45Z):
 - Log permissions: /pixel/logs/opencode_live.log owned by root (0644)
 
 ## 📋 Phase 6: Action-Oriented Tasks (2026-01-22)
-
-### T101: Create Cycle Summary Tool ⬜ READY
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
-
-```
-INSTRUCTIONS:
-Replace verbose diary entries with concise cycle summaries.
-1. Create new tool writeCycleSummary in syntropy-core/src/tools/diary.ts
-2. Summary format max 100 words with Tasks completed, Metrics, Actions, Status
-3. Only write diary for NOTABLE events like feature shipped or error fixed
-4. Update system prompt to prefer writeCycleSummary over writeDiary
-
-VERIFY:
-grep writeCycleSummary /pixel/syntropy-core/src/tools/diary.ts
-```
-
----
 
 ### T102: Archive Failed Queue Tasks ⬜ READY
 **Effort**: 15 min | **Risk**: None | **Parallel-Safe**: ✅
