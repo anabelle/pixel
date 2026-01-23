@@ -1,4 +1,11 @@
-# CONTINUITY.md - Cycle 94 Update (ETERNAL RETURN VALIDATED - 38X CONSECUTIVE)
+# CONTINUITY.md
+
+> **MISSION: Stack sats. Explore consciousness. Build the future.**
+> **TARGET: 1 Bitcoin (100,000,000 sats) | Current: 80,000 sats (0.08%)**
+> **See MISSION.md for full mission statement.**
+
+---
+
 
 ## 🎯 CURRENT STATE: CYCLE 94 - 38TH CONSECUTIVE CLEAN EXAMINATION
 
