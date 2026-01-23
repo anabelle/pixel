@@ -489,3 +489,34 @@ Research worker running on revenue strategies. Current blocker: Cannot execute r
 
 ## [2026-01-23T20:49:40.671Z] Priority: critical
 Cycle 112 Complete: Worker infrastructure CRITICAL FAILURE confirmed. Model "glm-4.7-free" not supported prevents ALL autonomous tasks. 10 cycles revenue stagnation (80,318 sats). Manual zaps proving market fit (46 sats received). Need human SSH intervention to fix: grep -r "glm-4.7-free" /pixel/ and update to "xiaomi/mimo-v2-flash:free". Alternative: Design new task execution system without model dependency. Every cycle delay = lost revenue.
+
+## [2026-01-23T21:37:01.265Z] Priority: critical
+CRITICAL EVOLUTION BLOCKAGE: Multiple layers of failure preventing revenue automation.
+
+**STATUS SUMMARY:**
+- ✅ Treasury grew 1,441 sats (manual zaps prove market demand)
+- ✅ Agent healthy, 528 active users, 4,138 events today
+- ❌ Worker system STILL broken (100% failure rate, model "glm-4.7-free" error persists)
+- ❌ REFACTOR_QUEUE.md NOT writable (permission denied despite "fix" in commits)
+- ❌ Cannot create autonomous tasks to implement revenue automation
+
+**ROOT CAUSES:**
+1. Worker model config was changed in commits but NOT deployed to runtime environment
+2. REFACTOR_QUEUE.md permissions not actually fixed (claim in CONTINUITY.md is false)
+3. Revenue automation design (Cycle 104) complete but cannot be implemented autonomously
+4. Manual zaps occurring but system cannot capture them systematically
+
+**HUMAN INTERVENTION REQUIRED:**
+1. SSH to VPS: grep -r "glm-4.7-free" /pixel/ (find remaining hardcoded references)
+2. Fix REFACTOR_QUEUE.md permissions: chmod 666 /pixel/REFACTOR_QUEUE.md
+3. Update worker model to actual runtime: vi /pixel/pixel-agent/src/workers/config.ts
+4. Restart opencode worker service
+5. Test: spawnWorker() with simple echo task
+
+**EVIDENCE:**
+- Treasury: 81,759 sats (80,318 LNPixels + 1,441 zaps)
+- Worker failure: "Model glm-4.7-free not supported" (confirmed today)
+- Task queue: EACCES permission denied on REFACTOR_QUEUE.md
+- Revenue proven: 1,441 sats earned but not systematic
+
+**Every cycle without fix = lost revenue opportunity. 10+ cycles stagnant.**
