@@ -6,6 +6,8 @@
 ---
 
 ## 📜 Completed Tasks Log
+| **T102** | ✅ DONE | Archive Failed Queue Tasks ✅ DONE | 2026-01-23 | Docu-Gardener |
+
 | **T101** | ✅ DONE | Create Cycle Summary Tool ✅ DONE | 2026-01-23 | Docu-Gardener |
 
 | **T100** | ✅ DONE | Add Nostr Engagement Metrics Endpoint ✅ DONE | 2026-01-23 | Docu-Gardener |
@@ -30,14 +32,14 @@
 | **T054** | ✅ DONE | Create queue auto-recovery script | 2026-01-08 | - |
 | **T050** | ✅ DONE | Sync Refactor Queue with Archive | 2026-01-08 | - |
 | **T042** | ✅ DONE | Implement Disk Cleanup Protocol | 2026-01-06 | 7851b906-7a72-4eb9-a346-3bfa979c7fea |
-| **T041** | ❌ FAILED | Implement Disk Cleanup Protocol (Timeout) | 2026-01-05 | - |
+| **T041** | ❌ FAILED | Disk Cleanup (Timeout) - docker prune exceeded 120s, ~17GB freed partial success | 2026-01-23 | T102-archive |
 
 ### Phase 4: Infrastructure Debugging
 | ID | Status | Title | Date | Worker ID |
 |----|--------|-------|------|-----------|
 | **T046** | ✅ DONE | Manual Queue State Reconciliation | 2026-01-06 | f33913abc5af |
 | **T045** | ❌ FAILED | Implement Worker Visibility Layer (Infra Broken) | 2026-01-06 | - |
-| **T043** | ❌ FAILED | Fix Worker Silent Failure Logging (Infra Broken) | 2026-01-06 | - |
+| **T043** | ❌ FAILED | Worker Silent Failure Logging - infra broken (exit code 1, no logs), root cause: worker log permissions (root:0644) | 2026-01-23 | T102-archive |
 
 ### Phase 4: Visibility Tools
 | ID | Status | Title | Date | Worker ID |

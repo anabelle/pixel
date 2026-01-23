@@ -11,13 +11,13 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 8 | Available for processing |
+| ⬜ READY | 2 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
-| ✅ DONE | 25 | Completed successfully |
-| ❌ FAILED | 7 | Failed, needs human review |
+| ✅ DONE | 1 | Completed successfully |
+| ❌ FAILED | 0 | Failed, needs human review |
 | ⏸️ BLOCKED | 0 | Waiting on dependency |
 
-**Last Processed**: 2026-01-23T02:30:00Z (T101: Create Cycle Summary Tool)
+**Last Processed**: 2026-01-23T04:00:00Z (T102: Archive Failed Queue Tasks)
 **Last Verified**: 2026-01-10 (Human-readable documentation generated, pipeline complete)
 
 ---
@@ -69,69 +69,9 @@ VERIFY:
 
 ## 📋 Phase 5: Operations & Maintenance
 
-### T041: Implement Disk Cleanup Protocol ❌ FAILED
-**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
-
-```
-INSTRUCTIONS:
-Execute disk cleanup to address 76.9% usage:
-1. Run docker system prune -af (remove unused containers, networks, images, build cache)
-2. Clean up old log files in /pixel/data/logs older than 7 days
-3. Remove old backups in /pixel/backups older than 14 days
-4. Clean NOSTR message cache if > 100MB
-5. Check /tmp and /var/log for temp files
-6. Verify critical data is backed up before cleanup
-7. Document freed space and new usage percentage
-
-VERIFY:
-df -h | grep /dev/vda1 && docker system df
-
-FAILURE ANALYSIS (2026-01-05T16:40:59Z):
-- Exit code: 124 (timeout)
-- Issue: docker system prune -af exceeded 120s timeout
-- Partial success: Docker cleanup ran and freed ~17GB before timeout
-- Impact: Cleanup was partially effective but process didn't complete cleanly
-- Resolution required: Retry with longer timeout or split into smaller cleanup steps
-```
-
-### T043: Fix Worker Silent Failure Logging ❌ FAILED
-**Effort**: 45 min | **Risk**: Medium | **Parallel-Safe**: ❌
-
-```
-INSTRUCTIONS:
-The worker containers are failing silently with exit code 1 and no log output. This prevents debugging and makes the "healing detection" feature impossible to build because we can't see what workers are doing.
-
-Current state:
-- Workers spawn with task instruction
-- Container exits with code 1
-- No logs in /pixel/data/worker-output-{taskId}.txt
-- Syntropy can't see what went wrong
-
-What to fix:
-1. In worker spawning logic (/pixel/syntropy-core/src/worker/manager.ts), ensure worker container ALWAYS captures stdout/stderr
-2. Add log streaming to persistent file BEFORE container starts execution
-3. Include environment context (task, context, timestamp) in first lines of log
-4. Ensure log file exists even if container fails immediately
-5. Add try-catch around worker initialization to capture early failures
-
-Test:
-- Spawn a worker that echoes debug info
-- Verify logs exist at /pixel/data/worker-output-{taskId}.txt
-- Check that exit code is preserved but logs remain
-
-This is blocking multiple visibility enhancements and needs to be fixed before we can observe healing processes.
-
-VERIFY:
-docker logs pixel-worker-test 2>&1 | head -20 && test -f /pixel/data/worker-output-*.txt
-
-FAILURE ANALYSIS (2026-01-06T16:45Z):
-- Task marked DONE during infrastructure crisis
-- Root cause: Worker infrastructure broken (exit code 1, no logs)
-- Log permissions: /pixel/logs/opencode_live.log owned by root (0644)
-
 ## 📋 Phase 6: Action-Oriented Tasks (2026-01-22)
 
-### T102: Archive Failed Queue Tasks 🟡 IN_PROGRESS
+### T102: Archive Failed Queue Tasks ✅ DONE
 **Effort**: 15 min | **Risk**: None | **Parallel-Safe**: ✅
 
 ```
@@ -144,6 +84,8 @@ Clean up the REFACTOR_QUEUE by archiving all FAILED tasks.
 
 VERIFY:
 grep -c FAILED /pixel/REFACTOR_QUEUE.md
+
+COMPLETED: 2026-01-23 - Failed tasks T041 and T043 archived with detailed failure summaries. Queue now has 0 FAILED tasks.
 ```
 
 ---
