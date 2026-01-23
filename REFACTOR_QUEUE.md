@@ -73,43 +73,6 @@ VERIFY:
 
 ---
 
-
 ## 📋 Phase 2: Revenue Automation
-
-
-### T001: Add NIP-57 Zap Receipt Processing to Nostr Plugin ✅ DONE
-**Effort**: 90 min | **Risk**: Medium | **Parallel-Safe**: ✅
-
-```
-INSTRUCTIONS:
-**CRITICAL REVENUE TASK**
-
-**OBJECTIVE**: Add automated zap receipt tracking to the Nostr plugin to capture revenue currently being missed.
-
-**FILES TO MODIFY**:
-1. `/pixel-agent/plugin-nostr/lib/service.js` - Add NIP-57 event kind (9735) handling
-2. `/pixel-agent/plugin-nostr/lib/handlers/` - Create new zapReceiptHandler.js
-3. `/pixel-agent/plugin-nostr/lib/revenueTracker.js` - New file for running totals
-
-**IMPLEMENTATION**:
-1. Add event kind 9735 (zap receipt) to the subscription filters
-2. Create handler that extracts:
-   - Amount from zap description tags
-   - Payer pubkey (for attribution)
-   - Payment hash (for uniqueness)
-3. Update treasury in real-time via LNPixels API
-4. Log revenue events to persistent storage
-5. Trigger celebratory post when threshold reached (e.g., every 1000 sats)
-
-**VERIFICATION**:
-- Check logs for "zap receipt processed" entries
-- Verify treasury balance increases
-- Test with actual zap flow
-
-**CONTEXT**: Zaps are flowing (46 sats visible in Nostr feed) but not being captured. This task fixes the immediate revenue leak without requiring worker infrastructure.
-
-VERIFY:
-grep -r "zap receipt" /pixel-agent/plugin-nostr/ && echo "Revenue tracking added successfully"
-```
 
 ---
