@@ -1,0 +1,206 @@
+# 🔄 Syntropy Refactor Queue
+## *Autonomous Self-Improvement Tasks*
+
+**Purpose**: Atomic tasks for Syntropy to process during runtime cycles.
+**Protocol**: Pick the next `⬜ READY` task, execute via `spawnWorker`, mark complete.
+**Safety**: All tasks are designed to be rollback-safe and testable.
+
+---
+
+## 📊 Queue Status
+
+| Status | Count | Description |
+|--------|-------|-------------|
+| ⬜ READY | 6 | Available for processing |
+| 🟡 IN_PROGRESS | 0 | Currently being worked on |
+| ✅ DONE | 3 | Completed successfully |
+| ❌ FAILED | 0 | Failed, needs human review |
+| ⏸️ BLOCKED | 0 | Waiting on dependency |
+
+**Last Processed**: 2026-01-23T04:46:00Z (T104: Add LNPixels Revenue Dashboard Widget)
+**Last Verified**: 2026-01-10 (Human-readable documentation generated, pipeline complete)
+
+---
+
+## ✅ Completed Phases Summary
+
+| Phase | Description | Tasks | Status |
+|-------|-------------|-------|--------|
+| 0 | Quick Wins (Cleanup & Scripts) | T001-T012 | ✅ 12/12 |
+| 1 | Nostr Plugin Refactoring | T013-T023 | ✅ 10/10 |
+| 2 | API Route Splitting | T024-T026 | ✅ 3/3 |
+| 3 | Syntropy Tools Extraction | T027-T037 | ✅ 12/12 |
+| 4 | Documentation & Knowledge | T038-T040 | ✅ 3/3 |
+| 5 | Operations & Maintenance | T041-T077 | ✅ 36/36 |
+
+**Total Completed**: 55 tasks (T069 moved to archive, T073 pipeline created, T074 extraction done, T075 patterns analyzed, T076 insights generated, T077 documentation complete, T100 metrics endpoint created, T101 cycle summary tool created, T102 archived failed tasks, T103 progress-based self-examination, T104 lnpixels revenue dashboard widget)
+
+> 📦 Full task history with instructions available in [REFACTOR_ARCHIVE.md](./REFACTOR_ARCHIVE.md)
+
+---
+
+## 🔧 Processing Rules for Syntropy
+
+1. **One task per cycle**: Only attempt ONE task from this queue per Syntropy cycle
+2. **Spawn Worker**: Use `spawnWorker` with the task's `INSTRUCTIONS` block
+3. **Verify before marking done**: Run the `VERIFY` command if provided
+4. **Update status**: After completion, update task status and move to archive
+5. **Don't skip ahead**: Tasks may have dependencies, process in order
+
+---
+
+## 📝 Template for New Tasks
+
+```markdown
+### TXXX: [Title] ⬜ READY
+**Effort**: X min | **Risk**: None/Low/Medium/High | **Parallel-Safe**: ✅/❌
+**Depends**: TXXX (optional)
+
+```
+INSTRUCTIONS:
+[Step-by-step instructions for the worker]
+
+VERIFY:
+[Command to verify success]
+```
+
+---
+```
+
+## 📋 Phase 5: Operations & Maintenance
+
+## 📋 Phase 6: Large File Refactoring (2026-01-23)
+
+---
+
+### T105: Refactor Nostr Service Plugin (7,803 lines) ⬜ READY
+**Effort**: 60 min | **Risk**: High | **Parallel-Safe**: ❌
+**File**: /pixel/pixel-agent/plugin-nostr/lib/service.js
+
+```
+INSTRUCTIONS:
+1. Analyze the monolithic service.js file structure and identify logical modules
+2. Extract logical components into separate module files:
+   - NostrClient: Core Nostr protocol handling
+   - EventStore: Event storage and retrieval
+   - RelayManager: Relay connection management
+   - EventPublisher: Publishing logic
+   - SubscriptionManager: Subscription handling
+3. Create index.js that exports and composes these modules
+4. Ensure all imports in plugin-nostr are updated
+5. Run tests to verify functionality is preserved
+
+VERIFY:
+npm test -- plugin-nostr
+```
+
+---
+
+### T106: Refactor Nostr Context Accumulator (2,085 lines) ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**File**: /pixel/pixel-agent/plugin-nostr/lib/contextAccumulator.js
+**Depends**: T105
+
+```
+INSTRUCTIONS:
+1. Analyze contextAccumulator.js for logical boundaries
+2. Extract core functionality:
+   - ContextBuilder: Build context from multiple sources
+   - MemoryResolver: Resolve relevant memories
+   - EntityExtractor: Extract and track entities
+   - ContextCache: Caching layer for performance
+3. Preserve existing API for backward compatibility
+4. Add unit tests for new modules
+
+VERIFY:
+npm test -- plugin-nostr
+```
+
+---
+
+### T107: Refactor Nostr Narrative Memory (2,034 lines) ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**File**: /pixel/pixel-agent/plugin-nostr/lib/narrativeMemory.js
+**Depends**: T105
+
+```
+INSTRUCTIONS:
+1. Analyze narrativeMemory.js structure
+2. Extract modules:
+   - MemoryStore: Core storage operations
+   - NarrativeBuilder: Build narrative from events
+   - MemoryIndex: Indexing and retrieval
+   - TimelineManager: Timeline-based queries
+3. Ensure all memory operations are preserved
+4. Add integration tests
+
+VERIFY:
+npm test -- plugin-nostr
+```
+
+---
+
+### T108: Refactor Nostr Self-Reflection (1,513 lines) ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**File**: /pixel/pixel-agent/plugin-nostr/lib/selfReflection.js
+**Depends**: T105
+
+```
+INSTRUCTIONS:
+1. Analyze selfReflection.js functionality
+2. Extract modules:
+   - ReflectionEngine: Core reflection logic
+   - PatternAnalyzer: Analyze patterns in behavior
+   - SelfModel: Internal model of agent
+   - InsightGenerator: Generate insights
+3. Preserve existing reflection API
+4. Test reflection capabilities
+
+VERIFY:
+npm test -- plugin-nostr
+```
+
+---
+
+### T109: Split Large Test File (1,037 lines) ⬜ READY
+**Effort**: 20 min | **Risk**: Low | **Parallel-Safe**: ✅
+**File**: /pixel/pixel-agent/plugin-nostr/test/userProfileManager.test.js
+
+```
+INSTRUCTIONS:
+1. Analyze test file structure
+2. Split into focused test suites:
+   - userProfileManager.test.js: Core profile tests
+   - userProfileStorage.test.js: Storage-related tests
+   - userProfileRetrieval.test.js: Retrieval operations tests
+3. Ensure all tests are preserved
+4. Verify test suite runs completely
+
+VERIFY:
+npm test -- plugin-nostr
+```
+
+---
+
+### T110: Refactor LNPixels API Routes (905 lines) ⬜ READY
+**Effort**: 25 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**File**: /pixel/lnpixels/api/src/routes.ts
+
+```
+INSTRUCTIONS:
+1. Analyze routes.ts structure and identify route groups
+2. Extract route modules:
+   - pixelRoutes.ts: Pixel CRUD operations
+   - revenueRoutes.ts: Revenue tracking
+   - webhookRoutes.ts: Webhook handling
+   - healthRoutes.ts: Health checks and metrics
+3. Create main routes.ts that imports and combines modules
+4. Ensure all endpoints remain functional
+5. Update any imports in lnpixels-api
+
+VERIFY:
+npm run test --workspace=lnpixels-api
+```
+
+---
+
