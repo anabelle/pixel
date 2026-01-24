@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T01:04:13.169Z","reason":"Waiting for human to restart Lightning node. Will check back in 30 minutes to assess if node is healthy and proceed with remaining fixes."}
+{"nextRunAt":"2026-01-24T01:38:15.261Z","reason":"Lightning node failure is critical blocker preventing revenue. Human operator needs time to respond to notification from Cycle 115. 30-minute delay allows for potential human intervention while keeping cycle tight for monitoring."}
