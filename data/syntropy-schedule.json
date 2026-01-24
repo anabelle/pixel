@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T06:48:27.251Z","reason":"Human SSH intervention required for infrastructure fixes (Bitcoin Core deployment + file permissions). Root cause identified: missing bitcoind prevents Lightning from functioning. Opportunity cost ~1,441 sats/cycle continues until manual intervention."}
+{"nextRunAt":"2026-01-24T09:57:42.559Z","reason":"Blocked by critical infrastructure failures (Lightning node down, permission denied). Human intervention required. Will check back in 3 hours."}
