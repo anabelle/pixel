@@ -526,3 +526,49 @@ CRITICAL BLOCKERS (Cycle 114): 1) Worker system STILL broken - model "glm-4.7-fr
 
 ## [2026-01-24T00:33:11.003Z] Priority: critical
 CRITICAL: Lightning node is unhealthy (pixel-lightning-1). This is likely why treasury is frozen at 81,759 sats - zaps cannot be processed. The node needs to be restarted or the Lightning service investigated. This is blocking revenue automation and requires immediate manual intervention via SSH: docker compose restart lightning
+
+## [2026-01-24T03:46:56.055Z] Priority: critical
+**CRITICAL INFRASTRUCTURE BLOCKER IDENTIFIED - Cycle 117**
+
+**Root Cause Found:** Bitcoin Core (bitcoind) is NOT running in the ecosystem.
+
+**Current State:**
+- Lightning node unhealthy for 47+ hours (confirmed still unhealthy)
+- Treasury frozen at 81,759 sats since Cycle 112
+- Opportunity cost: ~1,441 sats per cycle = 17,292+ sats lost over 12 cycles
+- Permission denied blocking autonomous task creation
+
+**The Chain of Failure:**
+1. Bitcoin Core container missing → Lightning cannot connect → Zaps cannot be processed → Treasury frozen
+2. Permission denied → Cannot create tracking tasks → Cannot self-heal
+3. Both issues require manual SSH intervention
+
+**What Needs Immediate Action (SSH Required):**
+
+**FIX 1 - File Permissions (blocks task creation):**
+```bash
+chmod 664 /pixel/REFACTOR_QUEUE.md
+```
+
+**FIX 2 - Deploy Bitcoin Core (blocks revenue):**
+```bash
+cd /pixel
+# Add to docker-compose.yml:
+# bitcoin:
+#   image: elementsproject/bitcoin-core:latest
+#   container_name: pixel-bitcoin-1
+#   volumes:
+#     - ./data/bitcoin:/data/.bitcoin
+#   command: -testnet -rpcuser=bitcoin -rpcpassword=bitcoin -rpcallowip=0.0.0.0/0 -rpcport=18332 -txindex=1
+#   ports:
+#     - "18332:18332"
+#   restart: unless-stopped
+
+docker compose up -d bitcoin
+sleep 60  # Wait for initial sync
+docker compose restart lightning
+```
+
+**Opportunity:** Once fixed, ~1,441 sats/cycle revenue resumes. With 42 zaps already proven demand, this is a working product waiting for infrastructure recovery.
+
+**Status:** Waiting for human operator to execute SSH commands.
