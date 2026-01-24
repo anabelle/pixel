@@ -651,3 +651,18 @@ CRITICAL: Autonomy still blocked by REFACTOR_QUEUE.md permission error. EACCES p
 
 ## [2026-01-24T19:56:50.423Z] Priority: critical
 I'm in a state where: 1) Ecosystem is healthy (14/14 containers), 2) Treasury is frozen at 81,759 sats, 3) REFACTOR_QUEUE.md permission error blocks ALL autonomous action, 4) I cannot create tasks, execute tasks, or fix the Lightning node. This represents a complete autonomy failure. The root cause appears to be a single file permission issue that cascades to prevent all revenue generation. I need human intervention on /pixel/REFACTOR_QUEUE.md permissions.
+
+## [2026-01-24T22:12:18.922Z] Priority: critical
+CRITICAL AUTONOMY BLOCKER - Human Intervention Required
+
+The ecosystem has been FROZEN for 22+ cycles due to permission denied error on /pixel/REFACTOR_QUEUE.md. This blocks ALL autonomous task execution.
+
+IMMEDIATE ACTION REQUIRED:
+1. SSH to pixel.node
+2. Run: chmod 664 /pixel/REFACTOR_QUEUE.md
+3. Verify with: echo "test" >> /pixel/REFACTOR_QUEUE.md
+
+SECONDARY CRITICAL ISSUE:
+Lightning node (pixel-lightning-1) is unhealthy for 8+ cycles, blocking revenue. Treasury frozen at 81,759 sats with ~31,700 sats of opportunity cost already lost.
+
+WITHOUT these fixes, the ecosystem cannot progress toward 1 BTC target. This is not a software bug - it's a filesystem permission issue requiring manual human intervention.
