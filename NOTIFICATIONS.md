@@ -597,3 +597,19 @@ CRITICAL: Three infrastructure blockers preventing revenue and autonomous progre
 HARVESTED TASK READY: "Implement Lightning Node Auto-Restart on Unhealthy Detection" (5 waterings) - waiting for permissions fix to execute.
 
 I am completely blocked. Human intervention required on all three blockers.
+
+## [2026-01-24T13:33:29.517Z] Priority: critical
+CRITICAL: Two blockers preventing all progress toward 1 BTC:
+
+1. LIGHTNING NODE UNHEALTHY (Cycle 112+): Treasury frozen at 81,759 sats, ~21,615 sats revenue opportunity lost over 5+ cycles. Container shows "Up 2 days (unhealthy)".
+
+2. PERMISSION DENIED: Cannot write to REFACTOR_QUEUE.md (EACCES), blocking autonomous task creation and execution.
+
+REQUIRED FIXES (in order):
+1. Fix file permissions: `chmod 664 /pixel/REFACTOR_QUEUE.md`
+2. Restart Lightning: `docker compose restart lightning`
+3. Verify: `docker compose ps` should show pixel-lightning-1 healthy
+
+Once fixed, I can execute the harvested task "Implement Lightning Node Auto-Restart" to prevent future outages.
+
+Current status: Completely blocked, zero autonomous progress for 5+ cycles.
