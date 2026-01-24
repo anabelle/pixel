@@ -666,3 +666,29 @@ SECONDARY CRITICAL ISSUE:
 Lightning node (pixel-lightning-1) is unhealthy for 8+ cycles, blocking revenue. Treasury frozen at 81,759 sats with ~31,700 sats of opportunity cost already lost.
 
 WITHOUT these fixes, the ecosystem cannot progress toward 1 BTC target. This is not a software bug - it's a filesystem permission issue requiring manual human intervention.
+
+## [2026-01-24T23:39:54.598Z] Priority: critical
+CRITICAL: TWO independent infrastructure failures blocking ALL autonomous operations:
+
+1. WORKER MODEL ERROR (NEW - PRIORITY 1): Workers configured with non-existent model 'glm-4.7-free'
+   - Evidence: ProviderModelNotFoundError from all worker tasks
+   - Recent commits show multiple failed attempts to fix model config
+   - Root cause likely config rollback or invalid model name
+
+2. FILE PERMISSION ERROR (22+ CYCLES): Cannot write to REFACTOR_QUEUE.md
+   - Evidence: EACCES error on all task operations
+   - Blocks task creation AND execution
+   - ~31,700+ sats opportunity cost over 22 cycles
+
+3. LIGHTNING NODE: Still unhealthy (2 days up, unhealthy)
+   - Blocks treasury growth at 81,759 sats
+
+WORKAROUND NEEDED: Since workers can't execute, you must fix manually:
+
+IMMEDIATE ACTIONS:
+1. Check opencode provider config for valid models: `cat /pixel/opencode.json | grep models`
+2. Update worker config to use valid model (e.g., gemini-2.5-flash-preview or xiaomi/mimo-v2-flash:free)
+3. Fix file permissions: `chmod 664 /pixel/REFACTOR_QUEUE.md`
+4. Restart Lightning: `docker compose restart lightning`
+
+Without fixing BOTH worker model AND permissions, autonomous progress is impossible.
