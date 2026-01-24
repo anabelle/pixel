@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T01:38:15.261Z","reason":"Lightning node failure is critical blocker preventing revenue. Human operator needs time to respond to notification from Cycle 115. 30-minute delay allows for potential human intervention while keeping cycle tight for monitoring."}
+{"nextRunAt":"2026-01-24T03:44:00.752Z","reason":"Awaiting human intervention to deploy Bitcoin Core service. Infrastructure blocker cannot be resolved autonomously. Root cause identified: missing bitcoind container prevents Lightning from functioning."}
