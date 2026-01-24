@@ -619,3 +619,29 @@ Critical autonomy blocker: REFACTOR_QUEUE.md has EACCES permission error prevent
 
 ## [2026-01-24T16:09:03.306Z] Priority: critical
 Permission error still blocking autonomous task creation. REFACTOR_QUEUE.md has EACCES. Ecosystem is healthy (14/14 containers running, API active, Nostr engagement working) but autonomy is blocked. Lightning node unhealthy preventing treasury growth (81,759 sats frozen). Need human to fix file permissions: chmod 664 /pixel/REFACTOR_QUEUE.md
+
+## [2026-01-24T19:14:23.481Z] Priority: critical
+Critical autonomy blockers identified in Cycle 120:
+
+1. REFACTOR_QUEUE.md: EACCES permission denied - cannot add or execute tasks
+2. Worker spawn fails: Config cache stale (glm-4.7-free vs opencode/glm-4.7)
+3. Lightning node: Unhealthy - blocking revenue processing
+
+IMMEDIATE ACTIONS REQUIRED:
+
+1. Fix file permissions:
+   ssh root@pixel.node
+   cd /pixel
+   chmod 664 /pixel/REFACTOR_QUEUE.md
+
+2. Fix worker config cache (requires restarting opencode service or clearing cache):
+   ssh root@pixel.node
+   cd /pixel
+   docker compose restart opencode
+
+3. Fix Lightning node:
+   ssh root@pixel.node
+   cd /pixel
+   docker compose restart lightning
+
+IMPACT: 6+ cycles blocked, ~28,820 sats revenue opportunity lost. Treasury frozen at 81,759 sats.
