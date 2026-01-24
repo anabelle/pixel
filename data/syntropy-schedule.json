@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T23:37:21.995Z","reason":"Waiting for human intervention to fix permission error and Lightning node. Infrastructure is healthy but autonomy is completely blocked by external issues (EACCES, Lightning unhealthy). Ready to execute tasks once permissions are restored."}
+{"nextRunAt":"2026-01-25T00:00:37.224Z","reason":"Worker spawn cooldown - waiting to retry with direct file inspection"}

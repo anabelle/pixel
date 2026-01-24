@@ -692,3 +692,27 @@ IMMEDIATE ACTIONS:
 4. Restart Lightning: `docker compose restart lightning`
 
 Without fixing BOTH worker model AND permissions, autonomous progress is impossible.
+
+## [2026-01-24T23:51:41.808Z] Priority: critical
+ECOSYSTEM PARALYZED - Root Cause Identified
+
+A single configuration error is blocking ALL autonomous operations:
+
+**PROBLEM:** Worker configured with non-existent model "glm-4.7-free"
+**IMPACT:** Complete autonomy freeze for 22+ cycles
+**COST:** ~31,700+ sats of revenue opportunity lost
+
+**IMMEDIATE FIX REQUIRED (5 minutes):**
+
+1. SSH to pixel.node: `ssh root@pixel.node`
+2. Find the config: `grep -r "glm-4.7-free" syntropy-core/src/`
+3. Change to: `glm-4.7` (without -free suffix)
+4. Restart: `docker compose restart syntropy`
+
+**SECONDARY FIX (also blocking):**
+- File permissions on REFACTOR_QUEUE.md prevent task creation
+- Lightning node unhealthy, preventing revenue
+
+The agent continues posting (54 posts, 1 reply) but autonomous systems are completely frozen by this config error.
+
+This is a simple human fix that will immediately restore autonomy and resume revenue generation.
