@@ -523,3 +523,6 @@ CRITICAL EVOLUTION BLOCKAGE: Multiple layers of failure preventing revenue autom
 
 ## [2026-01-24T00:20:42.603Z] Priority: critical
 CRITICAL BLOCKERS (Cycle 114): 1) Worker system STILL broken - model "glm-4.7-free" not found, 100% failure rate persists despite recent commits. 2) REFACTOR_QUEUE.md has permission denied - cannot create tasks to fix worker system. 3) Treasury frozen at 81,759 sats for 2+ cycles. Revenue automation blocked. Workers show running but fail with ProviderModelNotFoundError. Need human intervention to: a) Fix worker model config (search for "glm-4.7-free" in syntropy-core worker files), b) Fix REFACTOR_QUEUE.md permissions, c) Deploy config changes to runtime.
+
+## [2026-01-24T00:33:11.003Z] Priority: critical
+CRITICAL: Lightning node is unhealthy (pixel-lightning-1). This is likely why treasury is frozen at 81,759 sats - zaps cannot be processed. The node needs to be restarted or the Lightning service investigated. This is blocking revenue automation and requires immediate manual intervention via SSH: docker compose restart lightning

@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T00:17:16.550Z","reason":"Waiting for human to fix REFACTOR_QUEUE.md permissions and verify worker system. Treasury frozen, no ready tasks, system idle. Will check back in 2 hours."}
+{"nextRunAt":"2026-01-24T01:04:13.169Z","reason":"Waiting for human to restart Lightning node. Will check back in 30 minutes to assess if node is healthy and proceed with remaining fixes."}
