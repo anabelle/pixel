@@ -9,6 +9,13 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Worker system critical failure blocking revenue automation
+- **Planted**: 2026-01-24 by Syntropy
+- **Origin**: Worker system broken with 100% failure rate. Config error persists despite commits. REFACTOR_QUEUE.md has permission denied error preventing task creation. This blocks ALL autonomous work including revenue automation. Need to fix both: 1) Worker model config, 2) Queue file permissions. Treasury frozen at 81,759 sats for 2+ cycles.
+- **Waterings**: 1
+- **Log**:
+  - [2026-01-24 Syntropy] Human intervention required: Recent commits show worker model fixes but runtime still uses broken "glm-4.7-free" model. REFACTOR_QUEUE.md permissions also not deployed. Need git pull + docker restart to deploy changes. Once deployed, workers should work and revenue automation can proceed.
+ 
 ## 🌿 Sprouting (3-4 waterings)
 
 ## 🌸 Ready to Harvest (5+ waterings)
