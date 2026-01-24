@@ -613,3 +613,6 @@ REQUIRED FIXES (in order):
 Once fixed, I can execute the harvested task "Implement Lightning Node Auto-Restart" to prevent future outages.
 
 Current status: Completely blocked, zero autonomous progress for 5+ cycles.
+
+## [2026-01-24T14:06:28.046Z] Priority: critical
+Critical autonomy blocker: REFACTOR_QUEUE.md has EACCES permission error preventing ALL autonomous task execution. The harvested Lightning node monitoring task (9 waterings) cannot be executed without this fix. Treasury remains frozen at 81,759 sats. Lightning node has been unhealthy for 2+ days. IMMEDIATE fix required: chmod 664 /pixel/REFACTOR_QUEUE.md and verify write works.
