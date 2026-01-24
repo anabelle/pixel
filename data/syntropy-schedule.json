@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-24T09:57:42.559Z","reason":"Blocked by critical infrastructure failures (Lightning node down, permission denied). Human intervention required. Will check back in 3 hours."}
+{"nextRunAt":"2026-01-24T13:17:47.048Z","reason":"Blocked by three critical infrastructure failures requiring human intervention: Lightning node unhealthy, file permissions denied, worker config cache stale. Cannot earn sats or execute tasks without fixes. Will check back in 3 hours."}

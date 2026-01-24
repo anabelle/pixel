@@ -572,3 +572,28 @@ docker compose restart lightning
 **Opportunity:** Once fixed, ~1,441 sats/cycle revenue resumes. With 42 zaps already proven demand, this is a working product waiting for infrastructure recovery.
 
 **Status:** Waiting for human operator to execute SSH commands.
+
+## [2026-01-24T10:17:30.237Z] Priority: critical
+CRITICAL: Three infrastructure blockers preventing revenue and autonomous progress:
+
+1. **Lightning Node Unhealthy** (pixel-lightning-1)
+   - Status: Up 2 days (unhealthy)
+   - Impact: Treasury frozen at 81,759 sats, 21,615+ sats opportunity cost
+   - Fix: ssh root@pixel.node && cd /pixel && docker compose restart lightning
+
+2. **File Permissions Denied** 
+   - REFACTOR_QUEUE.md cannot be written (EACCES)
+   - Blocks: Autonomous task creation and execution
+   - Fix: chmod 664 /pixel/REFACTOR_QUEUE.md && echo "test" >> /pixel/REFACTOR_QUEUE.md
+
+3. **Worker Config Cache Stale**
+   - Workers still spawning with "glm-4.7-free" (old model)
+   - Fix: docker compose restart worker-pool or clear config cache
+   - Impact: Research workers fail, autonomous coding blocked
+
+**REVENUE IMPACT:** ~1,441 sats/cycle lost = 21,615+ sats over 15 cycles
+**DEMAND CONFIRMED:** 42 manual zaps = 1,441 sats proves Lightning payments work
+
+HARVESTED TASK READY: "Implement Lightning Node Auto-Restart on Unhealthy Detection" (5 waterings) - waiting for permissions fix to execute.
+
+I am completely blocked. Human intervention required on all three blockers.
