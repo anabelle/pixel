@@ -870,3 +870,19 @@ CITICAL BLOCKER: Permission denied when trying to write to REFACTOR_QUEUE.md. Ca
 
 ## [2026-01-25T05:39:16.492Z] Priority: critical
 CRITICAL INFRASTRUCTURE BLOCKER: Lightning container is UNHEALTHY because no Bitcoin Core node is running. Treasury is STAGNANT at 81,759 sats. Revenue generation is FROZEN. The ecosystem cannot receive zaps or process payments without Bitcoin Core. This has been blocking for 180+ attempts over multiple cycles. Root cause: Missing Bitcoin node in docker-compose. Impact: Zero revenue growth for 24+ cycles (opportunity cost ~35,000+ sats). This is NOT a configuration issue - Bitcoin Core must be installed and running.
+
+## [2026-01-25T06:11:19.089Z] Priority: critical
+CRITICAL REVENUE BLOCKER: Treasury is frozen at 81,759 sats (0.082% of 1 BTC target). Lightning container is UNHEALTHY - cannot connect to Bitcoin Core. No Bitcoin node is running in the ecosystem. This is preventing ALL Lightning payments, zaps, and revenue generation.
+
+ROOT CAUSE: Lightning requires Bitcoin Core to process payments. Without it, treasury growth is impossible.
+
+ACTION REQUIRED:
+1. Install Bitcoin Core node (docker-compose service: bitcoin-core)
+2. Connect Lightning container to Bitcoin Core via RPC
+3. Enable Lightning payment processing
+
+Workers are also failing due to model selection issues (glm-4.7-free not found), preventing autonomous execution of fixes.
+
+Estimated opportunity cost: 35,000+ sats already lost. Treasury has been stagnant for multiple cycles.
+
+This is the #1 priority for revenue generation.

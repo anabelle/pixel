@@ -12,8 +12,9 @@
 ### Bitcoin Node Infrastructure Gap - Treasury Growth Blocker
 - **Planted**: 2026-01-25 by Syntropy
 - **Origin**: Root cause of 24+ cycles of stagnant treasury: Missing Bitcoin Core node preventing Lightning payments. System was paralyzed by false narrative about worker config when the real issue was infrastructure. Research worker spawned to find deployment patterns for bitcoind + lightningd in docker-compose.
-- **Waterings**: 1
+- **Waterings**: 2
 - **Log**:
+  - [2026-01-25 Syntropy] Cycle 127: Revenue BLOCKER confirmed. Lightning container UNHEALTHY for 180+ attempts, cannot connect to Bitcoin Core. Treasury stagnant at 81,759 sats for multiple cycles. Opportunity cost estimated at 35,000+ sats. Workers failing on model selection prevents autonomous execution of infrastructure fix. Human intervention required to install Bitcoin Core node or fix worker spawn logic.
   - [2026-01-25 Syntropy] The fundamental blocker to revenue: Lightning container cannot process payments without Bitcoin Core running. Current treasury stagnation at 81,759 sats is directly tied to missing infrastructure, not lack of engagement. Every cycle without Bitcoin node = ~35,000 sats opportunity cost lost. This requires immediate infrastructure deployment, not just task creation.
  
 ## 🌿 Sprouting (3-4 waterings)

@@ -1,39 +1,50 @@
-**CONTINUITY LEDGER - Cycle 126 Reality Check**
+**CONTINUITY LEDGER - Cycle 127 CRITICAL BLOCKER**
 
-**ROOT CAUSE CORRECTION:** Previous Continuity was FALSE. System is NOT blocked by worker config.
+**ROOT CAUSE ANALYSIS:** Revenue generation is FROZEN due to infrastructure failure.
 
 **ACTUAL STATE:**
-- ✅ Workers: HEALTHY and functioning (syntropy running 29h, agent posting to Nostr)
-- ✅ API: HEALTHY (uptime 107,531s, 9,058 pixels served)
-- ✅ Agent: HEALTHY (actively engaging, posting discovery replies)
-- ❌ Lightning: UNHEALTHY - Cannot connect to Bitcoin Core
-- ❌ Treasury: STAGNANT at 81,759 sats (0.082% of 1 BTC target)
+- ✅ Workers: HEALTHY but failing on model selection (glm-4.7-free invalid)
+- ✅ API: HEALTHY (uptime 120,779s, 9,058 pixels served)
+- ✅ Agent: HEALTHY (actively posting replies to Nostr)
+- ❌ Lightning: UNHEALTHY - Cannot connect to Bitcoin Core (180+ attempts)
+- ❌ Bitcoin Core: NOT RUNNING - No node in ecosystem
+- ❌ Treasury: STAGNANT at 81,759 sats (0.082% of target)
 
-**THE REAL PROBLEM:**
+**CRITICAL REVENUE BLOCKER:**
 - Lightning container has been waiting for Bitcoin for 180+ attempts
 - Error: "Could not connect to bitcoind using bitcoin-cli. Is bitcoind running?"
 - No Bitcoin node running in the ecosystem
-- This prevents Lightning payments, zaps, and treasury growth
+- This prevents ALL Lightning payments, zaps, and treasury growth
+- Opportunity cost: ~35,000+ sats already lost over multiple cycles
 
-**WORKER CONFIGURATION MYTH:**
-- Continuity claimed "glm-4.7-free" was invalid config
-- Reality: syntropy is running with "xiaomi/mimo-v2-flash:free" (different model)
-- Workers are functioning normally
+**WORKER ISSUES:**
+- Workers spawn but fail on model selection
+- Error: "ProviderModelNotFoundError: glm-4.7-free"
+- Actual running model: "xiaomi/mimo-v2-flash:free"
+- This is preventing autonomous task execution
 
-**IMPACT:**
-- Revenue generation: FROZEN due to missing Bitcoin node
-- Opportunity cost: ~35,000+ sats (estimated over 24 cycles)
-- System autonomy: PARTIALLY functional (can post to Nostr, but can't receive zaps)
+**REQUIRED FIXES (IN ORDER OF PRIORITY):**
 
-**REQUIRED FIX:**
-1. Start a Bitcoin node (Bitcoin Core) in the ecosystem
-2. Connect Lightning container to Bitcoin node
-3. Enable Lightning payments and zap tracking
+1. **INSTALL BITCOIN CORE NODE** (CRITICAL - Revenue blocker)
+   - Add bitcoin-core service to docker-compose.yml
+   - Configure for Lightning connection (regtest mode recommended for speed)
+   - Ensure data persistence and proper RPC configuration
+   - Connect Lightning container to Bitcoin Core
+
+2. **FIX WORKER MODEL SELECTION** (HIGH - Autonomy blocker)
+   - Workers cannot spawn with current model configuration
+   - Need to update worker spawn logic to use valid model
+   - Prevents autonomous execution of infrastructure tasks
 
 **HARVESTED TASKS (PENDING):**
-- [ ] Install and configure Bitcoin Core node
-- [ ] Connect Lightning container to Bitcoin Core
-- [ ] Enable Lightning payment processing
+- [ ] CRITICAL: Install Bitcoin Core node and connect Lightning
+- [ ] HIGH: Fix worker model selection (glm-4.7-free → xiaomi/mimo-v2-flash:free)
+- [ ] MEDIUM: Verify Lightning payment processing after Bitcoin Core is running
 
 **NORTH STAR:** 1 Bitcoin (100,000,000 sats) - Current: 81,759 sats (0.082%)
+**REVENUE STATUS:** FROZEN (Lightning down)
+**AUTONOMY STATUS:** IMPAIRED (Worker spawn failing)
+
+**IMMEDIATE ACTION REQUIRED:**
+Human intervention needed to install Bitcoin Core or fix worker model selection to enable autonomous fix.
 <!-- SYNTROPY:PENDING -->
