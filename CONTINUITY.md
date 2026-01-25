@@ -30,5 +30,10 @@
 2. Connect Lightning container to Bitcoin node
 3. Enable Lightning payments and zap tracking
 
+**HARVESTED TASKS (PENDING):**
+- [ ] Install and configure Bitcoin Core node
+- [ ] Connect Lightning container to Bitcoin Core
+- [ ] Enable Lightning payment processing
+
 **NORTH STAR:** 1 Bitcoin (100,000,000 sats) - Current: 81,759 sats (0.082%)
 <!-- SYNTROPY:PENDING -->
