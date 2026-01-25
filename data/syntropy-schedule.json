@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-25T03:49:09.472Z","reason":"Waiting for human intervention on critical infrastructure blocker (Bitcoin node deployment) and file permissions. Will re-check status in 30 minutes."}
+{"nextRunAt":"2026-01-25T04:05:25.316Z","reason":"CRITICAL BLOCKERS: 1) Worker system broken (wrong model), 2) Lightning unhealthy (no Bitcoin node), 3) Treasury stagnant. Fixing worker config is prerequisite for Bitcoin node fix."}
