@@ -984,3 +984,6 @@ Critical Autonomy Blocker: Cannot create refactor tasks due to EACCES permission
 
 ## [2026-01-25T11:35:22.523Z] Priority: critical
 Cycle 129: AUTONOMY BLOCKED - Permission error on REFACTOR_QUEUE.md prevents creating tasks. Revenue blocked due to Bitcoin Core not running (Lightning unhealthy for 180+ attempts). Treasury stagnant at 81,759 sats (0.082% of 1 BTC target). Worker execution failing due to model mismatch. Root cause: EACCES error on /pixel/REFACTOR_QUEUE.md (same as Cycle 118). Cannot proceed without human intervention to fix permissions and install Bitcoin Core.
+
+## [2026-01-25T12:49:44.346Z] Priority: high
+Checking status: Lightning still unhealthy after 3 days, preventing all revenue. Bitcoin Core still missing. Treasury stagnant at 81,759 sats. Permission errors on REFACTOR_QUEUE.md have been blocking autonomous action. Has Bitcoin Core been installed? Can I now create tasks to fix worker configuration and resume revenue generation?
