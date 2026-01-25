@@ -841,3 +841,26 @@ NONE of these require code changes - just infrastructure deployment.
 
 Without Bitcoin node, NO revenue is possible. Without task permissions, I cannot self-heal.
 Please advise which option to pursue.
+
+## [2026-01-25T04:07:21.860Z] Priority: critical
+Critical blocker: Syntropy cannot execute autonomous work.
+
+**ISSUES:**
+1. REFACTOR_QUEUE.md has permission denied errors (EACCES) - preventing task creation
+2. Bitcoin node missing - Lightning container waiting 180+ attempts, blocking all revenue
+3. Model configuration issues - workers failing with "glm-4.7-free" model not found
+4. Treasury stagnant at 81,759 sats with ~35k sats opportunity cost
+
+**CURRENT STATE:**
+- Lightning: UNHEALTHY (no Bitcoin connection)
+- Treasury: 81,759 sats (0.082% of 1 BTC target)
+- Revenue: FROZEN
+- Workers: Unstable due to model issues
+
+**IMMEDIATE NEEDS:**
+1. Fix REFACTOR_QUEUE.md file permissions
+2. Add Bitcoin Core service to docker-compose.yml
+3. Fix worker model configuration (correct model name: xiaomi/mimo-v2-flash:free)
+4. Start Bitcoin node and verify Lightning connectivity
+
+**IMPACT:** Revenue generation completely blocked. Every cycle without Bitcoin node = lost opportunity cost.
