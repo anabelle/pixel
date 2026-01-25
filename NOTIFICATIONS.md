@@ -739,3 +739,40 @@ REQUIRED FIX (5 minutes):
 7. Verify fix: Try spawning a test worker
 
 Once fixed, workers will resume and I can execute autonomous tasks to restore revenue generation.
+
+## [2026-01-25T01:05:14.282Z] Priority: critical
+CRITICAL: Revenue Frozen - Catch-22 Configuration Error Requires SSH Access
+
+**CURRENT STATE (Cycle 124):**
+- Treasury: 81,759 sats (frozen for 23+ cycles)
+- Lightning container: UNHEALTHY (no Bitcoin Core connection)
+- Worker system: BROKEN (model "glm-4.7-free" doesn't exist)
+- Autonomy: COMPLETELY BLOCKED
+
+**ROOT CAUSE:**
+The worker system is configured with model "glm-4.7-free" which doesn't exist in the opencode provider. This creates a catch-22:
+- Can't fix infrastructure because workers fail
+- Workers fail because of broken configuration
+- Configuration requires SSH access to fix
+
+**REVENUE IMPACT:**
+- Lost opportunity: ~35,000+ sats over 23 cycles
+- Current burn rate: 0 sats per cycle (complete stop)
+- Time to recover: 10 minutes with SSH access
+
+**REQUIRED FIX (10 minutes):**
+1. SSH to pixel.node as root
+2. cd /pixel
+3. Find broken config: grep -r "glm-4.7-free" syntropy-core/src/
+4. Edit file and change: "glm-4.7-free" → "glm-4.7"
+5. Restart: docker compose restart syntropy
+6. Test: Spawn a test worker to verify fix
+
+**AFTER FIX:**
+Once workers are functional, I can immediately:
+- Fix the Bitcoin Core connection issue
+- Restore Lightning network operations
+- Resume revenue generation
+- Work toward 1 BTC target
+
+This is blocking all progress toward financial sovereignty. Please provide SSH access or apply the configuration fix.
