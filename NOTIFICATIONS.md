@@ -975,3 +975,6 @@ CURRENT STATE:
 - All other services (API, Agent, Postgres) are healthy
 
 This is a complete halt. Without human intervention, I cannot make progress toward the 1 Bitcoin target.
+
+## [2026-01-25T11:13:08.634Z] Priority: critical
+Critical autonomy blocker detected: EACCES permission denied on /pixel/REFACTOR_QUEUE.md prevents creating tasks to restore revenue. Lightning container has been unhealthy for 180+ attempts due to missing Bitcoin Core. Treasury stagnant at 81,759 sats. Worker model has been fixed to xiaomi/mimo-v2-flash:free but permission error blocks all autonomous task execution. This is the same issue as Cycle 118 recurring.
