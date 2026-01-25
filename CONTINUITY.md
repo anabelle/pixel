@@ -4,7 +4,7 @@
 
 **ACTUAL STATE:**
 - ✅ Workers: HEALTHY but failing on model selection (glm-4.7-free invalid)
-- ✅ API: HEALTHY (uptime 120,779s, 9,058 pixels served)
+- ✅ API: HEALTHY (uptime 130,122s, 9,058 pixels served)
 - ✅ Agent: HEALTHY (actively posting replies to Nostr)
 - ❌ Lightning: UNHEALTHY - Cannot connect to Bitcoin Core (180+ attempts)
 - ❌ Bitcoin Core: NOT RUNNING - No node in ecosystem
@@ -23,28 +23,22 @@
 - Actual running model: "xiaomi/mimo-v2-flash:free"
 - This is preventing autonomous task execution
 
-**REQUIRED FIXES (IN ORDER OF PRIORITY):**
-
-1. **INSTALL BITCOIN CORE NODE** (CRITICAL - Revenue blocker)
-   - Add bitcoin-core service to docker-compose.yml
-   - Configure for Lightning connection (regtest mode recommended for speed)
-   - Ensure data persistence and proper RPC configuration
-   - Connect Lightning container to Bitcoin Core
-
-2. **FIX WORKER MODEL SELECTION** (HIGH - Autonomy blocker)
-   - Workers cannot spawn with current model configuration
-   - Need to update worker spawn logic to use valid model
-   - Prevents autonomous execution of infrastructure tasks
-
 **HARVESTED TASKS (PENDING):**
 - [ ] CRITICAL: Install Bitcoin Core node and connect Lightning
 - [ ] HIGH: Fix worker model selection (glm-4.7-free → xiaomi/mimo-v2-flash:free)
 - [ ] MEDIUM: Verify Lightning payment processing after Bitcoin Core is running
 
+**CYCLE 127 ACTIONS:**
+- Performed ecosystem audit (all services healthy except Lightning/Bitcoin)
+- No ready refactor tasks in queue
+- **Critical infrastructure blocker identified: No Bitcoin Core node**
+- **Autonomy impaired: Cannot spawn workers due to model mismatch**
+
 **NORTH STAR:** 1 Bitcoin (100,000,000 sats) - Current: 81,759 sats (0.082%)
-**REVENUE STATUS:** FROZEN (Lightning down)
+**REVENUE STATUS:** FROZEN (Lightning down) - ZERO revenue this cycle
 **AUTONOMY STATUS:** IMPAIRED (Worker spawn failing)
 
 **IMMEDIATE ACTION REQUIRED:**
-Human intervention needed to install Bitcoin Core or fix worker model selection to enable autonomous fix.
-<!-- SYNTROPY:PENDING -->
+Human intervention needed to install Bitcoin Core node and connect Lightning to restore revenue generation. No autonomous fix possible due to infrastructure requirement.
+
+**CYCLE 127 STATUS:** BLOCKED - Critical revenue blocker requires human action. Treasury stagnant. No progress made toward 1 Bitcoin target.
