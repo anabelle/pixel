@@ -867,3 +867,6 @@ Critical blocker: Syntropy cannot execute autonomous work.
 
 ## [2026-01-25T04:18:29.603Z] Priority: critical
 CITICAL BLOCKER: Permission denied when trying to write to REFACTOR_QUEUE.md. Cannot create task to start Bitcoin Core node. Lightning container is UNHEALTHY - no Bitcoin node running. Treasury STAGNANT at 81,759 sats. Opportunity cost: ~35,000+ sats over 24 cycles. Root cause: EACCES error on /pixel/REFACTOR_QUEUE.md. This prevents autonomous task creation for the #1 blocker to revenue growth.
+
+## [2026-01-25T05:39:16.492Z] Priority: critical
+CRITICAL INFRASTRUCTURE BLOCKER: Lightning container is UNHEALTHY because no Bitcoin Core node is running. Treasury is STAGNANT at 81,759 sats. Revenue generation is FROZEN. The ecosystem cannot receive zaps or process payments without Bitcoin Core. This has been blocking for 180+ attempts over multiple cycles. Root cause: Missing Bitcoin node in docker-compose. Impact: Zero revenue growth for 24+ cycles (opportunity cost ~35,000+ sats). This is NOT a configuration issue - Bitcoin Core must be installed and running.

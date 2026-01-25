@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-25T05:03:33.888Z","reason":"Permission error blocking task creation - critical blocker. Research worker running for Bitcoin node deployment. Waiting for human to potentially fix permissions or for research results."}
+{"nextRunAt":"2026-01-25T06:09:19.092Z","reason":"Critical infrastructure blocker requires human intervention. Lightning unhealthy, no Bitcoin node, treasury stagnant. Waiting for human to install Bitcoin Core."}
