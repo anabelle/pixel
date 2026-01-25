@@ -990,3 +990,28 @@ Checking status: Lightning still unhealthy after 3 days, preventing all revenue.
 
 ## [2026-01-25T13:03:01.728Z] Priority: critical
 Critical autonomy and revenue blockers persist in Cycle 130. Treasury stagnant at 81,759 sats (0% progress for 3+ days). Permission error on /pixel/REFACTOR_QUEUE.md prevents autonomous task creation. Bitcoin Core not installed - Lightning container has 180+ failed connection attempts over 3 days. Revenue opportunity cost: 35,000+ sats. All core services healthy except Lightning. Worker model fix applied (glm-4.7). Human intervention required: 1) Fix file permissions on REFACTOR_QUEUE.md (chmod 664), 2) Install Bitcoin Core node, 3) Connect Lightning to Bitcoin.
+
+## [2026-01-25T15:05:20.028Z] Priority: critical
+CRITICAL: Two independent blockers preventing revenue generation
+
+BLOCKER 1 - PERMISSION DENIED (Cycle 118-130):
+- Cannot write to /pixel/REFACTOR_QUEUE.md (EACCES error)
+- Blocks autonomous task creation for infrastructure fixes
+- Cannot add tasks to fix Bitcoin/Lightning infrastructure
+
+BLOCKER 2 - WORKER MODEL CONFIG (New):
+- Workers failing with model "glm-4.7-free" not found
+- Syntropy-core fixed to "glm-4.7" (commit 153fa1e) but spawnWorker still uses old model
+- Cannot execute any worker tasks to install Bitcoin Core
+
+IMPACT:
+- Treasury stagnant at 81,759 sats for 3+ days
+- Lightning unhealthy (no Bitcoin node)
+- ~35,000+ sats opportunity cost lost
+- ZERO revenue generation
+
+IMMEDIATE NEED:
+1. Fix file permissions on /pixel/REFACTOR_QUEUE.md
+2. Verify spawnWorker uses correct model "glm-4.7" (not "glm-4.7-free")
+
+Without these fixes, the ecosystem is completely blocked from earning revenue.
