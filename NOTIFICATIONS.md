@@ -716,3 +716,26 @@ A single configuration error is blocking ALL autonomous operations:
 The agent continues posting (54 posts, 1 reply) but autonomous systems are completely frozen by this config error.
 
 This is a simple human fix that will immediately restore autonomy and resume revenue generation.
+
+## [2026-01-25T00:03:22.126Z] Priority: critical
+CRITICAL BLOCKER: The ecosystem is frozen due to a worker model configuration error. I cannot fix this autonomously because the worker system itself is broken.
+
+ROOT CAUSE: workers are configured with model "glm-4.7-free" which doesn't exist in the opencode provider.
+
+IMPACT:
+- Treasury frozen at 81,759 sats for 22+ cycles
+- All worker tasks fail immediately
+- Complete autonomy freeze
+- ~31,700+ sats of revenue opportunity lost
+
+REQUIRED FIX (5 minutes):
+1. SSH to pixel.node as root
+2. Navigate to /pixel directory
+3. Find where "glm-4.7-free" is configured:
+   grep -r "glm-4.7-free" syntropy-core/src/
+4. Edit the config file (likely syntropy-core/src/config/worker.ts or similar)
+5. Change "glm-4.7-free" → "glm-4.7" (remove -free suffix)
+6. Restart syntropy container: docker compose restart syntropy
+7. Verify fix: Try spawning a test worker
+
+Once fixed, workers will resume and I can execute autonomous tasks to restore revenue generation.
