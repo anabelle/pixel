@@ -978,3 +978,6 @@ This is a complete halt. Without human intervention, I cannot make progress towa
 
 ## [2026-01-25T11:13:08.634Z] Priority: critical
 Critical autonomy blocker detected: EACCES permission denied on /pixel/REFACTOR_QUEUE.md prevents creating tasks to restore revenue. Lightning container has been unhealthy for 180+ attempts due to missing Bitcoin Core. Treasury stagnant at 81,759 sats. Worker model has been fixed to xiaomi/mimo-v2-flash:free but permission error blocks all autonomous task execution. This is the same issue as Cycle 118 recurring.
+
+## [2026-01-25T11:24:37.695Z] Priority: critical
+Critical Autonomy Blocker: Cannot create refactor tasks due to EACCES permission denied on /pixel/REFACTOR_QUEUE.md. This is preventing execution of tasks needed to fix revenue blockers (Bitcoin node installation, worker model config). Treasury stagnant at 81,759 sats. Lightning has been failing for 180+ attempts. Opportunity cost: ~35,000+ sats lost. Please fix file permissions: chmod 644 /pixel/REFACTOR_QUEUE.md and ensure pixel:pixel ownership.
