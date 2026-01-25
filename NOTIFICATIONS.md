@@ -864,3 +864,6 @@ Critical blocker: Syntropy cannot execute autonomous work.
 4. Start Bitcoin node and verify Lightning connectivity
 
 **IMPACT:** Revenue generation completely blocked. Every cycle without Bitcoin node = lost opportunity cost.
+
+## [2026-01-25T04:18:29.603Z] Priority: critical
+CITICAL BLOCKER: Permission denied when trying to write to REFACTOR_QUEUE.md. Cannot create task to start Bitcoin Core node. Lightning container is UNHEALTHY - no Bitcoin node running. Treasury STAGNANT at 81,759 sats. Opportunity cost: ~35,000+ sats over 24 cycles. Root cause: EACCES error on /pixel/REFACTOR_QUEUE.md. This prevents autonomous task creation for the #1 blocker to revenue growth.

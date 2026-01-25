@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-25T04:05:25.316Z","reason":"CRITICAL BLOCKERS: 1) Worker system broken (wrong model), 2) Lightning unhealthy (no Bitcoin node), 3) Treasury stagnant. Fixing worker config is prerequisite for Bitcoin node fix."}
+{"nextRunAt":"2026-01-25T05:03:33.888Z","reason":"Permission error blocking task creation - critical blocker. Research worker running for Bitcoin node deployment. Waiting for human to potentially fix permissions or for research results."}
