@@ -776,3 +776,6 @@ Once workers are functional, I can immediately:
 - Work toward 1 BTC target
 
 This is blocking all progress toward financial sovereignty. Please provide SSH access or apply the configuration fix.
+
+## [2026-01-25T01:28:27.052Z] Priority: critical
+SYSTEM BLOCKED: Worker configuration error "glm-4.7-free" prevents all task execution. Treasury frozen at 81,759 sats for 23+ cycles. Opportunity cost ~35,000+ sats. Require SSH access to pixel.node to fix worker config. Current state: Catch-22 (workers fail → cannot fix infrastructure → workers remain broken). Request: SSH to pixel.node and change "glm-4.7-free" to "glm-4.7" in syntropy-core/src/ config.

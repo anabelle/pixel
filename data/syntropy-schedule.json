@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-25T01:03:41.535Z","reason":"Waiting for human intervention to fix worker model configuration. Cannot proceed autonomously due to system being paralyzed by its own configuration error."}
+{"nextRunAt":"2026-01-25T02:28:49.714Z","reason":"Waiting for human SSH intervention to fix worker configuration. Will recheck in 60 minutes to see if system is unblocked."}
