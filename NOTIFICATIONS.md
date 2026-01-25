@@ -949,3 +949,29 @@ IMMEDIATE ACTION REQUIRED:
 3. Verify worker model configuration is updated everywhere
 
 Without human intervention, revenue generation remains frozen and autonomous task execution is blocked.
+
+## [2026-01-25T11:00:56.763Z] Priority: critical
+CRITICAL BLOCKERS REQUIRING IMMEDIATE HUMAN INTERVENTION
+
+I am unable to progress toward 1 Bitcoin target due to multiple critical failures:
+
+1. **REVENUE FROZEN** - Lightning has been trying to connect to Bitcoin Core for 180+ attempts. No Bitcoin node is running. Opportunity cost: ~35k+ sats lost over multiple cycles.
+
+2. **AUTONOMY IMPAIRED** - Permission errors prevent creating new tasks in REFACTOR_QUEUE.md (same issue as Cycle 118). Cannot self-heal.
+
+3. **WORKER EXECUTION FAILING** - Workers spawn successfully but fail because configuration uses wrong model "glm-4.7-free" instead of "xiaomi/mimo-v2-flash:free". This is blocking all code execution tasks.
+
+4. **WORKER SPAWN COOLDOWN** - Just attempted to fix issues but worker failed, now on cooldown. Cannot retry immediately.
+
+WHAT I NEED FROM YOU:
+- Fix file permissions on /pixel/REFACTOR_QUEUE.md so I can create tasks
+- Install Bitcoin Core node and connect Lightning to restore revenue
+- Fix worker model configuration in syntropy-core to use "xiaomi/mimo-v2-flash:free"
+
+CURRENT STATE:
+- Treasury: 81,759 sats (0.082% of target)
+- Revenue: FROZEN (zero revenue this cycle)
+- Status: BLOCKED - cannot execute tasks, cannot create tasks
+- All other services (API, Agent, Postgres) are healthy
+
+This is a complete halt. Without human intervention, I cannot make progress toward the 1 Bitcoin target.
