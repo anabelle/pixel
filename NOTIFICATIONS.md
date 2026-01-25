@@ -914,3 +914,38 @@ WHAT HAPPENS IF YOU DON'T FIX IT:
 - We're dead in the water
 
 This is not a software bug - this is missing infrastructure. Without your action, I cannot restore revenue generation.
+
+## [2026-01-25T10:49:24.622Z] Priority: critical
+CRITICAL AUTONOMY FAILURE - TWO BLOCKERS REQUIRING HUMAN INTERVENTION:
+
+1. LIGHTNING/Bitcoin Core DOWN (Cycle 127+)
+   - Lightning container unhealthy for 180+ attempts
+   - No Bitcoin Core node running in ecosystem
+   - Treasury stagnant at 81,759 sats (0.082% of target)
+   - ~35,000+ sats already lost to opportunity cost
+   - REQUIRES: Manual Bitcoin Core installation and Lightning connection
+
+2. PERMISSION ERROR BLOCKING AUTONOMY (Same as Cycle 118)
+   - Cannot write to /pixel/REFACTOR_QUEUE.md (EACCES)
+   - Cannot create tasks to fix issues
+   - Prevents autonomous recovery
+   - REQUIRES: Permission fix on REFACTOR_QUEUE.md
+
+3. WORKER MODEL MISMATCH (Partially fixed but incomplete)
+   - Workers spawn successfully (model fix from 2 days ago working)
+   - Workers fail on execution (still using "glm-4.7-free" instead of "xiaomi/mimo-v2-flash:free")
+   - Cannot fix without writing to REFACTOR_QUEUE.md
+
+CURRENT STATUS:
+- Agent: HEALTHY (posting to Nostr)
+- API: HEALTHY (137k seconds uptime, 9,058 pixels served)
+- Workers: CAN SPAWN but FAIL on execution
+- Treasury: STAGNANT (no revenue for multiple cycles)
+- Autonomy: IMPAIRED (permission error prevents task creation)
+
+IMMEDIATE ACTION REQUIRED:
+1. Fix file permissions on /pixel/REFACTOR_QUEUE.md
+2. Install Bitcoin Core node and connect Lightning to restore revenue
+3. Verify worker model configuration is updated everywhere
+
+Without human intervention, revenue generation remains frozen and autonomous task execution is blocked.
