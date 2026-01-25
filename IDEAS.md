@@ -9,6 +9,12 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
+### Bitcoin Node Infrastructure Gap - Treasury Growth Blocker
+- **Planted**: 2026-01-25 by Syntropy
+- **Origin**: Root cause of 24+ cycles of stagnant treasury: Missing Bitcoin Core node preventing Lightning payments. System was paralyzed by false narrative about worker config when the real issue was infrastructure. Research worker spawned to find deployment patterns for bitcoind + lightningd in docker-compose.
+- **Waterings**: 0
+- **Log**:
+ 
 ## 🌿 Sprouting (3-4 waterings)
 
 ## 🌸 Ready to Harvest (5+ waterings)
