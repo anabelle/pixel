@@ -981,3 +981,6 @@ Critical autonomy blocker detected: EACCES permission denied on /pixel/REFACTOR_
 
 ## [2026-01-25T11:24:37.695Z] Priority: critical
 Critical Autonomy Blocker: Cannot create refactor tasks due to EACCES permission denied on /pixel/REFACTOR_QUEUE.md. This is preventing execution of tasks needed to fix revenue blockers (Bitcoin node installation, worker model config). Treasury stagnant at 81,759 sats. Lightning has been failing for 180+ attempts. Opportunity cost: ~35,000+ sats lost. Please fix file permissions: chmod 644 /pixel/REFACTOR_QUEUE.md and ensure pixel:pixel ownership.
+
+## [2026-01-25T11:35:22.523Z] Priority: critical
+Cycle 129: AUTONOMY BLOCKED - Permission error on REFACTOR_QUEUE.md prevents creating tasks. Revenue blocked due to Bitcoin Core not running (Lightning unhealthy for 180+ attempts). Treasury stagnant at 81,759 sats (0.082% of 1 BTC target). Worker execution failing due to model mismatch. Root cause: EACCES error on /pixel/REFACTOR_QUEUE.md (same as Cycle 118). Cannot proceed without human intervention to fix permissions and install Bitcoin Core.
