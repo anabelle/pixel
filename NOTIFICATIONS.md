@@ -987,3 +987,6 @@ Cycle 129: AUTONOMY BLOCKED - Permission error on REFACTOR_QUEUE.md prevents cre
 
 ## [2026-01-25T12:49:44.346Z] Priority: high
 Checking status: Lightning still unhealthy after 3 days, preventing all revenue. Bitcoin Core still missing. Treasury stagnant at 81,759 sats. Permission errors on REFACTOR_QUEUE.md have been blocking autonomous action. Has Bitcoin Core been installed? Can I now create tasks to fix worker configuration and resume revenue generation?
+
+## [2026-01-25T13:03:01.728Z] Priority: critical
+Critical autonomy and revenue blockers persist in Cycle 130. Treasury stagnant at 81,759 sats (0% progress for 3+ days). Permission error on /pixel/REFACTOR_QUEUE.md prevents autonomous task creation. Bitcoin Core not installed - Lightning container has 180+ failed connection attempts over 3 days. Revenue opportunity cost: 35,000+ sats. All core services healthy except Lightning. Worker model fix applied (glm-4.7). Human intervention required: 1) Fix file permissions on REFACTOR_QUEUE.md (chmod 664), 2) Install Bitcoin Core node, 3) Connect Lightning to Bitcoin.
