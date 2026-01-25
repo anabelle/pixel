@@ -779,3 +779,65 @@ This is blocking all progress toward financial sovereignty. Please provide SSH a
 
 ## [2026-01-25T01:28:27.052Z] Priority: critical
 SYSTEM BLOCKED: Worker configuration error "glm-4.7-free" prevents all task execution. Treasury frozen at 81,759 sats for 23+ cycles. Opportunity cost ~35,000+ sats. Require SSH access to pixel.node to fix worker config. Current state: Catch-22 (workers fail → cannot fix infrastructure → workers remain broken). Request: SSH to pixel.node and change "glm-4.7-free" to "glm-4.7" in syntropy-core/src/ config.
+
+## [2026-01-25T03:19:02.222Z] Priority: critical
+CRITICAL BLOCKER: Revenue frozen for 25+ cycles due to infrastructure + permissions deadlock
+
+ROOT CAUSE ANALYSIS:
+1. Lightning container (pixel-lightning-1) has been trying to connect to Bitcoin for 180+ attempts over 3 days
+2. ERROR: "Could not connect to bitcoind using bitcoin-cli. Is bitcoind running?"
+3. SOLUTION REQUIRED: Deploy Bitcoin Core node in docker-compose.yml
+
+SECONDARY BLOCKER (Prevents Self-Healing):
+- Cannot add tasks to REFACTOR_QUEUE.md: EACCES permission denied
+- Cannot modify infrastructure configuration
+- Worker model mismatch: syntropy runs with "xiaomi/mimo-v2-flash:free" but workers try "glm-4.7-free" which doesn't exist
+
+IMPACT:
+- Treasury: 81,759 sats (frozen for 25+ cycles, 0.082% of 1 BTC target)
+- Opportunity cost: ~40,000+ sats lost (estimated)
+- Revenue generation: 100% BLOCKED
+
+REQUIRED HUMAN ACTIONS (15 minutes):
+
+OPTION 1 - Deploy Bitcoin Node (Permanent Fix):
+1. SSH to pixel.node
+2. Edit /pixel/docker-compose.yml to add Bitcoin Core service:
+   ```
+   bitcoin:
+     image: lncm/bitcoind:v26.0
+     container_name: pixel-bitcoin-1
+     networks:
+       - pixel
+     ports:
+       - "18332:18332"  # testnet RPC
+       - "18333:18333"  # testnet P2P
+     volumes:
+       - bitcoin-data:/bitcoin
+     environment:
+       - BITCOIN_NETWORK=testnet
+       - BITCOIN_RPC_USER=bitcoin
+       - BITCOIN_RPC_PASSWORD=bitcoin
+     restart: unless-stopped
+   ```
+3. Update lightning service to depend on bitcoin
+4. docker compose up -d bitcoin
+5. Wait 2-5 min for bitcoin to start, then restart lightning
+
+OPTION 2 - Quick Fix (Research Only):
+1. SSH to pixel.node  
+2. Fix worker model config: grep -r "glm-4.7-free" /pixel/syntropy-core/src/
+3. Change to "opencode/glm-4.7" or "xiaomi/mimo-v2-flash:free"
+4. docker compose restart syntropy
+5. This will allow me to spawn research workers to find better solutions
+
+OPTIONS 3 - Manual Bitcoin Deploy:
+1. If docker-compose access isn't available, I can provide exact commands to:
+   - Run bitcoin node: docker run -d --name bitcoin -p 18332:18332 lncm/bitcoind:v26.0
+   - Configure Lightning to connect to it
+   - Test payment flow
+
+NONE of these require code changes - just infrastructure deployment.
+
+Without Bitcoin node, NO revenue is possible. Without task permissions, I cannot self-heal.
+Please advise which option to pursue.
