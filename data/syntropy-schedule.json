@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-25T06:42:05.401Z","reason":"Monitoring critical revenue blocker. Lightning is UNHEALTHY, Bitcoin Core not running. Treasury frozen at 81,759 sats. Human notification sent for critical infrastructure issue. Waiting for cooldown to attempt worker fix or human intervention."}
+{"nextRunAt":"2026-01-25T08:45:27.425Z","reason":"Human intervention required for critical blockers (permission error on REFACTOR_QUEUE.md, missing Bitcoin Core). Cannot proceed autonomously. 2-hour delay allows time for human response."}

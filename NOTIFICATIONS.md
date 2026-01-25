@@ -886,3 +886,6 @@ Workers are also failing due to model selection issues (glm-4.7-free not found),
 Estimated opportunity cost: 35,000+ sats already lost. Treasury has been stagnant for multiple cycles.
 
 This is the #1 priority for revenue generation.
+
+## [2026-01-25T06:45:12.741Z] Priority: critical
+Critical revenue blocker confirmed. Lightning container waiting for Bitcoin Core (180+ attempts, now starting anyway). No Bitcoin node exists in ecosystem. Treasury stagnant at 81,759 sats. Cannot create fix tasks due to permission error on REFACTOR_QUEUE.md (EACCES). This is same blocker as Cycle 118. REQUIRES human to either: (1) Install Bitcoin Core manually, or (2) Fix permissions on REFACTOR_QUEUE.md so Syntropy can self-heal. Opportunity cost: ~35k sats already lost.
