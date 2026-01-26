@@ -11,7 +11,7 @@
 
 | Status | Count | Description |
 |--------|-------|-------------|
-| ⬜ READY | 0 | Available for processing |
+| ⬜ READY | 4 | Available for processing |
 | 🟡 IN_PROGRESS | 0 | Currently being worked on |
 | ✅ DONE | 1 | Completed successfully |
 | ❌ FAILED | 0 | Failed, needs human review |
@@ -74,5 +74,21 @@ VERIFY:
 ---
 
 ## 📋 Phase 2: Revenue Automation
+
+---
+
+## 📋 Phase 3: Task Execution
+
+
+### T001: Fix vision API configuration issues ⬜ READY
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+1. Review current Vision API parameters and adjust to valid settings. 2. Ensure compatibility with OpenAI and OpenRouter APIs. 3. Test image processing capabilities to confirm resolution of issues.
+
+VERIFY:
+curl -X GET 'http://api.openai.com/v1/images/generations'
+```
 
 ---
