@@ -546,9 +546,9 @@ services:
       options:
         max-size: "100m"
         max-file: "3"
-    # FIX (2026-01-21): Reduced dbcache 256→100, maxmempool 100→50 to fix OOM crash loop (4956 restarts)
+    # FIX (2026-01-28): Reduced dbcache 100→50 + added 2GB swap to finally fix OOM crash loop (504+ restarts)
     command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=50 -dbcache=100
+      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=50 -dbcache=50
     ports:
       - "18333:18333" # Testnet P2P
       - "127.0.0.1:18332:18332" # Testnet RPC (local only)
