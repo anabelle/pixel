@@ -87,6 +87,18 @@ jobs:
             echo "📦 Updating submodules..."
             git submodule update --init --recursive
             
+            echo "🔧 Fixing git remote URLs for SSH push..."
+            # git reset restores HTTPS push URLs, but we need SSH for deploy key auth
+            git remote set-url --push origin git@github.com:anabelle/pixel.git
+            for dir in lnpixels pixel-agent pixel-landing syntropy-core; do
+              if [ -d "$dir/.git" ] || [ -f "$dir/.git" ]; then
+                cd "$dir"
+                git remote set-url origin git@github.com:anabelle/${dir}.git 2>/dev/null || true
+                git remote set-url --push origin git@github.com:anabelle/${dir}.git 2>/dev/null || true
+                cd /home/pixel/pixel
+              fi
+            done
+            
             echo "🏗️  Rebuilding containers..."
             docker compose build syntropy agent web landing
             
