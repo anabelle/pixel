@@ -102,5 +102,14 @@ jobs:
             echo "🧹 Cleaning up..."
             docker image prune -f
             
+            echo "🔐 Fixing file permissions for Syntropy..."
+            # These files need to be writable by Syntropy (runs as uid 1000)
+            chown pixel:pixel /home/pixel/pixel/REFACTOR_QUEUE.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/CONTINUITY.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/NOTIFICATIONS.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/IDEAS.md 2>/dev/null || true
+            chmod 664 /home/pixel/pixel/REFACTOR_QUEUE.md 2>/dev/null || true
+            chmod 664 /home/pixel/pixel/CONTINUITY.md 2>/dev/null || true
+            
             echo "✅ Deployment complete!"
           EOF

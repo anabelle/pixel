@@ -238,6 +238,10 @@ services:
     volumes:
       - .:/pixel
       - /var/run/docker.sock:/var/run/docker.sock
+      # SSH keys for GitHub push access (deploy key)
+      - ~/.ssh/deploy_key:/tmp/.ssh/deploy_key:ro
+      - ~/.ssh/config:/tmp/.ssh/config:ro
+      - ~/.ssh/known_hosts:/tmp/.ssh/known_hosts:ro
     environment:
       - NODE_ENV=production
       - PIXEL_ROOT=/pixel
@@ -249,8 +253,8 @@ services:
       # HOST_PIXEL_ROOT is the absolute path on the host machine.
       # Syntropy passes this to docker compose when spawning workers.
       - HOST_PIXEL_ROOT=${HOST_PIXEL_ROOT:-${PWD}}
-      # Git authentication via Personal Access Token
-      - GH_TOKEN=${GH_TOKEN}
+      # Git authentication via SSH deploy key
+      - GIT_SSH_COMMAND=ssh -i /tmp/.ssh/deploy_key -o UserKnownHostsFile=/tmp/.ssh/known_hosts -o StrictHostKeyChecking=no
       # Security: Prevent worker spawn cascade (OOM protection)
       - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
     networks:
