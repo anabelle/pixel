@@ -63,6 +63,7 @@ Databases are stored in `./data/`.
 
 ## 🛡️ Deployment Safety Rules
 
+0.  **The VPS is the Truth**: The production environment (`65.181.125.80`) is the only absolute reality. Always check there before trusting local state.
 1.  **Always Push Submodules First**: Never commit to the root without first pushing your submodule changes.
 2.  **Test Locally Before Deploy**: Run `npm run dev` or `docker compose up` locally to verify changes.
 3.  **Use Atomic Commits**: Update the root submodule pointer in the same commit as your documentation updates.

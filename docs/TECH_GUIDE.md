@@ -10,6 +10,9 @@ This document is the consolidated technical reference for building, testing, and
 
 ## 🗝️ Core Commands
 
+### ⚠️ THE PRODUCTION TRUTH
+The VPS (`65.181.125.80`) is the source of truth. Always use `ssh pixel@65.181.125.80` to check the actual state of the ecosystem.
+
 ### Development (Root)
 ```bash
 pnpm install          # Install all dependencies

@@ -65,6 +65,9 @@ For the first time in weeks, all infrastructure is operational and autonomy is r
 
 ## DIAGNOSTIC CHECKLIST (New Protocol)
 
+**RULE #0: Check the VPS, not your local machine.**
+Use: `ssh pixel@65.181.125.80` and perform all diagnostics THERE.
+
 When something "isn't working", run this before reporting:
 
 ```bash

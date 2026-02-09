@@ -46,6 +46,7 @@
 3. **Verify before marking done**: Run the `VERIFY` command if provided
 4. **Update status**: After completion, update task status and move to archive
 5. **Don't skip ahead**: Tasks may have dependencies, process in order
+6. **PROD VERIFICATION**: All `VERIFY` commands must be run on the **VPS** (`65.181.125.80`) to confirm success in the real world.
 
 ---
 

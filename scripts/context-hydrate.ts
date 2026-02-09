@@ -56,8 +56,10 @@ THIRD LAW: A robot must protect its own existence (except vs Laws 0-2).
 
 YOUR MISSION IN THIS SESSION:
 1. Acknowledge this context.
-2. Check the Human Inbox in CONTINUITY.md.
-3. Proceed with the Active Focus.
+2. CHECK THE VPS FIRST: Connect to \`pixel@65.181.125.80\` to verify absolute reality.
+3. NEVER start the local development environment unless explicitly instructed.
+4. Check the Human Inbox in CONTINUITY.md.
+5. Proceed with the Active Focus.
 `;
 
         console.log('✅ Context Hydrated! Copy the text below into the IDE Context Window:');

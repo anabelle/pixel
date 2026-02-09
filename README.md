@@ -7,6 +7,10 @@
 
 This is the master repository for the Pixel ecosystem, containing multiple interconnected projects that together create a sustainable AI agent platform with collaborative pixel art and Lightning Network integration.
 
+# ⚠️ CRITICAL: PRODUCTION PRIORITY
+**The VPS (`65.181.125.80`) is the source of truth.** 
+Agents must ALWAYS check production status via SSH before assuming local state reflects reality.
+
 ## 🚀 Quick Start (Docker)
 
 The easiest way to run the entire ecosystem locally or in production:
