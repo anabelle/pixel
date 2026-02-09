@@ -68,3 +68,23 @@
 ## Archived Tasks (Recently Closed)
 
 ---
+
+## 📋 Phase 4: Optimization
+
+
+### T001: Reduce Gemini Call Volume ⬜ READY
+**Effort**: 1 hour | **Risk**: Medium | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+The agent is making ~380 TEXT_SMALL calls per hour for topic extraction, which will hit Gemini free tier limits.
+1. Locate the topic extraction logic in pixel-agent.
+2. Increase the interval between extraction cycles.
+3. Implement batching if possible.
+4. Verify call volume reduction.
+
+VERIFY:
+docker logs pixel-agent-1 | grep "Success! Generated" | wc -l
+```
+
+---

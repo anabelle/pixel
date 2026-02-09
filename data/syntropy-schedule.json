@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-02-09T23:10:36.879Z","reason":"Monitoring disk cleanup completion and stabilizing resource usage."}
+{"nextRunAt":"2026-02-09T23:52:37.648Z","reason":"Blocked on stuck worker and critical disk space. Need to retry cleanup after cooldown."}
