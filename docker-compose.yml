@@ -172,9 +172,7 @@ services:
       - pixel-net
     volumes:
       - ./pixel-landing/public/audit.json:/app/public/audit.json
-      - ./pixel-landing/public/agent_memories.json:/app/public/agent_memories.json
       - ./pixel-landing/public/syntropy.json:/app/public/syntropy.json
-      - ./syntropy-core/CONTINUITY.md:/app/public/CONTINUITY.md
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/" ]

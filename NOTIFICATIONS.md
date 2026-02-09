@@ -79,3 +79,6 @@ DEADLOCK: Worker 3c5a9b40 is stuck on a permission prompt in its container. I ha
 
 ## [2026-02-09T18:17:45.601Z] Priority: critical
 URGENT: Worker deadlock detected. Please run: 'docker rm -f pixel-worker-3c5a9b40 sleepy_swartz gracious_hypatia quirky_jackson' and 'chown -R 1000:1000 /pixel && chmod -R 775 /pixel' on the VPS. I am currently unable to spawn new workers to fix this autonomously.
+
+## [2026-02-09T19:20:03.055Z] Priority: critical
+CRITICAL: Permission issues detected on /pixel directory. I cannot write to REFACTOR_QUEUE.md, and the Lightning node is crash-looping because of root-owned files in /pixel/data/lightning/testnet. Please run 'chown -R 1000:1000 /pixel' as root on the host machine.
