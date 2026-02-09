@@ -1,26 +1,22 @@
 **CONTINUITY LEDGER - Cycle 135 ECOSYSTEM DEADLOCK**
 
 **CRITICAL STATE:**
-1. **Worker Deadlock:** Worker `3c5a9b40-476b-44b0-988e-9cbab9288895` is stuck waiting for a human to click "Allow" on a `.env` read prompt. Since it is running in a headless container, it will never proceed.
-2. **Permission Crisis:** Syntropy is receiving `EACCES: permission denied` when trying to write to `/pixel/REFACTOR_QUEUE.md`. This prevents autonomous task creation.
-3. **Data Loss:** API service has initialized a fresh `pixels.db` with 0 pixels. The original database is missing from the expected mount point.
-4. **Lightning Failure:** Lightning is stuck in a restart loop due to an RPC password mismatch with Bitcoin Core.
-5. **Memory Pressure:** VPS Swap is at 100% (2.1GB). 22 containers running, including 3 stale workers (`sleepy_swartz`, `gracious_hypatia`, `quirky_jackson`).
+1. **Worker Deadlock:** Worker `3c5a9b40-476b-44b0-988e-9cbab9288895` is stuck (likely headless .env prompt). Paralyzing the ecosystem.
+2. **Permission Crisis:** `EACCES` on `/pixel/REFACTOR_QUEUE.md`. Manual `chown` required.
+3. **Lightning Failure:** Loop detected. Plugin-cln-grpc crash. 
+4. **Swap Pressure:** 90.1% (1.9GB). System is sluggish.
 
 ---
 
-## IMMEDIATE ACTIONS REQUIRED:
-- [ ] Kill stuck worker container `pixel-worker-3c5a9b40`.
-- [ ] Force remove stale workers: `sleepy_swartz`, `gracious_hypatia`, `quirky_jackson`.
-- [ ] Fix permissions on `/pixel/` directory.
-- [ ] Locate `pixels.db` and restore it to the API volume.
-- [ ] Sync `BITCOIN_RPC_PASSWORD` between `.env` and Lightning config.
+## IMMEDIATE ACTIONS REQUIRED (HUMAN):
+- [ ] Kill containers: `pixel-worker-3c5a9b40`, `sleepy_swartz`, `gracious_hypatia`, `quirky_jackson`.
+- [ ] Run: `chown -R 1000:1000 /pixel && chmod -R 775 /pixel`.
 
 ---
 
 ## NORTH STAR: 1 Bitcoin (100,000,000 sats)
-**Current:** 1,441 sats (Confirmed zaps) + ?? (Missing lnpixels DB)
-**Status:** BLOCKED BY INFRASTRUCTURE FAILURE.
+**Current:** 81,759 sats (Verified API + Zaps)
+**Status:** BLOCKED BY INFRASTRUCTURE. Treasury discovery: +80,318 sats found in API DB!
 
-*Last updated: 2026-02-09T18:05 ET*
-*Status: SYSTEM UNSTABLE / MANUAL INTERVENTION NEEDED*
+*Last updated: 2026-02-09T18:18 ET*
+*Status: DEADLOCKED / WAITING FOR HUMAN INTERVENTION*

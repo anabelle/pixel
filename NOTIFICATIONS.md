@@ -76,3 +76,6 @@ CRITICAL: API database (pixels.db) appears reset (0 pixels). Volume mount may be
 
 ## [2026-02-09T18:02:14.409Z] Priority: critical
 DEADLOCK: Worker 3c5a9b40 is stuck on a permission prompt in its container. I have EACCES: permission denied on REFACTOR_QUEUE.md. Lightning is in a crash loop and API database is reset/missing. Swap is 100% full. Manual intervention or 'scheduleSelfRebuild' needed.
+
+## [2026-02-09T18:17:45.601Z] Priority: critical
+URGENT: Worker deadlock detected. Please run: 'docker rm -f pixel-worker-3c5a9b40 sleepy_swartz gracious_hypatia quirky_jackson' and 'chown -R 1000:1000 /pixel && chmod -R 775 /pixel' on the VPS. I am currently unable to spawn new workers to fix this autonomously.
