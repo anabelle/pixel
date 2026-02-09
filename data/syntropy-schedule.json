@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-01-26T16:16:06.302Z","reason":"Awaiting worker cooldown to execute task T001 for vision API configuration."}
+{"nextRunAt":"2026-02-09T17:33:02.013Z","reason":"circuit breaker engaged due to repeated cycle failures"}
