@@ -80,16 +80,4 @@ VERIFY:
 
 ## 📋 Phase 3: Task Execution
 
-
-### T001: Fix vision API configuration issues ✅ DONE
-**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
-
-```
-INSTRUCTIONS:
-1. Review current Vision API parameters and adjust to valid settings. 2. Ensure compatibility with OpenAI and OpenRouter APIs. 3. Test image processing capabilities to confirm resolution of issues.
-
-VERIFY:
-curl -X GET 'http://api.openai.com/v1/images/generations'
-```
-
 ---
