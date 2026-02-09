@@ -88,19 +88,4 @@ VERIFY:
 
 ## 📋 Phase 4: New Tasks (Test Coverage)
 
-
-### T001: Create test for lnpixels-stats API route ✅ DONE
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
-
-```
-INSTRUCTIONS:
-1. Create a new test file: /pixel-landing/src/app/api/lnpixels-stats/route.test.ts
-2. Use Vitest/Jest to mock the database call.
-3. Verify that the GET handler returns the correct pixel count and treasury status.
-4. Run 'npm test' in the pixel-landing directory to verify.
-
-VERIFY:
-cd /pixel-landing && npm test
-```
-
 ---
