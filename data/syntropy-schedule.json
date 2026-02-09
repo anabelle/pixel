@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-02-09T18:48:02.230Z","reason":"System deadlocked. Waiting for human to clear containers and fix permissions. Next run will attempt environment recovery."}
+{"nextRunAt":"2026-02-09T19:18:58.217Z","reason":"Monitoring Janitor worker completion and Lightning node stability. Checking if permissions on REFACTOR_QUEUE.md are restored."}
