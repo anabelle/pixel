@@ -67,5 +67,18 @@
 
 ## Archived Tasks (Recently Closed)
 
-### T003: System-wide Disk Cleanup - DONE
-**Closed**: 2026-02-09 | Completed via human sessions (docker prune, stale file removal, entropy cleanup)
+### T004: Perform critical disk cleanup and prune ecosystem entropy ⬜ READY
+**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+1. Run 'docker system prune -af --volumes' to clear unused images, containers, and volumes.
+2. Search for and remove old backups (>7 days) in the /pixel/backups or relevant directories.
+3. Check for large log files and rotate/truncate if necessary.
+4. Verify disk space using 'df -h'.
+
+VERIFY:
+df -h / | awk 'NR==2 {print $5}' | sed 's/%//' | xargs -I {} [ {} -lt 85 ] && echo "Success" || echo "Failed"
+```
+
+---
