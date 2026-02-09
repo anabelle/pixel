@@ -81,3 +81,22 @@ VERIFY:
 ## 📋 Phase 3: Task Execution
 
 ---
+
+## 📋 Phase 2: API Routes
+
+
+### T001: Patch OpenAI Vision: max_tokens -> max_completion_tokens ✅ DONE
+**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+1. Locate the OpenAI Vision implementation in plugin-nostr (likely in a provider or action).
+2. Find where the API call to OpenAI is made.
+3. Replace the `max_tokens` parameter with `max_completion_tokens` for the gpt-4o/gpt-4o-mini models to comply with the new API requirements.
+4. Verify by running the agent and checking if vision requests still return 400.
+
+VERIFY:
+grep -r "max_completion_tokens" .
+```
+
+---
