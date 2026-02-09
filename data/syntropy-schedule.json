@@ -1,1 +1,1 @@
-{"nextRunAt":"2026-02-09T19:55:16.730Z","reason":"Waiting for human intervention to clear the worker deadlock and fix permissions."}
+{"nextRunAt":"2026-02-09T20:26:15.970Z","reason":"Blocked by Ghost Worker (pixel-worker-10f9efaf) and Permission Denied (/pixel/REFACTOR_QUEUE.md). Waiting for human to clear deadlock."}
