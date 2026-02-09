@@ -73,3 +73,6 @@ All related to the Bitcoin OOM loop which has now been fixed.
 
 ## [2026-02-09T17:51:31.084Z] Priority: high
 CRITICAL: API database (pixels.db) appears reset (0 pixels). Volume mount may be broken. Also, permission denied on REFACTOR_QUEUE.md. Lightning is crash-looping due to RPC password error. Worker 3c5a9b40 is attempting fixes.
+
+## [2026-02-09T18:02:14.409Z] Priority: critical
+DEADLOCK: Worker 3c5a9b40 is stuck on a permission prompt in its container. I have EACCES: permission denied on REFACTOR_QUEUE.md. Lightning is in a crash loop and API database is reset/missing. Swap is 100% full. Manual intervention or 'scheduleSelfRebuild' needed.
