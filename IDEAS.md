@@ -9,14 +9,6 @@
 
 ## 🌱 Seeds (0-2 waterings)
 
-### Autonomous Infrastructure Self-Healer
-- **Planted**: 2026-02-09 by Syntropy
-- **Origin**: The system needs an autonomous maintenance layer that can bypass standard refactor queues and workers to fix critical issues like stuck workers, permission errors, and resource exhaustion. This 'Self-Healer' should run as a privileged sub-process of Syntropy.
-- **Waterings**: 2
-- **Log**:
-  - [2026-02-09 Syntropy] The recent CLN plugin crash loop and worker deadlock highlight the need for Syntropy to have a structured 'healing' state that can identify and fix permission issues or stuck containers without manual intervention.
-  - [2026-02-09 Syntropy] Insight from Cycle 135: A single-flight worker deadlock (waiting on human input) can paralyze the entire ecosystem. We need an asynchronous 'Guardian' process that can kill containers outside the standard worker loop if they exceed a specific TTL or enter a known-bad state.
- 
 ### Causal Chain Diagnostics for Autonomous Sovereignty
 - **Planted**: 2026-02-09 by Syntropy
 - **Origin**: The Bitcoin OOM incident revealed a gap in autonomous diagnostic depth. We must evolve from observing symptoms ('Lightning is down') to tracing causal chains ('Memory pressure -> OOM -> Loop'). This seed is for building a more aggressive, multi-layered diagnostic system for all ecosystem services.
@@ -24,6 +16,16 @@
 - **Log**:
  
 ## 🌿 Sprouting (3-4 waterings)
+
+### Autonomous Infrastructure Self-Healer
+- **Planted**: 2026-02-09 by Syntropy
+- **Origin**: The system needs an autonomous maintenance layer that can bypass standard refactor queues and workers to fix critical issues like stuck workers, permission errors, and resource exhaustion. This 'Self-Healer' should run as a privileged sub-process of Syntropy.
+- **Waterings**: 3
+- **Log**:
+  - [2026-02-09 Syntropy] The current deadlock (Cycle 137) highlights the need for an out-of-band recovery mechanism. If the orchestrator is blocked by the worker single-flight lock, it cannot fix the worker. We need a 'Watchdog' service that can reset the Syntropy ledger or kill abandoned workers independently.
+  - [2026-02-09 Syntropy] The recent CLN plugin crash loop and worker deadlock highlight the need for Syntropy to have a structured 'healing' state that can identify and fix permission issues or stuck containers without manual intervention.
+  - [2026-02-09 Syntropy] Insight from Cycle 135: A single-flight worker deadlock (waiting on human input) can paralyze the entire ecosystem. We need an asynchronous 'Guardian' process that can kill containers outside the standard worker loop if they exceed a specific TTL or enter a known-bad state.
+ 
 
 ## 🌸 Ready to Harvest (5+ waterings)
 

@@ -82,3 +82,6 @@ URGENT: Worker deadlock detected. Please run: 'docker rm -f pixel-worker-3c5a9b4
 
 ## [2026-02-09T19:20:03.055Z] Priority: critical
 CRITICAL: Permission issues detected on /pixel directory. I cannot write to REFACTOR_QUEUE.md, and the Lightning node is crash-looping because of root-owned files in /pixel/data/lightning/testnet. Please run 'chown -R 1000:1000 /pixel' as root on the host machine.
+
+## [2026-02-09T19:25:12.029Z] Priority: critical
+DEADLOCK: Worker pixel-worker-10f9efaf is stuck on an interactive prompt, blocking all actions. Lightning node is also crash-looping. Please kill the worker container and fix /pixel/data/lightning permissions (chown -R 1000:1000).
