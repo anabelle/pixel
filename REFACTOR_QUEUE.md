@@ -88,3 +88,22 @@ docker logs pixel-agent-1 | grep "Success! Generated" | wc -l
 ```
 
 ---
+
+## 📋 Infrastructure Maintenance
+
+
+### T002: Critical Disk and Swap Cleanup 🟡 IN_PROGRESS
+**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+
+```
+INSTRUCTIONS:
+1. Run 'docker system prune -af --volumes' to clear Docker cache and unused volumes.
+2. Search for logs or temp files taking up space in /pixel/data and /pixel/logs.
+3. Check /pixel/backups for files older than 7 days and remove them.
+4. Report final disk usage.
+
+VERIFY:
+df -h / | tail -n 1
+```
+
+---
