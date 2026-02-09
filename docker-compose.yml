@@ -613,6 +613,9 @@ services:
       - "--bitcoin-rpcport=18332"
       - "--bitcoin-retry-timeout=600"
       - "--addr=0.0.0.0:9735"
+      - "--disable-plugin=cln-grpc"
+      - "--disable-plugin=clnrest"
+      - "--disable-plugin=wss-proxy"
     networks:
       - pixel-net
     restart: unless-stopped
