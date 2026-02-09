@@ -269,6 +269,20 @@ docker compose build --no-cache agent && docker compose up -d agent
 docker compose logs -f agent --tail=100
 ```
 
+### Critical Operational Patterns
+
+**After any container rebuild**: Docker Compose dependency chains can cause cascading recreations. Running `docker compose up -d web --build` may also recreate `api` and `narrative-correlator`. Always check `docker compose ps` afterward.
+
+**Nginx DNS resolution**: `nginx/nginx.conf` uses `resolver 127.0.0.11 valid=10s` with variable-based `proxy_pass` to re-resolve container IPs every 10 seconds. This prevents 502 errors after container recreation. If you ever see 502s, `docker compose restart nginx` is the quick fix.
+
+**NEXT_PUBLIC_* vars are build-time only**: Changing `NEXT_PUBLIC_API_URL` in `.env` has no effect until you rebuild: `docker compose up -d web --build`. The browser JS bundle has the URL hardcoded from build time.
+
+**No sudo on host**: Use `docker run --rm -v /home/pixel/pixel:/data alpine chown -R 1000:1000 /data/<path>` for permission fixes.
+
+**ai-sdk patches**: The agent Dockerfile patches `@ai-sdk/openai` for Gemini compatibility (both `.js` and `.mjs` files). These break on package upgrades. See `pixel-agent/Dockerfile` and `docs/TECH_GUIDE.md` for details.
+
+**nginx logging**: The nginx container uses a logging driver that doesn't support `docker compose logs nginx`. Check errors via `docker exec pixel-nginx-1 cat /var/log/nginx/error.log` or test config with `docker exec pixel-nginx-1 nginx -t`.
+
 ### Health Checks
 ```bash
 curl http://localhost:3003/health      # Agent (ElizaOS)

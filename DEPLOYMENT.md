@@ -21,17 +21,31 @@ nano .env
 ```
 **Required Production Keys:**
 - `GH_TOKEN`: GitHub PAT with repo scope (required for Syntropy self-evolution)
-- `OPENAI_API_KEY`: Core LLM (required for agent)
-- `OPENROUTER_API_KEY`: Multi-model AI routing
-- `NAKAPAY_API_KEY`: Lightning Network payments
-
-**Database Note:** This repo runs the ElizaOS agent on external PostgreSQL via `POSTGRES_URL` (Compose service `pixel-postgres`). The Postgres image includes `pgvector` so embedding/memory migrations can run cleanly.
+- `OPENAI_API_KEY`: LLM provider API key. Currently set to a **Google Gemini API key** routed via OpenAI-compatible endpoint (see AI Provider Setup below)
 - `NAKAPAY_API_KEY`: Lightning Network payments
 - `TELEGRAM_BOT_TOKEN`: Telegram bot integration
-- `DISCORD_API_TOKEN` / `DISCORD_APPLICATION_ID`: Discord bot integration
 
-**Optional (disabled by default):**
+**AI Provider Setup (Current: Google Gemini Free Tier):**
+The agent uses Google Gemini via OpenAI-compatible API, not actual OpenAI:
+```env
+OPENAI_API_KEY=<your-google-gemini-api-key>
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+OPENAI_SMALL_MODEL=gemini-2.0-flash
+OPENAI_LARGE_MODEL=gemini-2.5-flash
+EMBEDDING_PROVIDER=openai
+USE_OPENAI_EMBEDDING=true
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+> **Warning**: The `@ai-sdk/openai` package has two known incompatibilities with Gemini that are patched at Docker build time in `pixel-agent/Dockerfile`:
+> 1. It defaults to the `/responses` endpoint (Gemini only supports `/chat/completions`) -- patched to force `createChatModel`
+> 2. It sends `stop: []` (empty array) which Gemini rejects -- patched to send `undefined` instead
+
+**Optional:**
+- `OPENROUTER_API_KEY`: Multi-model AI fallback routing (free tier available with no key)
+- `DISCORD_API_TOKEN` / `DISCORD_APPLICATION_ID`: Discord bot integration
 - `TWITTER_*`: Twitter API credentials (plugin disabled until configured)
+
+**Database Note:** This repo runs the ElizaOS agent on external PostgreSQL via `POSTGRES_URL` (Compose service `pixel-postgres`). The Postgres image includes `pgvector` so embedding/memory migrations can run cleanly.
 
 ### 3. Launch
 ```bash
@@ -67,6 +81,28 @@ Databases are stored in `./data/`.
 1.  **Always Push Submodules First**: Never commit to the root without first pushing your submodule changes.
 2.  **Test Locally Before Deploy**: Run `npm run dev` or `docker compose up` locally to verify changes.
 3.  **Use Atomic Commits**: Update the root submodule pointer in the same commit as your documentation updates.
+
+## Operational Gotchas (Hard-Won Knowledge)
+
+### Nginx DNS Caching (502 After Container Recreation)
+Nginx resolves upstream hostnames at startup and caches the IP. When `docker compose up -d --build` recreates a container, the container gets a new Docker-internal IP, but nginx still points to the old one -- resulting in **502 Bad Gateway**.
+
+**Current mitigation**: `nginx/nginx.conf` uses Docker's embedded DNS resolver (`resolver 127.0.0.11 valid=10s`) with variable-based `proxy_pass` (`set $var http://service:port; proxy_pass $var`). This forces re-resolution every 10 seconds. If you ever revert to static `upstream` blocks, you **must** restart nginx after any container recreation.
+
+### NEXT_PUBLIC_* Variables Are Baked at Build Time
+Next.js `NEXT_PUBLIC_*` environment variables are embedded into the JavaScript bundle at **build time**, not runtime. Changing `.env` alone is not enough -- you must **rebuild the web container** (`docker compose up -d web --build`). The `NEXT_PUBLIC_API_URL` must be set to `https://ln.pixel.xx.kg/api` (the public domain), not `http://127.0.0.1:3000/api` (which would make the browser try to reach localhost).
+
+### No sudo / No Node on Host
+The `pixel` user has no sudo access. Use `docker run --rm` with Alpine for permission fixes (e.g., `docker run --rm -v /home/pixel/pixel:/data alpine chown -R 1000:1000 /data/somefile`). There is no Node/npm/bun installed on the host -- all build tools run inside Docker containers.
+
+### Container Rebuild Cascades
+Running `docker compose up -d web --build` may also recreate `api` and `narrative-correlator` due to the dependency chain. After any rebuild, verify all dependent containers are still healthy with `docker compose ps`.
+
+### ai-sdk Patches in Agent Dockerfile
+The `pixel-agent/Dockerfile` applies `perl -pi -e` patches to `@ai-sdk/openai` package files (both `index.js` and `index.mjs` since Bun uses ESM). These patches are fragile and must be verified after any `@ai-sdk/openai` version update. The patches fix:
+1. `/responses` -> `/chat/completions` endpoint routing
+2. `stop: []` empty array rejection
+3. Telegram error handling and crash prevention
 
 ## 🚨 Emergency Recovery
 

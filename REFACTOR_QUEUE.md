@@ -13,7 +13,7 @@
 |--------|-------|-------------|
 | READY | 0 | Available for processing |
 | IN_PROGRESS | 0 | Currently being worked on |
-| DONE | 58 | Completed successfully |
+| DONE | 59 | Completed successfully |
 | FAILED | 0 | Failed, needs human review |
 | BLOCKED | 0 | Waiting on dependency |
 
@@ -32,9 +32,9 @@
 | 3 | Syntropy Tools Extraction | T027-T037 | Done 12/12 |
 | 4 | Documentation & Knowledge | T038-T040 | Done 3/3 |
 | 5 | Operations & Maintenance | T041-T077 | Done 36/36 |
-| 6 | Recovery & Infrastructure | T001-T003 (new) | Done 3/3 |
+| 6 | Recovery & Infrastructure | T001-T004 (new) | Done 4/4 |
 
-**Total Completed**: 58 tasks
+**Total Completed**: 59 tasks
 
 > Full task history with instructions available in [REFACTOR_ARCHIVE.md](./REFACTOR_ARCHIVE.md)
 
@@ -66,19 +66,5 @@
 ---
 
 ## Archived Tasks (Recently Closed)
-
-### T004: Perform critical disk cleanup and prune ecosystem entropy ⬜ READY
-**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
-
-```
-INSTRUCTIONS:
-1. Run 'docker system prune -af --volumes' to clear unused images, containers, and volumes.
-2. Search for and remove old backups (>7 days) in the /pixel/backups or relevant directories.
-3. Check for large log files and rotate/truncate if necessary.
-4. Verify disk space using 'df -h'.
-
-VERIFY:
-df -h / | awk 'NR==2 {print $5}' | sed 's/%//' | xargs -I {} [ {} -lt 85 ] && echo "Success" || echo "Failed"
-```
 
 ---

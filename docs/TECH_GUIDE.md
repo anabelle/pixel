@@ -45,8 +45,8 @@ Plugins enable agent capabilities. Configured in `pixel-agent/scripts/build-char
 - `@elizaos/plugin-bootstrap` - Core agent bootstrapping
 - `@elizaos/adapter-postgres` - PostgreSQL database adapter
 - `@elizaos/plugin-sql` - SQL query support
-- `@elizaos/plugin-openai` - OpenAI API integration
-- `@elizaos/plugin-openrouter` - Multi-model AI routing
+- `@elizaos/plugin-openai` - OpenAI-compatible API integration (currently routing to Google Gemini)
+- `@elizaos/plugin-openrouter` - Multi-model AI fallback routing
 - `@elizaos/plugin-telegram` - Telegram bot integration
 - `@elizaos/plugin-knowledge` - Knowledge management
 - `pixel-plugin-nostr` - Custom Nostr integration (canvas events)
@@ -54,6 +54,28 @@ Plugins enable agent capabilities. Configured in `pixel-agent/scripts/build-char
 **Disabled:**
 - `@elizaos/plugin-discord` - Disabled until API credentials configured
 - `@elizaos/plugin-twitter` - Disabled until API credentials configured
+
+## AI Provider Architecture
+
+The agent uses **Google Gemini** via the **OpenAI-compatible endpoint**, not actual OpenAI. This is configured through environment variables:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `OPENAI_API_KEY` | Google Gemini API key | Auth for Gemini via OpenAI-compat |
+| `OPENAI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Redirect to Gemini |
+| `OPENAI_SMALL_MODEL` | `gemini-2.0-flash` | Fast generation |
+| `OPENAI_LARGE_MODEL` | `gemini-2.5-flash` | Complex reasoning |
+| `EMBEDDING_PROVIDER` | `openai` | Must be 'openai' or 'google' (not 'openrouter') |
+| `USE_OPENAI_EMBEDDING` | `true` | Enables embedding via the OpenAI-compat endpoint |
+
+### ai-sdk Compatibility Patches
+The `@ai-sdk/openai` package (v2.0.88+) has breaking incompatibilities with Gemini's OpenAI-compatible API. These are patched at Docker build time in `pixel-agent/Dockerfile` using `perl -pi -e`:
+
+1. **`/responses` endpoint**: The SDK defaults to the new OpenAI Responses API. Gemini only supports `/chat/completions`. Patch forces `createChatModel()` over `createResponsesModel()`.
+2. **`stop: []` empty array**: Gemini rejects empty arrays for the `stop` parameter. Patch converts `[]` to `undefined`.
+3. **Both `.js` and `.mjs` must be patched**: Bun uses ESM (`.mjs`), Node uses CJS (`.js`). Missing either causes silent failures.
+
+> **Important**: These patches are fragile. After upgrading `@ai-sdk/openai`, verify the patched code patterns still exist in the new version. Check `pixel-agent/Dockerfile` for the exact `perl` commands.
 
 ## 🤖 Worker Architecture
 
@@ -86,11 +108,38 @@ For full architecture details, see [WORKER_ARCHITECTURE.md](./WORKER_ARCHITECTUR
 - **Port Conflicts**: API (3000), Landing (3001), Web/Canvas (3002), Agent (3003), PostgreSQL (5432).
 - **Twitter 401**: Twitter plugin is disabled by default. Enable in `scripts/build-character.ts` when credentials are ready.
 
+### LLM Failures (Agent Not Responding)
+- **Symptom**: Agent container healthy but Telegram/Nostr produce no replies, or logs show `[GENERATION] Error`.
+- **Check**: `docker compose logs agent --tail=50 | grep -i "error\|429\|generation"`.
+- **Common causes**:
+  1. API key quota exhausted (429 errors) -- switch provider or get new key
+  2. `OPENAI_BASE_URL` wrong or missing -- must match provider's OpenAI-compat endpoint
+  3. ai-sdk patches not applied -- rebuild agent container with `docker compose up -d agent --build`
+  4. `EMBEDDING_PROVIDER` set to invalid value (only accepts `openai` or `google`)
+
+### Canvas Empty (0 Pixels)
+- **Check API directly**: `curl -s http://localhost:3000/api/stats` -- if this returns data, the API is fine
+- **Check NEXT_PUBLIC_API_URL**: `docker exec pixel-web-1 printenv NEXT_PUBLIC_API_URL` -- must be `https://ln.pixel.xx.kg/api`, not `http://127.0.0.1:3000/api`
+- **If wrong**: Fix in `.env`, then `docker compose up -d web --build` (NEXT_PUBLIC_* vars are baked at build time)
+- **Check for 502**: `curl -sk https://localhost:443/api/stats -H "Host: ln.pixel.xx.kg"` -- if 502, restart nginx: `docker compose restart nginx`
+
+### Nginx 502 Bad Gateway
+- **Root cause**: Nginx cached a container's old Docker IP after the container was recreated.
+- **Quick fix**: `docker compose restart nginx`
+- **Permanent fix**: Already applied -- `nginx/nginx.conf` uses `resolver 127.0.0.11` with variable-based `proxy_pass`
+- **Verify**: `curl -sk https://localhost:443/api/stats -H "Host: ln.pixel.xx.kg"` should return JSON
+
 ### Permission Denied (Docker)
 If you can't run Docker without sudo:
 ```bash
 sudo usermod -aG docker $USER
 newgrp docker
+```
+
+### Permission Denied (Files)
+Root-owned files from Docker builds. No sudo available, so use:
+```bash
+docker run --rm -v /home/pixel/pixel:/data alpine chown -R 1000:1000 /data/<path>
 ```
 
 ## 🧪 THE TESTING DOCTRINE: CODE QUALITY & SELF-PRESERVATION

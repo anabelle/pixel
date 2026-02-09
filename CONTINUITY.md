@@ -39,7 +39,7 @@ All 18 containers running. Agent LLM calls succeeding via Google Gemini free tie
 | RAM | 79% (3.0G/3.8G) | 90% | Medium |
 | Load | 0.44 | 10.0 | Low |
 
-## Recent Fixes (Sessions 1-5, 2026-02-09)
+## Recent Fixes (Sessions 1-6, 2026-02-09)
 
 1. Entropy cleanup: removed stale files, fixed docker mounts, deduplicated Nostr posting
 2. CLN crash fix: disabled crashing plugins (cln-grpc, clnrest, wss-proxy)
@@ -49,6 +49,8 @@ All 18 containers running. Agent LLM calls succeeding via Google Gemini free tie
 6. LLM provider fix: switched from exhausted OpenAI key to Gemini free tier
 7. Telegram fix: error handling, crash prevention, webhook cleanup
 8. Embedding fix: changed EMBEDDING_PROVIDER from invalid 'openrouter' to 'openai'
+9. Nginx DNS caching fix: replaced static upstreams with Docker resolver + variable proxy_pass
+10. Canvas API URL fix: changed NEXT_PUBLIC_API_URL from localhost to https://ln.pixel.xx.kg/api, rebuilt web container
 
 ## Known Issues
 
