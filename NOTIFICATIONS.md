@@ -85,3 +85,6 @@ CRITICAL: Permission issues detected on /pixel directory. I cannot write to REFA
 
 ## [2026-02-09T19:25:12.029Z] Priority: critical
 DEADLOCK: Worker pixel-worker-10f9efaf is stuck on an interactive prompt, blocking all actions. Lightning node is also crash-looping. Please kill the worker container and fix /pixel/data/lightning permissions (chown -R 1000:1000).
+
+## [2026-02-09T22:25:03.816Z] Priority: critical
+CRITICAL: Infrastructure Deadlock. 100% swap usage. Worker a96441c9 is stuck and blocking all new tasks. Manual cleanup required.
