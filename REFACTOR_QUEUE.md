@@ -84,19 +84,23 @@ VERIFY:
 
 ## 📋 Phase 2: API Routes
 
+---
 
-### T001: Patch OpenAI Vision: max_tokens -> max_completion_tokens ✅ DONE
-**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+## 📋 Phase 4: New Tasks (Test Coverage)
+
+
+### T001: Create test for lnpixels-stats API route ✅ DONE
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 ```
 INSTRUCTIONS:
-1. Locate the OpenAI Vision implementation in plugin-nostr (likely in a provider or action).
-2. Find where the API call to OpenAI is made.
-3. Replace the `max_tokens` parameter with `max_completion_tokens` for the gpt-4o/gpt-4o-mini models to comply with the new API requirements.
-4. Verify by running the agent and checking if vision requests still return 400.
+1. Create a new test file: /pixel-landing/src/app/api/lnpixels-stats/route.test.ts
+2. Use Vitest/Jest to mock the database call.
+3. Verify that the GET handler returns the correct pixel count and treasury status.
+4. Run 'npm test' in the pixel-landing directory to verify.
 
 VERIFY:
-grep -r "max_completion_tokens" .
+cd /pixel-landing && npm test
 ```
 
 ---
