@@ -14,6 +14,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - DB_PATH=/app/data/pixels.db
       - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/pixel_agent
       - CORRELATOR_URL=http://narrative-correlator:3004
       - API_URL=http://api:3000/api
