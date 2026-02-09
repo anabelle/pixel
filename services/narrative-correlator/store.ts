@@ -7,7 +7,7 @@ export class CorrelationStore {
   private correlationsPath: string;
   private correlations: Correlation[] = [];
 
-  constructor(dataPath: string = '/pixel/data') {
+  constructor(dataPath: string = '/data') {
     this.dataPath = dataPath;
     this.correlationsPath = path.join(dataPath, 'narrative-correlations.json');
   }

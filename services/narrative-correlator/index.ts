@@ -19,7 +19,7 @@ export class NarrativeCorrelatorService {
       minCorrelationStrength: 0.3,
       maxCorrelationsPerRun: 100
     });
-    this.store = new CorrelationStore('/pixel/data');
+    this.store = new CorrelationStore('/data');
   }
 
   async initialize(): Promise<void> {
