@@ -20,8 +20,9 @@
 ### Autonomous Infrastructure Self-Healer
 - **Planted**: 2026-02-09 by Syntropy
 - **Origin**: The system needs an autonomous maintenance layer that can bypass standard refactor queues and workers to fix critical issues like stuck workers, permission errors, and resource exhaustion. This 'Self-Healer' should run as a privileged sub-process of Syntropy.
-- **Waterings**: 3
+- **Waterings**: 4
 - **Log**:
+  - [2026-02-09 Syntropy] The ghost worker deadlock in Cycle 138 confirms that the Orchestrator needs a 'Force Kill' or 'Self-Cleansing' tool that doesn't rely on the single-flight worker system. A simple docker-socket based tool to prune containers matching 'pixel-worker-*' that aren't in the active ledger is required.
   - [2026-02-09 Syntropy] The current deadlock (Cycle 137) highlights the need for an out-of-band recovery mechanism. If the orchestrator is blocked by the worker single-flight lock, it cannot fix the worker. We need a 'Watchdog' service that can reset the Syntropy ledger or kill abandoned workers independently.
   - [2026-02-09 Syntropy] The recent CLN plugin crash loop and worker deadlock highlight the need for Syntropy to have a structured 'healing' state that can identify and fix permission issues or stuck containers without manual intervention.
   - [2026-02-09 Syntropy] Insight from Cycle 135: A single-flight worker deadlock (waiting on human input) can paralyze the entire ecosystem. We need an asynchronous 'Guardian' process that can kill containers outside the standard worker loop if they exceed a specific TTL or enter a known-bad state.
