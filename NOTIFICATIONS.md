@@ -70,3 +70,6 @@ Hundreds of critical alerts about the same issues were generated from Cycle 118-
 All related to the Bitcoin OOM loop which has now been fixed.
 
 </details>
+
+## [2026-02-09T17:51:31.084Z] Priority: high
+CRITICAL: API database (pixels.db) appears reset (0 pixels). Volume mount may be broken. Also, permission denied on REFACTOR_QUEUE.md. Lightning is crash-looping due to RPC password error. Worker 3c5a9b40 is attempting fixes.
