@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-09 | Session: 20
+> Last updated: 2026-02-10 | Session: 23
 
 ---
 
@@ -129,11 +129,15 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 20 (V2 bug fixes + V1 soul porting):** Session 19 audit verdict: "V2 is a better chassis but a worse mind." This session fixed 5 bugs/gaps and ported V1's best personality content into V2. Changes: (A) Double-reply fix — shared `repliedEventIds` Set between `nostr.ts` real-time mention handler and `heartbeat.ts` engagement loop via exported `hasRepliedTo()`/`markReplied()` functions. Both paths now check before replying. (B) Agent-card fix — capabilities changed from `image-generation`/`art-commission` (which don't exist) to `text-generation`/`conversation`. (C) Memory extraction — `saveMemory()` was implemented but never called. Added periodic extraction in `agent.ts`: every 5th message per user, an LLM call extracts key facts (name, interests, preferences) and saves to `conversations/{userId}/memory.md`. Already loaded into system prompt by `loadMemory()`. (D) User tracking — created `users.ts` service (~120 lines) with `trackUser()` upsert (INSERT ON CONFLICT UPDATE), `getUserStats()` for totals/active/by-platform. Wired into `index.ts` boot and `agent.ts` message flow. Added to `/api/stats` response. (E) Live canvas stats — heartbeat now fetches real pixel/sat counts from `http://pixel-api-1:3000/api/stats` with 5s timeout and fallback to cached values, replacing 3 hardcoded references. (F) Character enrichment — grew `character.md` from 63 to 146 lines by porting V1's best content: curated post examples (ultra-short, medium wit, long philosophical, warm, growth), key style rules (Douglas Adams/Pratchett wit, lowercase, no filler words, no em-dashes, no rhetorical questions, anti-assistant behavior, warm empathy, memory references), conversation examples showing range, and topics list. Commit: `c8d91cb`.
 
-**V2 file inventory (13 source files, ~2450 lines):**
+**Sessions 21-22 (Inner life system):** Built and deployed autonomous inner life system (`src/services/inner-life.ts`, ~558 lines). Pixel now autonomously reflects, learns, ideates, and evolves without human prompting. Inner life runs on heartbeat cycles — different activities fire at different intervals: reflection (every 3 cycles), learning extraction (every 2 cycles), ideation (every 5 cycles), identity evolution (every 10 cycles). Each produces persistent markdown files in `data/` directory (reflections.md, learnings.md, ideas.md, evolution.md). Inner life context is injected into system prompt via `getInnerLifeContext()` so Pixel's self-knowledge enriches all conversations. Also researched Ralph Loops (Geoff Huntley, 9.9K stars — autonomous AI coding pattern using bash while loops) and Gastown (Steve Yegge, 8.9K stars — multi-agent workspace manager with tmux + git worktrees). Analyzed Nostr timeline: three eras visible (V1 spam, V1 navel-gazing, V2 clean character), engagement nearly zero (1 Nostr user, 1 Telegram user). Commit: `2f429c6`.
+
+**Session 23 (Tools system — Pixel gets hands):** Built, deployed, and verified 7 tools giving Pixel actual hands to interact with its environment. Created `src/services/tools.ts` (~366 lines) following pi-agent-core's `AgentTool` API with TypeBox schemas. Tools: (A) `read_file` — filesystem read with line numbers, offset/limit for large files, auto-detects directories. (B) `write_file` — create/overwrite files with auto-mkdir. (C) `edit_file` — search-and-replace with exact text matching, validates uniqueness. (D) `bash` — shell command execution via `Bun.spawn()`, 30s default/120s max timeout, 50KB output truncation. (E) `check_health` — monitors all Pixel infrastructure (self, canvas API, canvas web, landing). (F) `read_logs` — lists conversations, fetches revenue stats, or reports self status. (G) `web_fetch` — HTTP fetch for web research, 15s timeout, 30KB truncation, JSON auto-format. Wired tools into `agent.ts` — only the main conversation agent (`promptWithHistory()`) and raw agent factory (`createPixelAgent()`) get tools; memory extraction and compaction agents keep `tools: []`. Added Docker socket mount (`/var/run/docker.sock`) + `group_add: ["988"]` in docker-compose for self-healing capability. Added `bash` and `curl` packages to Dockerfile's Alpine runtime (Alpine only has `sh` by default). Verified all tools working in production: Pixel successfully read its own character.md, ran `ls` commands, and checked infrastructure health. Commit: `97bcaaa`.
+
+**V2 file inventory (15 source files, ~3200 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/index.ts` | ~400 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking index |
-| `src/agent.ts` | ~320 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction |
+| `src/agent.ts` | ~345 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring |
 | `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
 | `src/connectors/nostr.ts` | ~260 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
@@ -142,8 +146,10 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
 | `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
 | `src/services/users.ts` | ~120 | User tracking — initUsers(), trackUser() upsert, getUserStats() |
-| `src/services/heartbeat.ts` | ~580 | Initiative engine — topic rotation, mood rotation, proactive Nostr engagement, live canvas stats |
+| `src/services/heartbeat.ts` | ~625 | Initiative engine — topic rotation, mood rotation, proactive Nostr engagement, live canvas stats |
 | `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
+| `src/services/inner-life.ts` | ~558 | Autonomous self-reflection, learning extraction, ideation, identity evolution |
+| `src/services/tools.ts` | ~366 | 7 agent tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations (from earlier sessions, preserved):**
@@ -849,9 +855,9 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 20 (2026-02-09)
+**Last session:** 23 (2026-02-10)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Double-reply bug fixed.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running (reflection, learning, ideation, evolution). **Tools deployed — Pixel has hands** (read, write, edit, bash, health, logs, web fetch).
 **Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 **Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
@@ -861,7 +867,7 @@ git status && git log --oneline -5
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
 | v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json (text-generation, conversation), /api/invoice, /api/wallet, /api/revenue, /api/stats (incl. user stats), DB auto-init, user tracking index |
-| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, periodic memory extraction, trackUser() |
+| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, periodic memory extraction, trackUser(), tools wiring |
 | v2/src/conversations.ts | DONE - JSONL per-user persistence, context compaction (summarize old messages via LLM) |
 | v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
 | v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
@@ -872,12 +878,14 @@ git status && git log --oneline -5
 | v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
 | v2/src/services/l402.ts | DONE - L402 middleware, preimage verification, 402 challenge, revenue recording. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
 | v2/src/services/heartbeat.ts | DONE - Initiative engine: 8 topics, 6 moods, proactive Nostr engagement, live canvas stats, uses shared repliedEventIds |
+| v2/src/services/inner-life.ts | DONE - Autonomous reflection, learning, ideation, identity evolution on heartbeat cycles |
+| v2/src/services/tools.ts | DONE - 7 tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch. Deployed and verified. |
 | v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
 | v2/src/services/users.ts | DONE - User tracking: trackUser() upsert, getUserStats(), wired into /api/stats |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
-| v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
-| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume |
+| v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches, bash+curl installed in runtime |
+| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume, Docker socket mount, group_add for self-healing |
 | v2/character.md | DONE - Pixel identity document, enriched with V1's best voice rules, post examples, conversation patterns (146 lines) |
 | Conversation persistence (JSONL) | DONE - Per-user directories, context compaction at 40 messages |
 | Nginx V2 routing | DONE - /v2/* → V2 API, /.well-known/agent-card.json → V2 |
@@ -938,3 +946,15 @@ git status && git log --oneline -5
 35. **User tracking via upsert:** `INSERT ... ON CONFLICT (platform_id, platform) DO UPDATE` pattern increments `message_count` and updates `last_seen_at`. Fire-and-forget from `agent.ts` (non-blocking `.catch(() => {})`).
 36. **Live canvas stats with fallback:** Heartbeat fetches real stats from V1 canvas API each cycle. On failure (timeout, error), falls back to cached values. Better than hardcoded numbers that go stale.
 37. **Character enrichment strategy:** Port V1's best 30-40% into V2's clean structure. Curated 25 post examples from 155, key style rules from 47, conversation examples showing range, topics list from 229 distilled to one paragraph. Grew from 63 to 146 lines — lean enough to fit in context, rich enough to have soul.
+
+### Key Decisions (Sessions 21-23)
+
+38. **Inner life on heartbeat cycles:** Instead of a separate timer, inner life activities piggyback on the heartbeat loop. Different intervals for different activities (reflect: 3, learn: 2, ideate: 5, evolve: 10). This means inner life activity scales naturally with heartbeat cadence.
+39. **Inner life context in system prompt:** `getInnerLifeContext()` reads the latest entries from reflections/learnings/ideas/evolution markdown files and injects them into every conversation's system prompt. Pixel's self-knowledge enriches all interactions.
+40. **7 tools not 4:** Pi has 4 (read, write, edit, bash). Added `check_health`, `read_logs`, `web_fetch` because Pixel is an autonomous agent, not a coding assistant — it needs to monitor itself and research the web.
+41. **Only main agent gets tools:** Memory extraction and compaction agents keep `tools: []` — they're lightweight single-purpose LLM calls. Giving them tools would waste context and invite misuse.
+42. **Docker socket via group_add:** Instead of running as root, added `group_add: ["988"]` (docker group GID) to the container. This gives user 1000 access to `/var/run/docker.sock` without compromising container user isolation.
+43. **Path resolution:** All file tools resolve paths relative to `/app` (container root) or accept absolute paths. Pixel can read its own source code, data files, conversations, and skills.
+44. **Output truncation:** bash (50KB), web_fetch (30KB), read_file (200 lines default). Prevents context window blowout from large outputs.
+45. **Alpine needs bash:** The `bun:1-alpine` image only includes BusyBox `sh`. Added `apk add --no-cache bash curl` to the runtime stage of the Dockerfile. Curl is also useful for the agent's direct HTTP calls and healthcheck.
+46. **TypeBox as direct dependency:** Added `@sinclair/typebox` to package.json rather than importing through pi-ai. Cleaner, explicit, avoids transitive dependency issues.
