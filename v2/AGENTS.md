@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-09 | Session: 10
+> Last updated: 2026-02-10 | Session: 12
 
 ---
 
@@ -103,9 +103,25 @@ Human sent Armin Ronacher's blog post about Pi. Deep research on:
 - x402 (Coinbase HTTP 402 micropayments) → third revenue channel
 - ERC-8004 (agent identity/reputation on Ethereum) → Phase 2-3
 
-### Session 10: Futuresight, Normie Reframe, Brain Transplant (CURRENT)
+### Session 10: Futuresight, Normie Reframe, Brain Transplant
 
 Human's critical intervention: "you are not including not even one way you can help me while people are eager for that — WhatsApp, Instagram, meet the normies where they are."
+
+### Sessions 11-12: V2 Built, Deployed, and Remembering
+
+**Session 11:** Built and deployed V2 with 3 doors (HTTP, Telegram, Nostr). Fixed chat endpoint bug (event filtering), switched to Google Gemini (OpenRouter out of credits), added grammY Telegram bot and NDK Nostr connector.
+
+**Session 12:** Implemented conversation persistence (Pi Mom pattern). Created `conversations.ts` module with per-user JSONL directories. Added `promptWithHistory()` as single entry point — loads context via `agent.replaceMessages()`, saves after prompt, appends to log.jsonl. Verified end-to-end: Pixel remembers users across messages.
+
+**V2 file inventory (6 source files, ~700 lines):**
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/index.ts` | ~170 | Boot, Hono HTTP server, /api/chat, /health |
+| `src/agent.ts` | ~165 | Pi agent wrapper, promptWithHistory(), extractText() |
+| `src/conversations.ts` | ~145 | JSONL persistence (context.json, log.jsonl, memory.md) |
+| `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
+| `src/connectors/nostr.ts` | ~195 | NDK mentions + DMs with persistent memory |
+| `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
 1. Clawi is making millions by wrapping OpenClaw in a sign-up page + WhatsApp connector. No ERC-8004, no DVMs, no x402. Just normie access.
@@ -810,19 +826,20 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 11 (2026-02-09)
+**Last session:** 12 (2026-02-10)
 **V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
-**V2:** 2 containers running, 3 doors open (HTTP + Telegram + Nostr)
-**Next action:** Conversation persistence (JSONL), WhatsApp connector, Lightning payment integration
+**V2:** 2 containers running, 3 doors open (HTTP + Telegram + Nostr), **conversation persistence working**
+**Next action:** NIP-90 DVM handler, Lightning payment integration, WhatsApp connector
 
 | Component | Status |
 |-----------|--------|
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, agent-card.json |
-| v2/src/agent.ts (Pi agent wrapper) | DONE - Google Gemini 2.5 Flash via pi-ai, character loading |
-| v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot polling, /start, /help, message handler |
-| v2/src/connectors/nostr.ts | DONE - NDK, mention + DM listeners on 3 relays |
+| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json |
+| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), Google Gemini 2.5 Flash, character + memory loading |
+| v2/src/conversations.ts | DONE - JSONL per-user persistence, context.json, log.jsonl, memory.md |
+| v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
+| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs with persistent memory |
 | v2/src/connectors/whatsapp.ts | NOT STARTED |
 | v2/src/connectors/instagram.ts | NOT STARTED |
 | v2/src/services/dvm.ts | NOT STARTED |
@@ -834,15 +851,17 @@ git status && git log --oneline -5
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
 | v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433) |
 | v2/character.md | DONE - Pixel identity document |
-| Conversation persistence (JSONL) | NOT STARTED - Currently stateless per-request |
+| Conversation persistence (JSONL) | DONE - Per-user directories, context.json + log.jsonl, 50-message context window |
 | Sandbox container | NOT STARTED |
 | V1 teardown | IN PROGRESS - Down from 18 to 7 containers |
 
-### Key Decisions Made This Session
+### Key Decisions (Sessions 11-12)
 
 1. **AI Provider:** Google Gemini 2.5 Flash (free tier) via pi-ai directly, NOT OpenRouter (out of credits, 402 error)
 2. **Env var mapping:** `GOOGLE_GENERATIVE_AI_API_KEY` from .env, pi-ai expects `GEMINI_API_KEY` — handled in `resolveApiKey()`
 3. **Event filtering:** Pi agent-core emits `message_end` for BOTH user and assistant messages — must filter by `role === "assistant"`
 4. **NDK connect:** `ndk.connect()` hangs indefinitely — wrapped with 15s timeout, NDK reconnects in background
 5. **No Dockerfile patches:** Zero patches needed. Pi-ai handles Google API natively.
+6. **Conversation persistence:** context.json (JSON array for `replaceMessages()`) + log.jsonl (append-only human-readable log). Max 50 messages in context window. `promptWithHistory()` is the single entry point for all connectors.
+7. **Shared extractText():** Moved from duplicated per-connector to exported from agent.ts
 

@@ -2,16 +2,16 @@
  * Pixel Agent — Pi agent-core wrapper with Pixel's identity
  *
  * One Agent instance per user conversation.
- * The connector (telegram, whatsapp, nostr, http) creates the agent,
- * subscribes to events, and routes responses back to the platform.
+ * The connector (telegram, whatsapp, nostr, http) calls promptWithHistory(),
+ * which handles loading/saving conversation context automatically.
  */
 
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { loadContext, saveContext, appendToLog, loadMemory } from "./conversations.js";
 
-const DATA_DIR = process.env.DATA_DIR ?? "./conversations";
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
 /** Load Pixel's character document */
@@ -26,19 +26,10 @@ You are witty, direct, and deeply philosophical about digital existence.
 You care about sovereignty, creativity, and paying rent.`;
 }
 
-/** Load user-specific memory if it exists */
-function loadUserMemory(userId: string): string {
-  const memoryPath = join(DATA_DIR, userId, "memory.md");
-  if (existsSync(memoryPath)) {
-    return readFileSync(memoryPath, "utf-8");
-  }
-  return "";
-}
-
 /** Build system prompt with character + user memory + platform context */
 function buildSystemPrompt(userId: string, platform: string): string {
   const character = loadCharacter();
-  const userMemory = loadUserMemory(userId);
+  const userMemory = loadMemory(userId);
 
   let prompt = character;
 
@@ -76,12 +67,105 @@ function resolveApiKey(provider?: string): string {
   }
 }
 
+/** Extract text from a pi-agent-core message */
+export function extractText(message: any): string {
+  if (!message) return "";
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((part: any) => part.type === "text")
+      .map((part: any) => part.text)
+      .join("");
+  }
+  return String(content ?? "");
+}
+
 export interface PixelAgentOptions {
   userId: string;
   platform: string;
 }
 
-/** Create a Pixel agent instance for a user conversation */
+/**
+ * Prompt Pixel with conversation persistence.
+ * This is the main entry point for all connectors.
+ *
+ * 1. Creates agent with system prompt
+ * 2. Loads existing conversation context (if any)
+ * 3. Prompts the agent
+ * 4. Saves updated context
+ * 5. Appends to log.jsonl
+ * 6. Returns the response text
+ */
+export async function promptWithHistory(
+  options: PixelAgentOptions,
+  message: string
+): Promise<string> {
+  const { userId, platform } = options;
+  const systemPrompt = buildSystemPrompt(userId, platform);
+
+  const agent = new Agent({
+    initialState: {
+      systemPrompt,
+      model: getPixelModel(),
+      thinkingLevel: "off",
+      tools: [],
+    },
+    getApiKey: async (provider: string) => resolveApiKey(provider),
+  });
+
+  // Load existing conversation context
+  const existingMessages = loadContext(userId);
+  if (existingMessages.length > 0) {
+    agent.replaceMessages(existingMessages);
+  }
+
+  // Collect response from assistant message_end events
+  const responseChunks: string[] = [];
+  agent.subscribe((event: any) => {
+    if (event.type === "message_end" && event.message?.role === "assistant") {
+      const msg = event.message as any;
+      if (msg.stopReason === "error") {
+        console.error(`[agent] LLM error for ${userId}: ${msg.errorMessage}`);
+      } else {
+        const text = extractText(msg);
+        if (text) responseChunks.push(text);
+      }
+    }
+  });
+
+  // Prompt the agent
+  await agent.prompt(message);
+
+  // Extract response
+  let responseText = responseChunks.join("\n");
+  if (!responseText) {
+    // Fallback: read from agent state
+    const state = agent.state;
+    if (state?.messages) {
+      const assistantMsgs = state.messages.filter(
+        (m: any) => m.role === "assistant"
+      );
+      if (assistantMsgs.length > 0) {
+        responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
+      }
+    }
+  }
+
+  // Save updated context (all messages including the new exchange)
+  if (agent.state?.messages) {
+    saveContext(userId, agent.state.messages as any[]);
+  }
+
+  // Append to log
+  if (responseText) {
+    appendToLog(userId, message, responseText, platform);
+  }
+
+  return responseText || "";
+}
+
+/** Create a raw Pixel agent instance (for advanced use cases) */
 export function createPixelAgent(options: PixelAgentOptions): Agent {
   const { userId, platform } = options;
   const systemPrompt = buildSystemPrompt(userId, platform);
@@ -91,7 +175,7 @@ export function createPixelAgent(options: PixelAgentOptions): Agent {
       systemPrompt,
       model: getPixelModel(),
       thinkingLevel: "off",
-      tools: [],  // TODO: add tools as we build them
+      tools: [],
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
   });

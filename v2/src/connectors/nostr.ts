@@ -5,35 +5,19 @@
  * - Mentions (kind 1 events tagging Pixel's pubkey)
  * - DMs (kind 4 NIP-04 encrypted direct messages)
  *
- * Each Nostr pubkey gets their own conversation context.
+ * Each Nostr pubkey gets persistent conversation context via JSONL.
  */
 
 import NDK, {
   NDKEvent,
   NDKPrivateKeySigner,
   NDKFilter,
-  NDKSubscription,
-  type NDKUserProfile,
 } from "@nostr-dev-kit/ndk";
-import { createPixelAgent } from "../agent.js";
+import { promptWithHistory } from "../agent.js";
 
 // Throttle: don't reply to the same pubkey more than once per interval
 const replyThrottle = new Map<string, number>();
 const THROTTLE_MS = 60_000; // 1 minute
-
-/** Extract text from a pi-agent-core message */
-function extractText(message: any): string {
-  if (!message) return "";
-  const content = message.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((part: any) => part.type === "text")
-      .map((part: any) => part.text)
-      .join("");
-  }
-  return String(content ?? "");
-}
 
 /** Convert nsec to hex private key */
 function nsecToHex(nsec: string): string {
@@ -42,18 +26,15 @@ function nsecToHex(nsec: string): string {
 
   // bech32 decode for nsec1...
   if (nsec.startsWith("nsec1")) {
-    // Simple bech32 decode
     const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-    const data = nsec.slice(5); // remove "nsec1" prefix
+    const data = nsec.slice(5);
     const values: number[] = [];
     for (const c of data) {
       const v = CHARSET.indexOf(c);
       if (v === -1) throw new Error("Invalid bech32 character");
       values.push(v);
     }
-    // Remove checksum (last 6 values)
     const payload = values.slice(0, -6);
-    // Convert from 5-bit to 8-bit
     let acc = 0;
     let bits = 0;
     const bytes: number[] = [];
@@ -69,45 +50,6 @@ function nsecToHex(nsec: string): string {
   }
 
   throw new Error("Invalid private key format");
-}
-
-/** Get response from agent for a message */
-async function getAgentResponse(
-  userId: string,
-  message: string,
-  platform: string
-): Promise<string> {
-  const agent = createPixelAgent({ userId, platform });
-
-  const responseChunks: string[] = [];
-  agent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const msg = event.message as any;
-      if (msg.stopReason !== "error") {
-        const text = extractText(msg);
-        if (text) responseChunks.push(text);
-      } else {
-        console.error(`[nostr] LLM error for ${userId}: ${msg.errorMessage}`);
-      }
-    }
-  });
-
-  await agent.prompt(message);
-
-  let response = responseChunks.join("\n");
-  if (!response) {
-    const state = agent.state;
-    if (state?.messages) {
-      const assistantMsgs = state.messages.filter(
-        (m: any) => m.role === "assistant"
-      );
-      if (assistantMsgs.length > 0) {
-        response = extractText(assistantMsgs[assistantMsgs.length - 1]);
-      }
-    }
-  }
-
-  return response || "";
 }
 
 /** Check if we should throttle replies to this pubkey */
@@ -149,14 +91,12 @@ export async function startNostr(): Promise<void> {
   console.log("[nostr] Connecting to relays...");
 
   try {
-    // NDK.connect() can hang if relays are unreachable. Add a timeout.
     const connectPromise = ndk.connect();
     const timeoutPromise = new Promise<void>((_, reject) =>
       setTimeout(() => reject(new Error("Connection timeout (15s)")), 15_000)
     );
     await Promise.race([connectPromise, timeoutPromise]);
   } catch (err: any) {
-    // NDK connect doesn't need to fully resolve — it works in the background
     console.log(`[nostr] Connect returned: ${err.message || "ok"} (continuing anyway)`);
   }
 
@@ -170,16 +110,13 @@ export async function startNostr(): Promise<void> {
   const mentionFilter: NDKFilter = {
     kinds: [1],
     "#p": [pubkey],
-    since: Math.floor(Date.now() / 1000) - 10, // Only new events from now
+    since: Math.floor(Date.now() / 1000) - 10,
   };
 
   const mentionSub = ndk.subscribe(mentionFilter, { closeOnEose: false });
 
   mentionSub.on("event", async (event: NDKEvent) => {
-    // Skip our own events
     if (event.pubkey === pubkey) return;
-
-    // Throttle
     if (isThrottled(event.pubkey)) return;
 
     const content = event.content;
@@ -188,10 +125,9 @@ export async function startNostr(): Promise<void> {
     console.log(`[nostr] Mention from ${event.pubkey.slice(0, 8)}...: ${content.slice(0, 80)}`);
 
     try {
-      const response = await getAgentResponse(
-        `nostr-${event.pubkey}`,
-        content,
-        "nostr"
+      const response = await promptWithHistory(
+        { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+        content
       );
 
       if (!response) return;
@@ -212,7 +148,6 @@ export async function startNostr(): Promise<void> {
       if (rootTag) {
         reply.tags.push(["e", rootTag[1], rootTag[2] || "", "root"]);
       } else {
-        // Original event is the root
         reply.tags.push(["e", event.id, "", "root"]);
       }
 
@@ -239,7 +174,6 @@ export async function startNostr(): Promise<void> {
       if (isThrottled(`dm-${event.pubkey}`)) return;
 
       try {
-        // Decrypt the DM
         const decrypted = await signer.decrypt(
           await ndk.getUser({ pubkey: event.pubkey }),
           event.content
@@ -249,10 +183,9 @@ export async function startNostr(): Promise<void> {
 
         console.log(`[nostr] DM from ${event.pubkey.slice(0, 8)}...: ${decrypted.slice(0, 80)}`);
 
-        const response = await getAgentResponse(
-          `nostr-dm-${event.pubkey}`,
-          decrypted,
-          "nostr-dm"
+        const response = await promptWithHistory(
+          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm" },
+          decrypted
         );
 
         if (!response) return;

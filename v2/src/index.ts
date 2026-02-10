@@ -9,10 +9,11 @@ import { Hono } from "hono";
 import { serve } from "bun";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createPixelAgent } from "./agent.js";
+import { promptWithHistory, extractText } from "./agent.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
+import { getConversationStats } from "./conversations.js";
 
 // ============================================================
 // Configuration
@@ -71,21 +72,6 @@ app.get("/.well-known/agent-card.json", (c) => {
   });
 });
 
-/** Extract text from a pi-agent-core message */
-function extractText(message: any): string {
-  if (!message) return "";
-  const content = message.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((part: any) => part.type === "text")
-      .map((part: any) => part.text)
-      .join("");
-  }
-  // Fallback: try to stringify
-  return String(content ?? "");
-}
-
 /** Simple chat endpoint (HTTP connector) */
 app.post("/api/chat", async (c) => {
   try {
@@ -96,43 +82,17 @@ app.post("/api/chat", async (c) => {
       return c.json({ error: "message is required" }, 400);
     }
 
-    const agent = createPixelAgent({
-      userId,
-      platform: "http",
-    });
-
-    // Collect response from assistant message_end events only
-    const responseChunks: string[] = [];
-    agent.subscribe((event: any) => {
-      if (event.type === "message_end" && event.message?.role === "assistant") {
-        const msg = event.message as any;
-        if (msg.stopReason === "error") {
-          console.error(`[chat] LLM error: ${msg.errorMessage}`);
-        } else {
-          const text = extractText(msg);
-          if (text) responseChunks.push(text);
-        }
-      }
-    });
-
-    await agent.prompt(message);
-
-    // Primary: use events. Fallback: read from agent state
-    let responseText = responseChunks.join("\n");
-    if (!responseText) {
-      const state = agent.state;
-      if (state?.messages) {
-        const assistantMsgs = state.messages.filter(
-          (m: any) => m.role === "assistant"
-        );
-        if (assistantMsgs.length > 0) {
-          responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
-        }
-      }
-    }
+    const responseText = await promptWithHistory(
+      { userId, platform: "http" },
+      message
+    );
 
     if (!responseText) {
-      responseText = "[No response generated — check AI provider config]";
+      return c.json({
+        response: "[No response generated — check AI provider config]",
+        userId,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return c.json({
@@ -157,6 +117,13 @@ app.get("/api/stats", async (c) => {
     containers: 4,
     version: "2.0.0",
   });
+});
+
+/** User conversation stats */
+app.get("/api/user/:userId/stats", async (c) => {
+  const userId = c.req.param("userId");
+  const stats = getConversationStats(userId);
+  return c.json(stats);
 });
 
 // ============================================================
