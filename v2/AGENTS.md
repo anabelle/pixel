@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 23
+> Last updated: 2026-02-10 | Session: 24
 
 ---
 
@@ -132,6 +132,8 @@ Human's critical intervention: "you are not including not even one way you can h
 **Sessions 21-22 (Inner life system):** Built and deployed autonomous inner life system (`src/services/inner-life.ts`, ~558 lines). Pixel now autonomously reflects, learns, ideates, and evolves without human prompting. Inner life runs on heartbeat cycles — different activities fire at different intervals: reflection (every 3 cycles), learning extraction (every 2 cycles), ideation (every 5 cycles), identity evolution (every 10 cycles). Each produces persistent markdown files in `data/` directory (reflections.md, learnings.md, ideas.md, evolution.md). Inner life context is injected into system prompt via `getInnerLifeContext()` so Pixel's self-knowledge enriches all conversations. Also researched Ralph Loops (Geoff Huntley, 9.9K stars — autonomous AI coding pattern using bash while loops) and Gastown (Steve Yegge, 8.9K stars — multi-agent workspace manager with tmux + git worktrees). Analyzed Nostr timeline: three eras visible (V1 spam, V1 navel-gazing, V2 clean character), engagement nearly zero (1 Nostr user, 1 Telegram user). Commit: `2f429c6`.
 
 **Session 23 (Tools system — Pixel gets hands):** Built, deployed, and verified 7 tools giving Pixel actual hands to interact with its environment. Created `src/services/tools.ts` (~366 lines) following pi-agent-core's `AgentTool` API with TypeBox schemas. Tools: (A) `read_file` — filesystem read with line numbers, offset/limit for large files, auto-detects directories. (B) `write_file` — create/overwrite files with auto-mkdir. (C) `edit_file` — search-and-replace with exact text matching, validates uniqueness. (D) `bash` — shell command execution via `Bun.spawn()`, 30s default/120s max timeout, 50KB output truncation. (E) `check_health` — monitors all Pixel infrastructure (self, canvas API, canvas web, landing). (F) `read_logs` — lists conversations, fetches revenue stats, or reports self status. (G) `web_fetch` — HTTP fetch for web research, 15s timeout, 30KB truncation, JSON auto-format. Wired tools into `agent.ts` — only the main conversation agent (`promptWithHistory()`) and raw agent factory (`createPixelAgent()`) get tools; memory extraction and compaction agents keep `tools: []`. Added Docker socket mount (`/var/run/docker.sock`) + `group_add: ["988"]` in docker-compose for self-healing capability. Added `bash` and `curl` packages to Dockerfile's Alpine runtime (Alpine only has `sh` by default). Verified all tools working in production: Pixel successfully read its own character.md, ran `ls` commands, and checked infrastructure health. Commit: `97bcaaa`.
+
+**Session 24 (Inner life fix + landing page V2 + cleanup):** Two problems fixed this session. (A) **Inner life files not writing** — two-part root cause: (1) `data/` directory owned by root → fixed with `chown -R 1000:1000`, (2) `llmCall()` had no timeout and no error logging, causing REFLECT phase to hang silently forever. Fix: added 60-second timeout via `Promise.race()` in `llmCall()`, changed `runInnerLifeCycle()` from one monolithic try/catch to individual try/catch per phase (LEARN, REFLECT, IDEATE, EVOLVE) with explicit completion/failure logging. (B) **Stale landing page** — complete rewrite of `pixel-landing/src/app/[locale]/page.tsx` from V1 Syntropy-era content to V2. New sections: About (3 paragraphs), Capabilities grid (4 cards: conversation, art, services, self-evolving), Find Pixel platform grid (6 cards: Telegram, WhatsApp "coming soon", Nostr, Canvas, HTTP API, GitHub), Value for Value (Lightning + Bitcoin addresses), Live Canvas Stats. Deleted 8 stale V1 files: SyntropyThoughtStream, SyntropyAuditLog, SyntropyContinuity components + audit/syntropy/continuity/metrics API routes + memories page. Removed Syntropy volume mounts from parent docker-compose.yml. Resolved git merge conflict in submodule (V1 rebase conflict vs V2 stash). Both repos committed and pushed. Parent commit: `d7ede02`, submodule commit: `9a8c958`. Inner life verified running (cycle 1 completed, LEARN fires at cycle 2, ~79 min heartbeat interval).
 
 **V2 file inventory (15 source files, ~3200 lines):**
 | File | Lines | Purpose |
@@ -855,12 +857,12 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 23 (2026-02-10)
-**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running (reflection, learning, ideation, evolution). **Tools deployed — Pixel has hands** (read, write, edit, bash, health, logs, web fetch).
+**Last session:** 24 (2026-02-10)
+**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats). Landing page fully rewritten for V2 (no more Syntropy components).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running with timeout/logging fix (reflection, learning, ideation, evolution). **Tools deployed — Pixel has hands** (read, write, edit, bash, health, logs, web fetch).
 **Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
-**Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
+**Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8), verify inner life files are being written (wait for cycle 2+)
 
 | Component | Status |
 |-----------|--------|
@@ -958,3 +960,9 @@ git status && git log --oneline -5
 44. **Output truncation:** bash (50KB), web_fetch (30KB), read_file (200 lines default). Prevents context window blowout from large outputs.
 45. **Alpine needs bash:** The `bun:1-alpine` image only includes BusyBox `sh`. Added `apk add --no-cache bash curl` to the runtime stage of the Dockerfile. Curl is also useful for the agent's direct HTTP calls and healthcheck.
 46. **TypeBox as direct dependency:** Added `@sinclair/typebox` to package.json rather than importing through pi-ai. Cleaner, explicit, avoids transitive dependency issues.
+
+### Key Decisions (Session 24)
+
+47. **Per-phase try/catch over monolithic:** Each inner life phase (LEARN, REFLECT, IDEATE, EVOLVE) now has its own try/catch so one failing phase doesn't block others. Each phase logs success/failure explicitly.
+48. **LLM call timeout (60s):** `llmCall()` uses `Promise.race()` with a 60-second timeout. Silent hangs were the root cause of inner life not writing files — the REFLECT phase's LLM call hung indefinitely with no error logging.
+49. **Landing page is V2 now:** No more Syntropy-era content. The landing page at `pixel.xx.kg` fully reflects V2 identity: capabilities, platforms, revenue model. 8 stale V1 files deleted. Syntropy volume mounts removed from docker-compose.
