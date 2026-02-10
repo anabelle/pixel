@@ -17,7 +17,6 @@ services:
       - NODE_ENV=production
       - DB_PATH=/app/data/pixels.db
       - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/pixel_agent
-      - CORRELATOR_URL=http://narrative-correlator:3004
       - API_URL=http://api:3000/api
     networks:
       - pixel-net
@@ -35,96 +34,8 @@ services:
         reservations:
           memory: 128M
 
-  # Narrative Correlator Service
-  narrative-correlator:
-    build:
-      context: ./services/narrative-correlator
-      dockerfile: Dockerfile
-    user: "1000:1000"
-    ports:
-      - "127.0.0.1:3004:3004"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3004
-    networks:
-      - pixel-net
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3004/correlations/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  # Temporal Precision Protocol Service
-  temporal-precision:
-    build:
-      context: ./services/temporal-precision
-      dockerfile: Dockerfile
-    user: "1000:1000"
-    ports:
-      - "127.0.0.1:3005:3005"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3005
-      - DATA_PATH=/data
-    networks:
-      - pixel-net
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3005/temporal/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  # Docu-Gardener Service - Automated Queue→Archive Sync
-  docu-gardener:
-    build:
-      context: ./services/docu-gardener
-      dockerfile: Dockerfile
-    user: "1000:1000"
-    ports:
-      - "3006:3006"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3006
-      - POLL_INTERVAL_MS=300000
-      - PIXEL_ROOT=/pixel
-    networks:
-      - pixel-net
-    volumes:
-      - .:/pixel
-      - ./logs:/logs
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3006/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+  # [V2 MIGRATION] Removed: narrative-correlator, temporal-precision, docu-gardener
+  # These V1 services are no longer needed. Recoverable from git history.
 
   # LNPixels Web App (Canvas)
   web:
@@ -144,8 +55,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      narrative-correlator:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/" ]
@@ -156,7 +65,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 128M
+        reservations:
+          memory: 64M
 
   # Pixel Landing Page
   landing:
@@ -189,7 +100,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 128M
+        reservations:
+          memory: 64M
 
   # Pixel Agent (Eliza)
   agent:
@@ -229,7 +142,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 800M
+        reservations:
+          memory: 400M
 
   # Syntropy Core (AI Orchestration)
   syntropy:
@@ -280,7 +195,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
+        reservations:
+          memory: 128M
 
   # Postgres Database - External DB for ElizaOS (prevents PGLite corruption)
   postgres:
@@ -305,7 +222,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 300M
+        reservations:
+          memory: 150M
 
   # pgAdmin - PostgreSQL Web GUI (not started by default)
   # Start manually: docker compose --profile tools up -d pgadmin
@@ -333,7 +252,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 128M
+        reservations:
+          memory: 64M
 
   # Nginx Reverse Proxy
   nginx:
@@ -360,285 +281,17 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Certbot for SSL
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    restart: unless-stopped
-
-  # Database Backup Service (runs daily at 3 AM)
-  backup:
-    image: alpine:latest
-    user: "1000:1000"
-    volumes:
-      - ./data:/data:ro
-      - ./backups:/backups
-    entrypoint: |
-      /bin/sh -c '
-      while true; do
-        echo "[$(date)] Starting backup..."
-        cp /data/pixels.db /backups/pixels_$(date +%Y%m%d_%H%M%S).db
-        cp /data/db.sqlite /backups/agent_$(date +%Y%m%d_%H%M%S).db
-        # Keep only last 7 days of backups
-        find /backups -name "*.db" -mtime +7 -delete
-        echo "[$(date)] Backup complete. Sleeping 24h..."
-        sleep 86400
-      done
-      '
-    restart: unless-stopped
-
-  # Velocity-Based Documentation Monitor
-  # Monitors Bitcoin sync velocity and triggers CONTINUITY.md updates at appropriate intervals
-  # Runs every 5 minutes to check velocity and trigger Syntropy cycles as needed
-  velocity-monitor:
-    build:
-      context: ./syntropy-core
-      dockerfile: Dockerfile.worker
-    user: "1000:1000"
-    group_add:
-      - "${DOCKER_GID:-999}"
-    volumes:
-      - ${HOST_PIXEL_ROOT:-.}:/pixel
-      - /var/run/docker.sock:/var/run/docker.sock
-    working_dir: /pixel
-    environment:
-      - NODE_ENV=production
-      - PIXEL_ROOT=/pixel
-      - TASK_ID=velocity-monitor-1
-      - CI=true
-      - OPENCODE_TELEMETRY_DISABLED=true
-    # Override worker entrypoint to run velocity monitoring
-    entrypoint: []
-    command: >-
-      /bin/sh -c '
-        while true; do
-          echo "[$$(date)] Checking velocity..."
-          /pixel/scripts/maintenance/velocity-simple.sh 2>&1
-          echo "[$$(date)] Sleeping 5 minutes..."
-          sleep 300
-        done
-      '
-    restart: unless-stopped
-    networks:
-      - pixel-net
-    depends_on:
-      - bitcoin
-
-  # Worker Container (spawned on-demand by Syntropy)
-  # Not started by default - use docker compose run worker
-  worker:
-    build:
-      context: ./syntropy-core
-      dockerfile: Dockerfile.worker
-    profiles:
-      - worker # Not started by default
-    user: "1000:1000"
-    group_add:
-      - "${DOCKER_GID:-999}"
-    volumes:
-      # IMPORTANT: Use HOST_PIXEL_ROOT to specify the absolute host path.
-      # When Syntropy spawns workers via docker socket, relative paths (.) resolve
-      # to the container's PWD, not the host's. This breaks volume mounts.
-      - ${HOST_PIXEL_ROOT:-.}:/pixel
-      # SECURITY NOTE: Docker socket grants host-level access. Workers need it
-      # to run docker compose commands. Guardrails in worker-entrypoint.sh limit
-      # what commands are permitted. Single-worker lock prevents spawn cascades.
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - NODE_ENV=production
-      - PIXEL_ROOT=/pixel
-      - HOME=/tmp
-      - CI=true
-      - OPENCODE_TELEMETRY_DISABLED=true
-      - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode/kimi-k2.5-free}
-      - WORKER_TIMEOUT_SECONDS=${WORKER_TIMEOUT_SECONDS:-2700}
-      # TASK_ID is passed at runtime via -e TASK_ID=xxx
-    env_file:
-      - .env
-    networks:
-      - pixel-net
-    restart: "no" # Ephemeral - no restart policy
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: "2"
-
-  # Opencode log tailer (makes worker output visible in `docker compose logs -f`)
-  # This tails the shared log file that every worker appends to.
-  # REASON FOR RENAME: Avoid name conflict with ephemeral workers (pixel-worker-*)
-  opencode-logs:
-    image: alpine:latest
-    user: "1000:1000"
-    volumes:
-      - .:/pixel
-    working_dir: /pixel
-    command: >-
-      /bin/sh -c 'mkdir -p /pixel/logs && touch /pixel/logs/opencode_live.log && tail -n 0 -F /pixel/logs/opencode_live.log'
-    restart: unless-stopped
-    networks:
-      - pixel-net
-
-  # ============================================
-  # VPS Metrics Collector (sidecar for Syntropy)
-  # ============================================
-  # Provides host-level resource visibility to the orchestrator.
-  # Writes metrics every 60s to ./data/vps-metrics.json (atomic).
-  #
-  # Design: v2.0 - Incorporates Gemini review feedback
-  # - Atomic writes via temp file + mv
-  # - jq for safe JSON construction
-  # - 10s timeout on docker stats
-  # - Healthcheck on file age
-  #
-  vps-monitor:
-    image: alpine:latest
-    container_name: pixel-vps-monitor-1
-    logging:
-      driver: "none"
-    volumes:
-      # Read-only access to kernel interfaces
-      - /proc:/host/proc:ro # CPU, memory, uptime
-      - /:/host/root:ro # Disk usage via df
-      # Docker socket for container stats
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Output directory (shared with syntropy)
-      - ./data:/data
-      # Mount the monitor script
-      - ./scripts/vps-monitor.sh:/vps-monitor.sh:ro
-    environment:
-      - METRICS_INTERVAL=${VPS_METRICS_INTERVAL:-60}
-      - METRICS_FILE=/data/vps-metrics.json
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        apk add --no-cache jq docker-cli >/dev/null 2>&1 || exit 1
-        exec /bin/sh /vps-monitor.sh
-    networks:
-      - pixel-net
-    restart: unless-stopped
-    # Healthcheck: Verify file exists and is recent
-    healthcheck:
-      test: [ "CMD-SHELL", "[ -f /data/vps-metrics.json ] && [ $(($(date +%s) - $(stat -c %Y /data/vps-metrics.json))) -lt 180 ]" ]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: "0.2"
-
-  # Bitcoin Core (Testnet) - Backend for Lightning
-  # OPTIMIZED: Reduced memory from 2G to 1.2G for Plan C scaling (2026-01-05)
-  # HEALTH FIX: Updated health check to verify IBD completion (2026-01-05)
-  # MEMORY OPTIMIZATION: Reduced memory footprint via T068 (2026-01-08)
-  #   - dbcache: 400MB → 64MB
-  #   - maxmempool: 100MB → 50MB
-  #   - prune: 5000MB → 550MB (aggressive pruning)
-  #   - Added par=1 for parallel transaction validation
-  #   - mem_limit: 1200M → 900M
-  #   - mem_reservation: 700M
-  # Bitcoin Core (Testnet) - Backend for Lightning
-  # OPTIMIZED: 1.2G RAM is the limit for a 4GB VPS coexistence.
-  # If OOM occurs, check Syntropy and Agent limits.
-  bitcoin:
-    image: ruimarinho/bitcoin-core:24
-    container_name: pixel-bitcoin-1
-    # DISK SPACE FIX (2026-01-18): Bitcoin logs grew to 53GB causing disk exhaustion.
-    # Added log rotation to prevent this from recurring.
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "100m"
-        max-file: "3"
-    # FIX (2026-01-28): Reduced dbcache 100→50 + added 2GB swap to finally fix OOM crash loop (504+ restarts)
-    command: >
-      bitcoind -testnet=1 -server=1 -rest=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=bitcoin -rpcpassword=password123 -zmqpubrawblock=tcp://0.0.0.0:28332 -zmqpubrawtx=tcp://0.0.0.0:28333 -prune=5000 -maxmempool=50 -dbcache=50
-    ports:
-      - "18333:18333" # Testnet P2P
-      - "127.0.0.1:18332:18332" # Testnet RPC (local only)
-      - "28332:28332" # ZMQ raw blocks
-      - "28333:28333" # ZMQ raw transactions
-    volumes:
-      - ./data/bitcoin:/home/bitcoin/.bitcoin # Bitcoin data directory
-    networks:
-      - pixel-net
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD-SHELL", "bitcoin-cli -testnet -rpcuser=bitcoin -rpcpassword=password123 getblockcount || exit 0" ]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 7200s
-    deploy:
-      resources:
-        limits:
-          memory: 1500M
-          cpus: "1"
+          memory: 64M
         reservations:
-          memory: 1000M
+          memory: 32M
 
-  # Core Lightning (CLN) - Testnet Deployment
-  # Operational reserve: 25,000 sats from 79,014 sats treasury
-  # Purpose: Lightning Network capabilities for economic sovereignty
-  # BLOCKCHAIN STATE CONTINUITY (T083): Uses startup wrapper to validate Bitcoin block height
-  lightning:
-    image: elementsproject/lightningd:v24.11.2
-    container_name: pixel-lightning-1
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "3"
-    depends_on:
-      bitcoin:
-        condition: service_healthy
-    ports:
-      - "9735:9735" # Lightning P2P port (testnet)
-      - "127.0.0.1:9736:9736" # RPC port (local only for security)
-    volumes:
-      - ./data/lightning:/root/.lightning # Lightning data directory
-      - ./data/bitcoin:/bitcoin-data:ro # Bitcoin data for bcli (read-only)
-      - ./config/bitcoin/bitcoin.conf:/bitcoin.conf:ro # Bitcoin config for bcli
-      - ./scripts/blockchain-state:/scripts/blockchain-state:ro # T083: State continuity wrapper
-    environment:
-      - LIGHTNINGD_NETWORK=testnet
-      - LIGHTNINGD_RPC_PORT=9736
-      - EXPOSE_TCP=true
-      - LIGHTNINGD_DATA=/root/.lightning # T083: Explicit data directory
-    entrypoint: [ "/scripts/blockchain-state/lightning-startup-wrapper.sh" ]
-    command:
-      - "--testnet"
-      - "--bitcoin-rpcconnect=bitcoin"
-      - "--bitcoin-rpcuser=bitcoin"
-      - "--bitcoin-rpcpassword=password123"
-      - "--bitcoin-rpcport=18332"
-      - "--bitcoin-retry-timeout=600"
-      - "--addr=0.0.0.0:9735"
-      - "--disable-plugin=cln-grpc"
-      - "--disable-plugin=clnrest"
-      - "--disable-plugin=wss-proxy"
-    networks:
-      - pixel-net
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "lightning-cli", "--testnet", "getinfo" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1"
+  # [V2 MIGRATION] Removed: velocity-monitor, opencode-logs, vps-monitor,
+  # bitcoin, lightning, certbot, backup
+  # These V1 services are no longer needed. Recoverable from git history.
+  # Lightning replaced by NWC/Alby. Certbot replaced by Caddy auto-HTTPS.
 
 networks:
   pixel-net:

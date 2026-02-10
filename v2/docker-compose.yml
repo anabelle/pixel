@@ -1,0 +1,118 @@
+# Pixel V2 — 4 containers, ~1.2GB total
+# Run alongside V1 on different ports during transition
+#
+# V1 ports: 3000-3003, 5432
+# V2 ports: 4000-4001, 5433
+
+services:
+  # The single brain — agent + all connectors + HTTP API
+  pixel:
+    build:
+      context: .
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:4000:4000"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://pixel:pixel@postgres-v2:5432/pixel_v2
+      - DATA_DIR=/app/conversations
+      - CHARACTER_PATH=/app/character.md
+    volumes:
+      - ./conversations:/app/conversations
+      - ./skills:/app/skills
+      - ./tools:/app/tools
+      - ./data:/app/data
+    networks:
+      - pixel-v2-net
+    depends_on:
+      postgres-v2:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # PostgreSQL 16 — conversations, revenue, canvas, everything
+  postgres-v2:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      - POSTGRES_DB=pixel_v2
+      - POSTGRES_USER=pixel
+      - POSTGRES_PASSWORD=pixel
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - pixel-v2-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pixel -d pixel_v2"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Caddy — reverse proxy with auto-HTTPS
+  # Will replace V1 nginx+certbot once V2 takes over the domains
+  # For now, V2 is only accessible via direct port (4000)
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - ./data/caddy_data:/data
+  #     - ./data/caddy_config:/config
+  #   networks:
+  #     - pixel-v2-net
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 64M
+  #       reservations:
+  #         memory: 32M
+
+  # Sandbox — persistent companion for agent-written tool execution
+  # sandbox:
+  #   image: oven/bun:1-alpine
+  #   container_name: pixel-sandbox
+  #   command: tail -f /dev/null
+  #   network_mode: none
+  #   cap_drop: [ALL]
+  #   security_opt: [no-new-privileges]
+  #   read_only: true
+  #   tmpfs:
+  #     - /tmp:size=64m
+  #   volumes:
+  #     - ./data/sandbox:/workspace
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128M
+  #         cpus: "0.25"
+  #         pids: 50
+
+networks:
+  pixel-v2-net:
+    driver: bridge

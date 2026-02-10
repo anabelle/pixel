@@ -1,0 +1,28 @@
+{
+  "name": "pixel-v2",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Pixel — living digital artist. One brain, many doors.",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.52.9",
+    "@mariozechner/pi-ai": "^0.52.9",
+    "@sinclair/typebox": "^0.34.0",
+    "hono": "^4.7.0",
+    "drizzle-orm": "^0.44.0",
+    "postgres": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0",
+    "drizzle-kit": "^0.31.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

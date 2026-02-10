@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/postgres/
+data/caddy_data/
+data/caddy_config/
+data/sandbox/
+conversations/
+*.log
+.env
+bun.lock
