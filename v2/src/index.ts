@@ -13,7 +13,9 @@ import { promptWithHistory, extractText } from "./agent.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
+import { startWhatsApp } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
+import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 
 // ============================================================
 // Configuration
@@ -126,6 +128,44 @@ app.get("/api/user/:userId/stats", async (c) => {
   return c.json(stats);
 });
 
+/** Create a Lightning invoice */
+app.post("/api/invoice", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { amountSats = 100, comment } = body;
+
+    if (typeof amountSats !== "number" || amountSats < 1) {
+      return c.json({ error: "amountSats must be a positive number" }, 400);
+    }
+
+    const invoice = await createInvoice(amountSats, comment ?? "Pixel payment");
+    if (!invoice) {
+      return c.json({ error: "Failed to create invoice — Lightning not configured" }, 503);
+    }
+
+    return c.json(invoice);
+  } catch (error: any) {
+    console.error("[invoice] Error:", error.message);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/** Verify a Lightning payment */
+app.get("/api/invoice/:paymentHash/verify", async (c) => {
+  const paymentHash = c.req.param("paymentHash");
+  const result = await verifyPayment(paymentHash);
+  return c.json(result);
+});
+
+/** Wallet info */
+app.get("/api/wallet", async (c) => {
+  const info = await getWalletInfo();
+  if (!info) {
+    return c.json({ error: "Lightning not configured", active: false }, 503);
+  }
+  return c.json(info);
+});
+
 // ============================================================
 // Boot
 // ============================================================
@@ -158,6 +198,16 @@ async function boot() {
   console.log(`[http] Agent card: http://0.0.0.0:${PORT}/.well-known/agent-card.json`);
   console.log();
 
+  // Initialize Lightning
+  try {
+    const lnOk = await initLightning();
+    if (lnOk) {
+      console.log("[boot] Lightning ready — invoices enabled");
+    }
+  } catch (err: any) {
+    console.error("[boot] Lightning init failed:", err.message);
+  }
+
   // Start connectors
   try {
     await startTelegram();
@@ -173,9 +223,11 @@ async function boot() {
     console.error("[boot] Nostr stack:", err.stack);
   }
 
-  // TODO: Start more connectors
-  // - WhatsApp (Baileys) — Week 3
-  // - Instagram — Month 2+
+  try {
+    await startWhatsApp();
+  } catch (err: any) {
+    console.error("[boot] WhatsApp failed to start:", err.message);
+  }
 
   console.log("[boot] Pixel V2 is alive.");
   console.log();

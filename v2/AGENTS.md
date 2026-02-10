@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 13
+> Last updated: 2026-02-10 | Session: 14
 
 ---
 
@@ -113,15 +113,21 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 12:** Implemented conversation persistence (Pi Mom pattern). Created `conversations.ts` module with per-user JSONL directories. Added `promptWithHistory()` as single entry point — loads context via `agent.replaceMessages()`, saves after prompt, appends to log.jsonl. Verified end-to-end: Pixel remembers users across messages.
 
-**V2 file inventory (7 source files, ~870 lines):**
+**Session 13:** Deployed NIP-90 DVM (text generation, kind 5050→6050) with NIP-89 announcement. Wrote Lightning service (`lightning.ts`) and WhatsApp connector (`whatsapp.ts`), wired into `index.ts` with new HTTP endpoints (`/api/invoice`, `/api/wallet`). Not deployed yet at end of session.
+
+**Session 14:** Deployed Lightning + WhatsApp + DVM payment flow. Added npm deps (`@getalby/lightning-tools`, `@whiskeysockets/baileys`, `@hapi/boom`). Completed DVM payment-required flow: when Lightning is available, sends kind 7000 `payment-required` feedback with bolt11 invoice, polls for payment, then processes. Gracefully degrades to free if Lightning unavailable. Added WhatsApp auth volume to docker-compose. Discovered WoS address `sparepicolo55@walletofsatoshi.com` is returning errors — needs to be verified/updated in WoS app. All code deployed and running, 5 doors booting (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning gracefully degraded.
+
+**V2 file inventory (9 source files, ~1200 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~170 | Boot, Hono HTTP server, /api/chat, /health |
+| `src/index.ts` | ~242 | Boot, Hono HTTP server, /api/chat, /health, /api/invoice, /api/wallet |
 | `src/agent.ts` | ~165 | Pi agent wrapper, promptWithHistory(), extractText() |
 | `src/conversations.ts` | ~145 | JSONL persistence (context.json, log.jsonl, memory.md) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
 | `src/connectors/nostr.ts` | ~223 | NDK mentions + DMs + DVM startup |
-| `src/services/dvm.ts` | ~180 | NIP-90 text gen DVM (kind 5050→6050) + NIP-89 announcement |
+| `src/connectors/whatsapp.ts` | ~175 | Baileys bot with pairing code auth |
+| `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow |
+| `src/services/lightning.ts` | ~178 | LNURL-pay invoice creation + verification via @getalby/lightning-tools |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
@@ -827,30 +833,30 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 13 (2026-02-10)
+**Last session:** 14 (2026-02-10)
 **V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
-**V2:** 2 containers running, 4 doors open (HTTP + Telegram + Nostr + DVM), **conversation persistence working**, **DVM live and announcing**
-**Next action:** Lightning payment integration, WhatsApp connector
+**V2:** 2 containers running, 5 doors deployed (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning service deployed but WoS address failing (external issue), DVM payment flow complete with graceful degradation
+**Next action:** Fix Lightning address (check WoS app), test WhatsApp end-to-end with phone number, revenue tracking in PostgreSQL
 
 | Component | Status |
 |-----------|--------|
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json |
+| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json, /api/invoice, /api/wallet |
 | v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), Google Gemini 2.5 Flash, character + memory loading |
 | v2/src/conversations.ts | DONE - JSONL per-user persistence, context.json, log.jsonl, memory.md |
 | v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
 | v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup with persistent memory |
-| v2/src/connectors/whatsapp.ts | NOT STARTED |
+| v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
 | v2/src/connectors/instagram.ts | NOT STARTED |
-| v2/src/services/dvm.ts | DONE - NIP-90 text generation (kind 5050→6050), NIP-89 announcement, free (no payment yet) |
-| v2/src/services/lightning.ts | NOT STARTED |
+| v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment-required flow (100 sats/job, graceful degradation if no Lightning) |
+| v2/src/services/lightning.ts | DONE (code deployed, WoS address returning errors — external issue) |
 | v2/src/services/l402.ts | NOT STARTED |
 | v2/src/services/x402.ts | NOT STARTED |
 | v2/src/services/canvas.ts | NOT STARTED |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables created |
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
-| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433) |
+| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume |
 | v2/character.md | DONE - Pixel identity document |
 | Conversation persistence (JSONL) | DONE - Per-user directories, context.json + log.jsonl, 50-message context window |
 | Sandbox container | NOT STARTED |
@@ -865,4 +871,13 @@ git status && git log --oneline -5
 5. **No Dockerfile patches:** Zero patches needed. Pi-ai handles Google API natively.
 6. **Conversation persistence:** context.json (JSON array for `replaceMessages()`) + log.jsonl (append-only human-readable log). Max 50 messages in context window. `promptWithHistory()` is the single entry point for all connectors.
 7. **Shared extractText():** Moved from duplicated per-connector to exported from agent.ts
+
+### Key Decisions (Session 13-14)
+
+8. **DVM pricing:** 100 sats per text generation job (sent as millisats in NIP-90 amount tag per spec)
+9. **DVM graceful degradation:** If Lightning is unavailable, DVM processes jobs for free rather than refusing
+10. **Lightning via LNURL-pay:** Using `@getalby/lightning-tools` with existing Lightning address — no NWC needed
+11. **WoS address broken:** `sparepicolo55@walletofsatoshi.com` returns "Unable to find valid user wallet" from WoS API — needs to be checked/updated in WoS app. Code handles this gracefully.
+12. **WhatsApp pairing code auth:** Uses Baileys' `requestPairingCode()` instead of QR scanning — prints code to container logs, user enters in WhatsApp app
+13. **WhatsApp auth persistence:** Stored at `/app/data/whatsapp-auth/` via Docker volume mount
 

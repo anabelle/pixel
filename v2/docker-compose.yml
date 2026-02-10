@@ -27,6 +27,7 @@ services:
       - ./skills:/app/skills
       - ./tools:/app/tools
       - ./data:/app/data
+      - ./data/whatsapp-auth:/app/data/whatsapp-auth
     networks:
       - pixel-v2-net
     depends_on:

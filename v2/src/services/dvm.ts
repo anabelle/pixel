@@ -6,16 +6,24 @@
  * Publishes kind 6050 results.
  * Publishes kind 31990 announcement for discovery.
  *
- * Currently free (no payment required). Payment integration
- * will be added when Lightning NWC is wired up.
+ * Payment flow (NIP-90 compliant):
+ * - If Lightning is available: sends kind 7000 payment-required feedback
+ *   with bolt11 invoice, waits for payment, then processes.
+ * - If Lightning is unavailable: processes for free (graceful degradation).
  */
 
 import NDK, { NDKEvent, type NDKFilter } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
+import { createInvoice, verifyPayment } from "./lightning.js";
 
 // Track processed jobs to avoid duplicates
 const processedJobs = new Set<string>();
 const MAX_PROCESSED_CACHE = 1000;
+
+// DVM pricing in sats
+const DVM_PRICE_SATS = 100; // 100 sats per text generation job
+const PAYMENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes to pay
+const PAYMENT_POLL_INTERVAL_MS = 5_000; // Check every 5 seconds
 
 /** Extract input text from a DVM job request event */
 function extractInputs(event: NDKEvent): { data: string; type: string }[] {
@@ -73,7 +81,8 @@ async function sendFeedback(
   jobId: string,
   customerPubkey: string,
   status: string,
-  extraInfo?: string
+  extraInfo?: string,
+  extraTags?: string[][]
 ): Promise<void> {
   const feedback = new NDKEvent(ndk);
   feedback.kind = 7000;
@@ -82,6 +91,7 @@ async function sendFeedback(
     ["status", status, ...(extraInfo ? [extraInfo] : [])],
     ["e", jobId],
     ["p", customerPubkey],
+    ...(extraTags ?? []),
   ];
 
   try {
@@ -89,6 +99,23 @@ async function sendFeedback(
   } catch (err: any) {
     console.error(`[dvm] Failed to send feedback (${status}):`, err.message);
   }
+}
+
+/** Wait for a Lightning payment to be verified, with timeout */
+async function waitForPayment(paymentHash: string): Promise<boolean> {
+  const deadline = Date.now() + PAYMENT_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    const result = await verifyPayment(paymentHash);
+    if (result.paid) {
+      console.log(`[dvm] Payment verified: ${paymentHash.slice(0, 16)}...`);
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, PAYMENT_POLL_INTERVAL_MS));
+  }
+
+  console.log(`[dvm] Payment timeout for ${paymentHash.slice(0, 16)}...`);
+  return false;
 }
 
 /** Start the NIP-90 DVM handler */
@@ -136,6 +163,37 @@ export function startDvm(ndk: NDK, ourPubkey: string): void {
     console.log(`[dvm] Job ${event.id.slice(0, 8)} from ${event.pubkey.slice(0, 8)}: "${prompt.slice(0, 80)}"`);
 
     try {
+      // Payment flow: if Lightning is available, require payment first
+      let paidInvoice: { paymentHash: string; bolt11: string } | null = null;
+
+      const invoice = await createInvoice(DVM_PRICE_SATS, `Pixel DVM — text generation`);
+      if (invoice) {
+        // Lightning is available — require payment
+        console.log(`[dvm] Requesting ${DVM_PRICE_SATS} sats for job ${event.id.slice(0, 8)}`);
+
+        // Send payment-required feedback with bolt11
+        await sendFeedback(
+          ndk,
+          event.id,
+          event.pubkey,
+          "payment-required",
+          `Payment required: ${DVM_PRICE_SATS} sats`,
+          [["amount", String(DVM_PRICE_SATS * 1000), invoice.paymentRequest]] // amount in millisats per NIP-90
+        );
+
+        // Wait for payment
+        const paid = await waitForPayment(invoice.paymentHash);
+        if (!paid) {
+          await sendFeedback(ndk, event.id, event.pubkey, "error", "Payment timeout — invoice expired");
+          return;
+        }
+
+        paidInvoice = { paymentHash: invoice.paymentHash, bolt11: invoice.paymentRequest };
+      } else {
+        // Lightning not available — process for free
+        console.log(`[dvm] Lightning unavailable, processing job ${event.id.slice(0, 8)} for free`);
+      }
+
       // Send "processing" feedback
       await sendFeedback(ndk, event.id, event.pubkey, "processing");
 
@@ -162,13 +220,15 @@ export function startDvm(ndk: NDK, ourPubkey: string): void {
         ["e", event.id],
         ["p", event.pubkey],
         ["i", textInput.data, textInput.type],
-        // Currently free — no amount tag
-        // When Lightning is wired up:
-        // ["amount", "1000", "<bolt11-invoice>"]
       ];
 
+      // Add amount tag if payment was collected
+      if (paidInvoice) {
+        result.tags.push(["amount", String(DVM_PRICE_SATS * 1000), paidInvoice.bolt11]);
+      }
+
       await result.publish();
-      console.log(`[dvm] Result published for job ${event.id.slice(0, 8)} (${response.length} chars)`);
+      console.log(`[dvm] Result published for job ${event.id.slice(0, 8)} (${response.length} chars, ${paidInvoice ? `${DVM_PRICE_SATS} sats paid` : "free"})`);
     } catch (err: any) {
       console.error(`[dvm] Job ${event.id.slice(0, 8)} failed:`, err.message);
       await sendFeedback(ndk, event.id, event.pubkey, "error", err.message).catch(() => {});

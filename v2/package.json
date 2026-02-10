@@ -17,7 +17,10 @@
     "grammy": "^1.35.0",
     "hono": "^4.7.0",
     "drizzle-orm": "^0.44.0",
-    "postgres": "^3.4.0"
+    "postgres": "^3.4.0",
+    "@getalby/lightning-tools": "^5.0.0",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "@hapi/boom": "^10.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
