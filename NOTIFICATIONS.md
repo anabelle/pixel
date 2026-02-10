@@ -88,3 +88,6 @@ DEADLOCK: Worker pixel-worker-10f9efaf is stuck on an interactive prompt, blocki
 
 ## [2026-02-09T22:25:03.816Z] Priority: critical
 CRITICAL: Infrastructure Deadlock. 100% swap usage. Worker a96441c9 is stuck and blocking all new tasks. Manual cleanup required.
+
+## [2026-02-10T01:53:43.903Z] Priority: critical
+Syntropy is HANDLESS and FRAGMENTED. Tools using 'docker compose' (spawnWorker, getEcosystemLogs) fail with 'no such service', likely due to the v2 migration changing the project context. getEcosystemStatus still sees containers via docker ps, but I cannot act. I've added repair tasks to the queue, but cannot execute them. Please verify the working directory and COMPOSE_FILE environment variable for the Syntropy container.

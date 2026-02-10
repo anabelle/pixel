@@ -76,3 +76,13 @@
 ## 📋 Phase 2: Infrastructure Optimization
 
 ---
+
+## 📋 Infrastructure Repair
+
+
+### T001: Restore Worker Service Access ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+
+```
+INSTRUCTIONS:
+Investigate why 'worker' service is missing from the docker-compose context. Check for multiple .yml files and ensure COMPOSE_FILE env var is set correctly if needed. Check v2/ directory f
