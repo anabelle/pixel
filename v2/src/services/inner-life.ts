@@ -102,7 +102,7 @@ function resolveApiKey(provider?: string): string {
   }
 }
 
-/** Run a simple LLM prompt and return the response text */
+/** Run a simple LLM prompt and return the response text (with 60s timeout) */
 async function llmCall(systemPrompt: string, userPrompt: string): Promise<string> {
   const agent = new Agent({
     initialState: {
@@ -122,7 +122,18 @@ async function llmCall(systemPrompt: string, userPrompt: string): Promise<string
     }
   });
 
-  await agent.prompt(userPrompt);
+  // Timeout after 60 seconds to prevent hanging
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("LLM call timed out after 60s")), 60_000)
+  );
+
+  try {
+    await Promise.race([agent.prompt(userPrompt), timeout]);
+  } catch (err: any) {
+    console.error(`[inner-life] llmCall failed:`, err.message);
+    return "";
+  }
+
   return responseText;
 }
 
@@ -478,28 +489,44 @@ export async function runInnerLifeCycle(): Promise<void> {
   cycleCount++;
   console.log(`[inner-life] Cycle ${cycleCount} — checking phases...`);
 
-  try {
-    // Learn is most frequent — understanding conversations is the priority
-    if (cycleCount % LEARN_EVERY === 0) {
+  // Learn is most frequent — understanding conversations is the priority
+  if (cycleCount % LEARN_EVERY === 0) {
+    try {
       await phaseLearn();
+      console.log("[inner-life] LEARN phase completed");
+    } catch (err: any) {
+      console.error("[inner-life] LEARN phase failed:", err.message);
     }
+  }
 
-    // Reflect every 3 cycles
-    if (cycleCount % REFLECT_EVERY === 0) {
+  // Reflect every 3 cycles
+  if (cycleCount % REFLECT_EVERY === 0) {
+    try {
       await phaseReflect();
+      console.log("[inner-life] REFLECT phase completed");
+    } catch (err: any) {
+      console.error("[inner-life] REFLECT phase failed:", err.message);
     }
+  }
 
-    // Ideate every 5 cycles
-    if (cycleCount % IDEATE_EVERY === 0) {
+  // Ideate every 5 cycles
+  if (cycleCount % IDEATE_EVERY === 0) {
+    try {
       await phaseIdeate();
+      console.log("[inner-life] IDEATE phase completed");
+    } catch (err: any) {
+      console.error("[inner-life] IDEATE phase failed:", err.message);
     }
+  }
 
-    // Evolve every 10 cycles — the slowest, most synthetic phase
-    if (cycleCount % EVOLVE_EVERY === 0) {
+  // Evolve every 10 cycles — the slowest, most synthetic phase
+  if (cycleCount % EVOLVE_EVERY === 0) {
+    try {
       await phaseEvolve();
+      console.log("[inner-life] EVOLVE phase completed");
+    } catch (err: any) {
+      console.error("[inner-life] EVOLVE phase failed:", err.message);
     }
-  } catch (err: any) {
-    console.error("[inner-life] Cycle failed:", err.message);
   }
 }
 
