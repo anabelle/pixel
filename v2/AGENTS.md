@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 12
+> Last updated: 2026-02-10 | Session: 13
 
 ---
 
@@ -113,14 +113,15 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 12:** Implemented conversation persistence (Pi Mom pattern). Created `conversations.ts` module with per-user JSONL directories. Added `promptWithHistory()` as single entry point — loads context via `agent.replaceMessages()`, saves after prompt, appends to log.jsonl. Verified end-to-end: Pixel remembers users across messages.
 
-**V2 file inventory (6 source files, ~700 lines):**
+**V2 file inventory (7 source files, ~870 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/index.ts` | ~170 | Boot, Hono HTTP server, /api/chat, /health |
 | `src/agent.ts` | ~165 | Pi agent wrapper, promptWithHistory(), extractText() |
 | `src/conversations.ts` | ~145 | JSONL persistence (context.json, log.jsonl, memory.md) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
-| `src/connectors/nostr.ts` | ~195 | NDK mentions + DMs with persistent memory |
+| `src/connectors/nostr.ts` | ~223 | NDK mentions + DMs + DVM startup |
+| `src/services/dvm.ts` | ~180 | NIP-90 text gen DVM (kind 5050→6050) + NIP-89 announcement |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
@@ -826,10 +827,10 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 12 (2026-02-10)
+**Last session:** 13 (2026-02-10)
 **V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
-**V2:** 2 containers running, 3 doors open (HTTP + Telegram + Nostr), **conversation persistence working**
-**Next action:** NIP-90 DVM handler, Lightning payment integration, WhatsApp connector
+**V2:** 2 containers running, 4 doors open (HTTP + Telegram + Nostr + DVM), **conversation persistence working**, **DVM live and announcing**
+**Next action:** Lightning payment integration, WhatsApp connector
 
 | Component | Status |
 |-----------|--------|
@@ -839,10 +840,10 @@ git status && git log --oneline -5
 | v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), Google Gemini 2.5 Flash, character + memory loading |
 | v2/src/conversations.ts | DONE - JSONL per-user persistence, context.json, log.jsonl, memory.md |
 | v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
-| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs with persistent memory |
+| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup with persistent memory |
 | v2/src/connectors/whatsapp.ts | NOT STARTED |
 | v2/src/connectors/instagram.ts | NOT STARTED |
-| v2/src/services/dvm.ts | NOT STARTED |
+| v2/src/services/dvm.ts | DONE - NIP-90 text generation (kind 5050→6050), NIP-89 announcement, free (no payment yet) |
 | v2/src/services/lightning.ts | NOT STARTED |
 | v2/src/services/l402.ts | NOT STARTED |
 | v2/src/services/x402.ts | NOT STARTED |

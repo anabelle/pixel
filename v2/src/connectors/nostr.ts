@@ -14,6 +14,7 @@ import NDK, {
   NDKFilter,
 } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
+import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
 
 // Throttle: don't reply to the same pubkey more than once per interval
 const replyThrottle = new Map<string, number>();
@@ -210,4 +211,12 @@ export async function startNostr(): Promise<void> {
   }
 
   console.log("[nostr] Mention listener active");
+
+  // Start NIP-90 DVM (text generation service)
+  startDvm(ndk, pubkey);
+
+  // Publish NIP-89 announcement for DVM discovery (runs in background)
+  publishDvmAnnouncement(ndk).catch((err) => {
+    console.error("[nostr] DVM announcement failed:", err.message);
+  });
 }
