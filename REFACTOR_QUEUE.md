@@ -71,8 +71,7 @@
 
 ## 📋 Phase 4: Optimization
 
-
-### T001: Reduce Gemini Call Volume ⬜ READY
+### T001: Reduce Gemini Call Volume ✅ DONE
 **Effort**: 1 hour | **Risk**: Medium | **Parallel-Safe**: ✅
 
 ```
@@ -91,19 +90,23 @@ docker logs pixel-agent-1 | grep "Success! Generated" | wc -l
 
 ## 📋 Infrastructure Maintenance
 
+---
 
-### T002: Critical Disk and Swap Cleanup ✅ DONE
-**Effort**: 10 min | **Risk**: Low | **Parallel-Safe**: ✅
+## 📋 Phase 4: Infrastructure Tuning
+
+
+### T002: Optimize container memory limits to reduce swap usage ✅ DONE
+**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
 
 ```
 INSTRUCTIONS:
-1. Run 'docker system prune -af --volumes' to clear Docker cache and unused volumes.
-2. Search for logs or temp files taking up space in /pixel/data and /pixel/logs.
-3. Check /pixel/backups for files older than 7 days and remove them.
-4. Report final disk usage.
+1. Analyze container memory usage using 'docker stats' or getVPSMetrics details.
+2. Identify containers exceeding their reserved limits or showing high growth.
+3. Adjust memory limits in docker-compose.yml to prevent swap thrashing.
+4. Restart affected containers and monitor swap usage.
 
 VERIFY:
-df -h / | tail -n 1
+free -h && docker stats --no-stream
 ```
 
 ---
