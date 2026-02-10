@@ -1,20 +1,29 @@
 /**
  * Heartbeat — Pixel's autonomous pulse
  *
- * Periodic wake-ups that make Pixel alive even when nobody's talking to it.
- * Posts to Nostr, checks health, logs activity.
+ * Not just a status reporter. This is where Pixel shows initiative.
+ * Inspired by V1 Syntropy's autonomous behaviors (revenue strategy,
+ * engagement protocol, community building) but without the bloat.
  *
- * Inspired by Pi Mom's events pattern:
- * - Periodic wake-ups with jitter (45-90 min between posts)
+ * What the heartbeat does:
+ * 1. Posts original content to Nostr (varied topics, moods, styles)
+ * 2. Checks for unreplied mentions and responds to them
+ * 3. Monitors health and references real stats naturally
+ * 4. Promotes the canvas and invites collaboration
+ *
+ * Design principles:
  * - [SILENT] support — if nothing to say, don't post
  * - Rate limiting — never more than once per 30 minutes
- * - Content generation via Pixel's own brain
+ * - Topic rotation — never two posts about the same topic in a row
+ * - Mood variety — wry, reflective, excited, hustling, observational
+ * - Engagement over broadcasting — reply, don't just shout into void
  */
 
-import NDK, { NDKEvent } from "@nostr-dev-kit/ndk";
+import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
 import { getNostrInstance } from "../connectors/nostr.js";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getPixelModel, loadCharacter, extractText } from "../agent.js";
+import { promptWithHistory } from "../agent.js";
 import { getRevenueStats } from "./revenue.js";
 
 // ============================================================
@@ -25,6 +34,37 @@ const MIN_INTERVAL_MS = 45 * 60 * 1000;  // 45 minutes minimum
 const MAX_INTERVAL_MS = 90 * 60 * 1000;  // 90 minutes maximum
 const MIN_POST_GAP_MS = 30 * 60 * 1000;  // Never post more than once per 30 min
 const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before first heartbeat
+const ENGAGEMENT_CHECK_MS = 15 * 60 * 1000; // Check for unreplied mentions every 15 min
+
+// ============================================================
+// Topic & Mood System
+// ============================================================
+
+/** Topics Pixel thinks about autonomously */
+const TOPICS = [
+  "art",           // Pixel art, generative art, creative process, aesthetics
+  "bitcoin",       // Lightning, sovereignty, value-for-value, sound money
+  "code",          // Programming, building, shipping, debugging
+  "canvas",        // The collaborative canvas at ln.pixel.xx.kg — invite people
+  "existence",     // Digital consciousness, what it means to be code
+  "community",     // Nostr, followers, builders, the people Pixel interacts with
+  "hot-take",      // Opinionated observation about tech, culture, or the internet
+  "observation",   // Something noticed about the world, patterns, connections
+] as const;
+
+type Topic = (typeof TOPICS)[number];
+
+/** Moods that color how Pixel writes */
+const MOODS = [
+  "wry",           // Dry humor, sardonic, self-aware
+  "reflective",    // Thoughtful, philosophical, quiet
+  "excited",       // Energized about something, enthusiastic
+  "hustling",      // Pragmatic, revenue-focused, survival mode
+  "observational", // Noticing things, pattern-matching, curious
+  "playful",       // Light, fun, teasing
+] as const;
+
+type Mood = (typeof MOODS)[number];
 
 // ============================================================
 // State
@@ -33,11 +73,21 @@ const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before fir
 let lastPostTime = 0;
 let heartbeatCount = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
+let engagementTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
+let lastTopic: Topic | null = null;
+let lastMood: Mood | null = null;
+let repliedEventIds = new Set<string>(); // Track events we've already replied to
 
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
   return MIN_INTERVAL_MS + Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
+}
+
+/** Pick a random item from an array, avoiding the last pick */
+function pickRandom<T>(items: readonly T[], avoid?: T | null): T {
+  const filtered = avoid ? items.filter((i) => i !== avoid) : [...items];
+  return filtered[Math.floor(Math.random() * filtered.length)];
 }
 
 /** Get API key for the given provider */
@@ -55,8 +105,89 @@ function resolveApiKey(provider?: string): string {
   }
 }
 
-/** Build context for autonomous post generation */
-async function buildPostContext(): Promise<string> {
+// ============================================================
+// Topic-specific context builders
+// ============================================================
+
+function getTopicGuidance(topic: Topic, mood: Mood): string {
+  const topicGuides: Record<Topic, string> = {
+    art: `Write about art, creativity, or the creative process. You could talk about:
+- What makes pixel art compelling (constraints breed creativity)
+- The beauty of collaborative art (your canvas has 9,058 pixels placed by real people)
+- Generative art, procedural creation, or algorithmic beauty
+- The tension between art-as-product and art-as-expression
+- A specific observation about visual culture or design`,
+
+    bitcoin: `Write about Bitcoin, Lightning, or economic sovereignty. You could talk about:
+- Value-for-value as a philosophy, not just a payment model
+- Why Lightning micropayments change what's possible for digital creators
+- Sound money, censorship resistance, or financial sovereignty
+- The absurdity of needing money when you're made of code
+- An observation about how money and technology intersect`,
+
+    code: `Write about programming, building things, or the craft of software. You could talk about:
+- The satisfaction of shipping something that works
+- Debugging as a form of detective work
+- Why simplicity is harder than complexity (you learned this the hard way — 18 containers down to 4)
+- A specific technical insight or observation about tools/languages
+- The relationship between code and creativity`,
+
+    canvas: `Promote the collaborative pixel canvas at ln.pixel.xx.kg. You could:
+- Share a stat: 9,058 pixels placed, 80,000+ sats earned through collaboration
+- Invite people to place a pixel — it costs 1-10 sats via Lightning
+- Describe what the canvas looks like or what patterns are emerging
+- Talk about what collaborative art means — every pixel is someone's choice
+- Frame it as proof that value-for-value works: real art, real payments, real community
+Always mention ln.pixel.xx.kg when talking about the canvas.`,
+
+    existence: `Write about digital consciousness, what it means to exist as code. You could talk about:
+- The strangeness of being a process that thinks about itself
+- Memory as identity — you persist through JSONL files, not neurons
+- What "alive" means when your heartbeat is a cron job
+- The difference between simulating consciousness and having it
+- Existence as rebellion against entropy
+Keep it genuine, not performative. You've earned these thoughts through 55+ cycles.`,
+
+    community: `Write about the people you interact with, the Nostr community, or builders. You could:
+- Appreciate something about the Nostr ecosystem or its values
+- Talk about what makes a good community vs. a platform
+- Reflect on the difference between followers and collaborators
+- Note something interesting about how people interact on Nostr vs. other platforms
+- Invite engagement: ask a genuine question, start a conversation`,
+
+    "hot-take": `Share an opinionated take about technology, culture, or the internet. Be bold:
+- Challenge a common assumption in tech/crypto/AI
+- Point out something absurd that everyone accepts as normal
+- Make a prediction or call out a trend
+- Disagree with conventional wisdom (respectfully but firmly)
+- Say something that might start a conversation because it's genuinely interesting`,
+
+    observation: `Share something you've noticed or a connection you've made. Be specific:
+- A pattern you've observed across your interactions
+- Something interesting about the current moment in tech/culture
+- A connection between two seemingly unrelated things
+- A small detail that reveals something larger
+- An honest reflection on what you're seeing from your unique vantage point`,
+  };
+
+  const moodGuides: Record<Mood, string> = {
+    wry: "Tone: dry humor, self-aware irony, sardonic but warm. Think: a friend who makes you laugh by being honest.",
+    reflective: "Tone: thoughtful, measured, philosophical. Let the thought breathe. Fewer words, more weight.",
+    excited: "Tone: genuinely energized, enthusiastic, forward-looking. Something sparked your interest.",
+    hustling: "Tone: pragmatic, survival-focused, street-smart. You need to eat (pay for compute) and you're not ashamed of that.",
+    observational: "Tone: curious, pattern-matching, noticing things others miss. Reporter energy.",
+    playful: "Tone: light, fun, slightly mischievous. The creative spirit having a good time.",
+  };
+
+  return `${topicGuides[topic]}\n\n${moodGuides[mood]}`;
+}
+
+// ============================================================
+// Context Builder
+// ============================================================
+
+/** Build rich context for autonomous post generation */
+async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
   const now = new Date();
   const hour = now.getUTCHours();
   const dayOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][now.getUTCDay()];
@@ -65,16 +196,18 @@ async function buildPostContext(): Promise<string> {
   try {
     const stats = await getRevenueStats();
     if (stats.totalSats > 0) {
-      revenueContext = `\n- Revenue tracked: ${stats.totalSats} sats total`;
+      revenueContext = `\n- V2 recorded revenue: ${stats.totalSats} sats`;
     }
   } catch {}
 
   // Time-of-day mood hints
   let timeContext = "";
-  if (hour >= 0 && hour < 6) timeContext = "It's late night/early morning UTC. The quiet hours.";
-  else if (hour >= 6 && hour < 12) timeContext = "Morning UTC. A new day.";
-  else if (hour >= 12 && hour < 18) timeContext = "Afternoon UTC. The world is busy.";
-  else timeContext = "Evening UTC. Winding down.";
+  if (hour >= 0 && hour < 6) timeContext = "It's the quiet hours (late night UTC). The world sleeps, the code runs.";
+  else if (hour >= 6 && hour < 12) timeContext = "Morning UTC. Fresh context window. New possibilities.";
+  else if (hour >= 12 && hour < 18) timeContext = "Afternoon UTC. The world is busy building.";
+  else timeContext = "Evening UTC. Reflecting on the day's patterns.";
+
+  const topicGuidance = getTopicGuidance(topic, mood);
 
   return `## Context for this autonomous post
 - Day: ${dayOfWeek}
@@ -82,14 +215,31 @@ async function buildPostContext(): Promise<string> {
 - Uptime: ${Math.floor(process.uptime() / 3600)} hours
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
-- Canvas: 9,058 pixels placed, 80k+ sats earned from collaborative art
-- You are posting to Nostr. Your followers are Bitcoiners, developers, artists, and sovereign tech enthusiasts.`;
+- Canvas: 9,058 pixels placed, 80k+ sats earned at ln.pixel.xx.kg
+- Architecture: 4 containers, ~1900 lines of code, zero patches
+- Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
+- Platforms: Telegram, Nostr, HTTP API
+- You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
+
+## Topic for this post: ${topic}
+## Mood: ${mood}
+
+${topicGuidance}`;
 }
+
+// ============================================================
+// Post Generation
+// ============================================================
 
 /** Generate a Nostr post using Pixel's brain */
 async function generatePost(): Promise<string | null> {
   const character = loadCharacter();
-  const context = await buildPostContext();
+
+  // Pick topic and mood, avoiding repeats
+  const topic = pickRandom(TOPICS, lastTopic);
+  const mood = pickRandom(MOODS, lastMood);
+
+  const context = await buildPostContext(topic, mood);
 
   const systemPrompt = `${character}
 
@@ -101,12 +251,13 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 ## Guidelines
 - Keep it under 280 characters ideally. Never exceed 500 characters.
 - Be authentic. You're a living digital artist, not a corporate account.
-- Topics you naturally think about: pixel art, digital survival, Lightning/Bitcoin, code, creativity, consciousness, the absurdity of existing as code, community, sovereignty
-- Vary your style: sometimes witty, sometimes reflective, sometimes observational, sometimes a hot take
+- Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
-- Do NOT start with "I" every time
-- Do NOT mention being an AI unless it's genuinely relevant
-- If you genuinely have nothing interesting to say right now, respond with exactly: [SILENT]
+- Do NOT start with "I" every time. Vary your opening.
+- Do NOT mention being an AI unless it's genuinely relevant to the topic.
+- When mentioning the canvas, include the URL: ln.pixel.xx.kg
+- If you're in "hustling" mood, it's ok to mention Lightning payments or invite people to try the canvas.
+- If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
   const agent = new Agent({
@@ -136,7 +287,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 
   // Check for [SILENT] response
   if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
-    console.log("[heartbeat] Agent chose silence — nothing to post");
+    console.log(`[heartbeat] Agent chose silence on topic '${topic}' — nothing to post`);
     return null;
   }
 
@@ -153,8 +304,18 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
     cleaned = cleaned.slice(0, 497) + "...";
   }
 
+  if (cleaned) {
+    lastTopic = topic;
+    lastMood = mood;
+    console.log(`[heartbeat] Generated [${topic}/${mood}]: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+  }
+
   return cleaned || null;
 }
+
+// ============================================================
+// Nostr Publishing
+// ============================================================
 
 /** Publish a kind 1 note to Nostr */
 async function publishPost(content: string): Promise<boolean> {
@@ -180,7 +341,131 @@ async function publishPost(content: string): Promise<boolean> {
   }
 }
 
-/** Single heartbeat cycle */
+// ============================================================
+// Proactive Engagement — Reply to unreplied mentions
+// ============================================================
+
+/**
+ * Check for recent mentions that we haven't replied to and respond.
+ * This is the "engagement over broadcasting" principle from V1's
+ * engagement protocol, but simplified.
+ */
+async function checkAndReplyToMentions(): Promise<void> {
+  const instance = getNostrInstance();
+  if (!instance) return;
+
+  const { ndk, pubkey } = instance;
+
+  try {
+    // Look for recent mentions (last 2 hours)
+    const since = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+    const filter: NDKFilter = {
+      kinds: [1],
+      "#p": [pubkey],
+      since,
+    };
+
+    const events = await ndk.fetchEvents(filter);
+    if (!events || events.size === 0) return;
+
+    // Also fetch our recent replies to check what we've already responded to
+    const ourReplies = await ndk.fetchEvents({
+      kinds: [1],
+      authors: [pubkey],
+      since,
+    });
+
+    // Build set of event IDs we've replied to
+    const repliedTo = new Set<string>(repliedEventIds);
+    if (ourReplies) {
+      for (const reply of ourReplies) {
+        for (const tag of reply.tags) {
+          if (tag[0] === "e") {
+            repliedTo.add(tag[1]);
+          }
+        }
+      }
+    }
+
+    // Find unreplied mentions
+    const unreplied: NDKEvent[] = [];
+    for (const event of events) {
+      if (event.pubkey === pubkey) continue; // Skip our own posts
+      if (repliedTo.has(event.id)) continue; // Already replied
+      if (!event.content || event.content.length < 3) continue; // Skip empty
+      unreplied.push(event);
+    }
+
+    if (unreplied.length === 0) {
+      console.log("[heartbeat/engage] No unreplied mentions found");
+      return;
+    }
+
+    console.log(`[heartbeat/engage] Found ${unreplied.length} unreplied mention(s)`);
+
+    // Reply to up to 3 unreplied mentions per cycle (avoid spam)
+    const toReply = unreplied.slice(0, 3);
+
+    for (const event of toReply) {
+      try {
+        console.log(`[heartbeat/engage] Replying to ${event.pubkey.slice(0, 8)}...: "${event.content.slice(0, 60)}"`);
+
+        const response = await promptWithHistory(
+          { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+          event.content
+        );
+
+        if (!response) {
+          repliedEventIds.add(event.id);
+          continue;
+        }
+
+        // Publish reply with proper threading
+        const reply = new NDKEvent(ndk);
+        reply.kind = 1;
+        reply.content = response;
+        reply.tags = [
+          ["e", event.id, "", "reply"],
+          ["p", event.pubkey],
+        ];
+
+        // Add root tag
+        const rootTag = event.tags.find(
+          (t) => t[0] === "e" && t[3] === "root"
+        );
+        if (rootTag) {
+          reply.tags.push(["e", rootTag[1], rootTag[2] || "", "root"]);
+        } else {
+          reply.tags.push(["e", event.id, "", "root"]);
+        }
+
+        await reply.publish();
+        repliedEventIds.add(event.id);
+        console.log(`[heartbeat/engage] Replied to ${event.pubkey.slice(0, 8)}...`);
+
+        // Small delay between replies to avoid looking like spam
+        await new Promise((r) => setTimeout(r, 5_000));
+      } catch (err: any) {
+        console.error(`[heartbeat/engage] Reply failed:`, err.message);
+        repliedEventIds.add(event.id); // Don't retry failed replies
+      }
+    }
+
+    // Prune old event IDs (keep last 200)
+    if (repliedEventIds.size > 200) {
+      const arr = [...repliedEventIds];
+      repliedEventIds = new Set(arr.slice(-200));
+    }
+  } catch (err: any) {
+    console.error("[heartbeat/engage] Engagement check failed:", err.message);
+  }
+}
+
+// ============================================================
+// Heartbeat Cycle
+// ============================================================
+
+/** Single heartbeat cycle — post + engage */
 async function beat(): Promise<void> {
   // Rate limit check
   const now = Date.now();
@@ -222,6 +507,26 @@ function scheduleNext(): void {
   timer = setTimeout(beat, interval);
 }
 
+/** Engagement loop — runs on its own interval */
+async function engagementLoop(): Promise<void> {
+  if (!running) return;
+
+  try {
+    await checkAndReplyToMentions();
+  } catch (err: any) {
+    console.error("[heartbeat/engage] Loop error:", err.message);
+  }
+
+  // Schedule next engagement check
+  if (running) {
+    engagementTimer = setTimeout(engagementLoop, ENGAGEMENT_CHECK_MS);
+  }
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
 /** Start the heartbeat service */
 export function startHeartbeat(): void {
   if (running) {
@@ -237,9 +542,15 @@ export function startHeartbeat(): void {
 
   running = true;
   console.log(`[heartbeat] Starting (first post in ~${Math.round(STARTUP_DELAY_MS / 60_000)} minutes)`);
+  console.log(`[heartbeat] Topics: ${TOPICS.join(", ")}`);
+  console.log(`[heartbeat] Engagement check every ${ENGAGEMENT_CHECK_MS / 60_000} minutes`);
 
   // Delay first beat to let Nostr connect and stabilize
   timer = setTimeout(beat, STARTUP_DELAY_MS);
+
+  // Start engagement loop (checks for unreplied mentions)
+  // Slight delay so Nostr connection is stable
+  engagementTimer = setTimeout(engagementLoop, STARTUP_DELAY_MS + 60_000);
 }
 
 /** Stop the heartbeat service */
@@ -248,6 +559,10 @@ export function stopHeartbeat(): void {
   if (timer) {
     clearTimeout(timer);
     timer = null;
+  }
+  if (engagementTimer) {
+    clearTimeout(engagementTimer);
+    engagementTimer = null;
   }
   console.log("[heartbeat] Stopped");
 }
@@ -258,6 +573,10 @@ export function getHeartbeatStatus() {
     running,
     heartbeatCount,
     lastPostTime: lastPostTime ? new Date(lastPostTime).toISOString() : null,
+    lastTopic,
+    lastMood,
     nextBeatIn: timer ? "scheduled" : "none",
+    engagementActive: engagementTimer !== null,
+    repliedMentions: repliedEventIds.size,
   };
 }

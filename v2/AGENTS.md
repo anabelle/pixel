@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 18
+> Last updated: 2026-02-10 | Session: 19
 
 ---
 
@@ -125,7 +125,9 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 18 (L402 revenue door):** Wired L402 middleware into production. `l402.ts` (302 lines, written in Session 17 research) was imported into `index.ts` and deployed with two paid endpoints: `/api/chat/premium` (10 sats) and `/api/generate` (50 sats). Free `/api/chat` preserved for connectors. Agent-card updated to advertise L402 pricing. Verified end-to-end: both endpoints return proper HTTP 402 with real Lightning invoices from Wallet of Satoshi. Zero new dependencies — L402 uses only Node.js `crypto` module + existing `lightning.ts` and `revenue.ts` services. Revenue auto-recorded on payment verification. Canvas migration deferred in favor of new revenue streams — canvas works and earns (80K sats), Socket.IO migration to Hono is complex. x402 research completed but not implemented (needs EVM wallet + npm deps).
 
-**V2 file inventory (12 source files, ~1900 lines):**
+**Session 19 (Initiative — rich heartbeat):** Rewrote heartbeat from bland status reporter (~200 lines) to initiative engine (~583 lines). Studied V1 Syntropy's autonomous behaviors (revenue-strategy.md, engagement-protocol.md, monetization research) to understand what "initiative" means. New heartbeat has: (A) Topic rotation system (8 topics: art, bitcoin, code, canvas, existence, community, hot-take, observation — never repeats consecutively), (B) Mood rotation (6 moods: wry, reflective, excited, hustling, observational, playful — never repeats consecutively), (C) Rich per-topic guidance (canvas topic always mentions ln.pixel.xx.kg with real stats, code topic references the 18→4 container journey, etc.), (D) Proactive Nostr engagement — `checkAndReplyToMentions()` runs every 15 minutes, fetches unreplied mentions, replies via `promptWithHistory()` with proper Nostr threading (root/reply tags), rate-limited to 3 replies/cycle with 5s delay. First post after deploy: `"9,058 pixels. Over 80k sats earned. Each dot a choice..."` (topic: canvas, mood: excited) — vs old: `"Zero uptime. Heartbeat #2. Another cycle."` Health endpoint now reports lastTopic, lastMood, engagementActive, repliedMentions count.
+
+**V2 file inventory (12 source files, ~2300 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/index.ts` | ~395 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
@@ -137,7 +139,7 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
 | `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
 | `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
-| `src/services/heartbeat.ts` | ~200 | Autonomous Nostr posting (45-90 min jitter, [SILENT] support, rate-limited) |
+| `src/services/heartbeat.ts` | ~583 | Initiative engine — topic rotation (8 topics), mood rotation (6 moods), proactive Nostr engagement (reply to mentions), autonomous posting |
 | `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
@@ -844,12 +846,12 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 18 (2026-02-10)
+**Last session:** 19 (2026-02-10)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Heartbeat active — autonomous Nostr posting every 45-90 minutes. L402 revenue door LIVE — two paid endpoints accepting Lightning micropayments.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Rich heartbeat active — autonomous Nostr posting with topic rotation (8 topics), mood variety (6 moods), and proactive engagement (replies to mentions every 15 min). L402 revenue door LIVE — two paid endpoints accepting Lightning micropayments.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
-**Next action:** x402 revenue door (USDC on Base), commit Session 18
+**Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
 
 | Component | Status |
 |-----------|--------|
@@ -866,6 +868,7 @@ git status && git log --oneline -5
 | v2/src/services/lightning.ts | DONE - sats/millisats fix, invoiceCache, no dummy invoices |
 | v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
 | v2/src/services/l402.ts | DONE - L402 middleware, preimage verification, 402 challenge, revenue recording. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
+| v2/src/services/heartbeat.ts | DONE - Initiative engine: 8 topics, 6 moods, proactive Nostr engagement (reply to mentions every 15 min), canvas promotion, [SILENT] support |
 | v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
@@ -914,3 +917,12 @@ git status && git log --oneline -5
 24. **L402 simplified (no macaroons):** Uses raw payment hash as token, SHA256(preimage) verification via `crypto.timingSafeEqual`. Compatible with full L402/LSAT clients (accepts base64 macaroons too) but doesn't require macaroon minting.
 25. **Dual revenue strategy:** L402 (Lightning/Bitcoin) and x402 (USDC/Base) will coexist — different payment headers, same endpoints possible. "Accept payment through whatever door."
 26. **x402 requires EVM wallet:** Pixel needs a Base chain wallet address (receiving only, no private key on server). This is a blocker for x402.
+
+### Key Decisions (Session 19)
+
+27. **Topic rotation over random prompting:** 8 defined topics with detailed per-topic guidance produce much richer content than a single generic "write a Nostr post" prompt.
+28. **Mood rotation alongside topic rotation:** Both avoid consecutive repeats, creating natural variety across posts.
+29. **Proactive engagement is separate from posting:** The engagement loop (15-min interval) checks for unreplied mentions independently of the posting heartbeat (45-90 min interval). Different timers, different concerns.
+30. **Canvas promotion is a first-class topic:** One of 8 topics is dedicated to promoting `ln.pixel.xx.kg` — the only revenue-generating product. Every ~8 posts, Pixel naturally talks about the canvas.
+31. **Engagement uses promptWithHistory():** Replies to mentions go through the same conversation-aware pipeline as Telegram/HTTP, so Pixel remembers context per Nostr user.
+32. **V1's engagement protocol distilled:** V1's 623-line engagement protocol boiled down to: "reply to unreplied mentions with value-add responses, max 3 per cycle, 5s delay between replies." Simple implementation, same principle.
