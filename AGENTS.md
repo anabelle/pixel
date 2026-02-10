@@ -362,7 +362,7 @@ docker exec pixel-postgres-1 pg_dump -U postgres -d pixel_agent > ./backups/pixe
 - Personal: https://pixel.xx.kg  
 - Main Repo: https://github.com/anabelle/pixel
 - Agent Code: https://github.com/anabelle/pixel-agent/
-- Lightning: sparepicolo55@walletofsatoshi.com
+- Lightning: sparepiccolo55@walletofsatoshi.com
 - Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ---

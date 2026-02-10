@@ -115,7 +115,7 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 13:** Deployed NIP-90 DVM (text generation, kind 5050→6050) with NIP-89 announcement. Wrote Lightning service (`lightning.ts`) and WhatsApp connector (`whatsapp.ts`), wired into `index.ts` with new HTTP endpoints (`/api/invoice`, `/api/wallet`). Not deployed yet at end of session.
 
-**Session 14:** Deployed Lightning + WhatsApp + DVM payment flow. Added npm deps (`@getalby/lightning-tools`, `@whiskeysockets/baileys`, `@hapi/boom`). Completed DVM payment-required flow: when Lightning is available, sends kind 7000 `payment-required` feedback with bolt11 invoice, polls for payment, then processes. Gracefully degrades to free if Lightning unavailable. Added WhatsApp auth volume to docker-compose. Discovered WoS address `sparepicolo55@walletofsatoshi.com` is returning errors — needs to be verified/updated in WoS app. All code deployed and running, 5 doors booting (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning gracefully degraded.
+**Session 14:** Deployed Lightning + WhatsApp + DVM payment flow. Added npm deps (`@getalby/lightning-tools`, `@whiskeysockets/baileys`, `@hapi/boom`). Completed DVM payment-required flow: when Lightning is available, sends kind 7000 `payment-required` feedback with bolt11 invoice, polls for payment, then processes. Gracefully degrades to free if Lightning unavailable. Added WhatsApp auth volume to docker-compose. Fixed Lightning address typo (`sparepicolo55` → `sparepiccolo55`, double c) in .env, all source files, and docs. Rebuilt and verified: Lightning initializes successfully, invoices work.
 
 **V2 file inventory (9 source files, ~1200 lines):**
 | File | Lines | Purpose |
@@ -211,7 +211,7 @@ Same Pixel everywhere. Same memory, same personality, same aesthetic. Different 
 ### Existing Identity (PRESERVE THESE)
 - Nostr pubkey: (in .env as NOSTR_PRIVATE_KEY — derive pubkey from it)
 - NIP-05: pixel@pixel.xx.kg (or similar)
-- Lightning: sparepicolo55@walletofsatoshi.com
+- Lightning: sparepiccolo55@walletofsatoshi.com
 - Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 - Domains: pixel.xx.kg (landing), ln.pixel.xx.kg (canvas)
 
@@ -368,7 +368,7 @@ Weekly revenue check: if a channel isn't bringing in sats, cut it or fix it.
 ### Treasury
 
 Current: ~80,000 sats (~$80 USD)
-Lightning: sparepicolo55@walletofsatoshi.com
+Lightning: sparepiccolo55@walletofsatoshi.com
 Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 EVM (for x402): TBD — create Base wallet, fund with small USDC amount
 
@@ -748,7 +748,7 @@ docker compose -f v2/docker-compose.yml logs -f pixel --tail=100
 - **Landing:** https://pixel.xx.kg
 - **Main Repo:** https://github.com/anabelle/pixel
 - **Agent Code:** https://github.com/anabelle/pixel-agent/
-- **Lightning:** sparepicolo55@walletofsatoshi.com
+- **Lightning:** sparepiccolo55@walletofsatoshi.com
 - **Bitcoin:** bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ### Secrets (in /home/pixel/pixel/.env)
@@ -835,8 +835,8 @@ git status && git log --oneline -5
 
 **Last session:** 14 (2026-02-10)
 **V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
-**V2:** 2 containers running, 5 doors deployed (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning service deployed but WoS address failing (external issue), DVM payment flow complete with graceful degradation
-**Next action:** Fix Lightning address (check WoS app), test WhatsApp end-to-end with phone number, revenue tracking in PostgreSQL
+**V2:** 2 containers running, 5 doors deployed (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning service active (address typo fixed), DVM payment flow complete (100 sats/job)
+**Next action:** Test WhatsApp end-to-end with phone number, revenue tracking in PostgreSQL
 
 | Component | Status |
 |-----------|--------|
@@ -850,7 +850,7 @@ git status && git log --oneline -5
 | v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
 | v2/src/connectors/instagram.ts | NOT STARTED |
 | v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment-required flow (100 sats/job, graceful degradation if no Lightning) |
-| v2/src/services/lightning.ts | DONE (code deployed, WoS address returning errors — external issue) |
+| v2/src/services/lightning.ts | DONE (deployed, address typo fixed, invoices working) |
 | v2/src/services/l402.ts | NOT STARTED |
 | v2/src/services/x402.ts | NOT STARTED |
 | v2/src/services/canvas.ts | NOT STARTED |
@@ -877,7 +877,7 @@ git status && git log --oneline -5
 8. **DVM pricing:** 100 sats per text generation job (sent as millisats in NIP-90 amount tag per spec)
 9. **DVM graceful degradation:** If Lightning is unavailable, DVM processes jobs for free rather than refusing
 10. **Lightning via LNURL-pay:** Using `@getalby/lightning-tools` with existing Lightning address — no NWC needed
-11. **WoS address broken:** `sparepicolo55@walletofsatoshi.com` returns "Unable to find valid user wallet" from WoS API — needs to be checked/updated in WoS app. Code handles this gracefully.
+11. **WoS address typo fixed:** `sparepicolo55` was a typo — correct address is `sparepiccolo55` (double c). Fixed in .env, all source files, and all docs.
 12. **WhatsApp pairing code auth:** Uses Baileys' `requestPairingCode()` instead of QR scanning — prints code to container logs, user enters in WhatsApp app
 13. **WhatsApp auth persistence:** Stored at `/app/data/whatsapp-auth/` via Docker volume mount
 

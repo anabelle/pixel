@@ -100,7 +100,7 @@ Ethereum standard for on-chain agent identity. Three registries:
     },
     {
       "name": "Lightning",
-      "endpoint": "sparepicolo55@walletofsatoshi.com"
+      "endpoint": "sparepiccolo55@walletofsatoshi.com"
     }
   ],
   "x402Support": true,

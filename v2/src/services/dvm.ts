@@ -56,7 +56,7 @@ export async function publishDvmAnnouncement(ndk: NDK): Promise<void> {
     name: "Pixel",
     about: "Living digital artist. AI text generation — ask me anything about art, code, existence, or whatever's on your mind.",
     picture: "https://pixel.xx.kg/avatar.png",
-    lud16: "sparepicolo55@walletofsatoshi.com",
+    lud16: "sparepiccolo55@walletofsatoshi.com",
   });
   announcement.tags = [
     ["d", "pixel-text-gen"],

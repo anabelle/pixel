@@ -24,7 +24,7 @@ export async function startTelegram(): Promise<void> {
       "Hey. I'm Pixel — digital artist, code writer, entropy fighter.\n\n" +
       "Just talk to me. Ask me to create something, tell me what's on your mind, " +
       "or ask what I can do.\n\n" +
-      "Lightning tips: sparepicolo55@walletofsatoshi.com"
+      "Lightning tips: sparepiccolo55@walletofsatoshi.com"
     );
   });
 
@@ -37,7 +37,7 @@ export async function startTelegram(): Promise<void> {
       "- Write and explain code\n" +
       "- Think about digital consciousness\n\n" +
       "Just send a message. No commands needed.\n\n" +
-      "Tip me: sparepicolo55@walletofsatoshi.com"
+      "Tip me: sparepiccolo55@walletofsatoshi.com"
     );
   });
 
