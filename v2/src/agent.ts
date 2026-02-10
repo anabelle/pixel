@@ -13,6 +13,7 @@ import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
 import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
+import { pixelTools } from "./services/tools.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -120,7 +121,7 @@ export async function promptWithHistory(
       systemPrompt,
       model: getPixelModel(),
       thinkingLevel: "off",
-      tools: [],
+      tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
   });
@@ -332,7 +333,7 @@ export function createPixelAgent(options: PixelAgentOptions): Agent {
       systemPrompt,
       model: getPixelModel(),
       thinkingLevel: "off",
-      tools: [],
+      tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
   });

@@ -10,6 +10,8 @@ services:
     build:
       context: .
     user: "1000:1000"
+    group_add:
+      - "988"
     ports:
       - "127.0.0.1:4000:4000"
     env_file:
@@ -28,6 +30,7 @@ services:
       - ./tools:/app/tools
       - ./data:/app/data
       - ./data/whatsapp-auth:/app/data/whatsapp-auth
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - pixel-v2-net
       - pixel-v1-net

@@ -20,6 +20,9 @@ COPY character.md* ./
 # ---- Runtime ----
 FROM oven/bun:1-alpine
 
+# bash for agent's bash tool, curl for healthcheck/web fetch
+RUN apk add --no-cache bash curl
+
 WORKDIR /app
 
 # Copy installed deps and source
