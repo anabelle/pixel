@@ -20,6 +20,16 @@ import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
 const replyThrottle = new Map<string, number>();
 const THROTTLE_MS = 60_000; // 1 minute
 
+// Shared NDK instance — used by heartbeat and other services
+let sharedNdk: NDK | null = null;
+let sharedPubkey: string | null = null;
+
+/** Get the active Nostr instance (NDK + pubkey) for use by other services */
+export function getNostrInstance(): { ndk: NDK; pubkey: string } | null {
+  if (!sharedNdk || !sharedPubkey) return null;
+  return { ndk: sharedNdk, pubkey: sharedPubkey };
+}
+
 /** Convert nsec to hex private key */
 function nsecToHex(nsec: string): string {
   // If already hex, return as-is
@@ -104,6 +114,11 @@ export async function startNostr(): Promise<void> {
   // Get our public key
   const user = await signer.user();
   const pubkey = user.pubkey;
+
+  // Store for use by heartbeat and other services
+  sharedNdk = ndk;
+  sharedPubkey = pubkey;
+
   console.log(`[nostr] Connected as ${pubkey.slice(0, 8)}...`);
   console.log(`[nostr] Relays: ${relayUrls.join(", ")}`);
 

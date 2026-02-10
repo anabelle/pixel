@@ -30,6 +30,7 @@ services:
       - ./data/whatsapp-auth:/app/data/whatsapp-auth
     networks:
       - pixel-v2-net
+      - pixel-v1-net
     depends_on:
       postgres-v2:
         condition: service_healthy
@@ -119,3 +120,6 @@ services:
 networks:
   pixel-v2-net:
     driver: bridge
+  pixel-v1-net:
+    external: true
+    name: pixel_pixel-net

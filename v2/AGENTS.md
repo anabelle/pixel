@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 16
+> Last updated: 2026-02-10 | Session: 17
 
 ---
 
@@ -121,18 +121,21 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 16 (V1 deprecation):** Audited all V1 data. Backed up V1 PostgreSQL (110K lines, 1.9GB with embeddings) and canvas SQLite (9,058 pixels, 80,318 sats revenue). Fixed Lightning address typo in ALL remaining V1 files (~40 locations). Rebuilt landing page — `pixel.xx.kg` now shows correct `sparepiccolo55` address. Killed V1 agent and Syntropy containers (freed ~1GB RAM budget, eliminated Nostr double-posting). Added V2 routes to nginx — V2 API now accessible at `https://pixel.xx.kg/v2/*` and agent-card at `/.well-known/agent-card.json`. Connected V2 container to V1 nginx network. Canvas services (api + web + postgres) preserved — only revenue source.
 
-**V2 file inventory (10 source files, ~1400 lines):**
+**Session 17 (Heartbeat + cleanup):** Added autonomous heartbeat service (`src/services/heartbeat.ts`). Pixel now posts to Nostr every 45-90 minutes (randomized jitter), generating original content via its own LLM brain. Supports `[SILENT]` — if agent has nothing to say, it stays quiet. Rate-limited (30 min minimum between posts). First autonomous post verified live. Made V2 nginx network connection persistent by adding `pixel_pixel-net` as external network in `v2/docker-compose.yml` — no more manual `docker network connect`. Killed V1 PostgreSQL (confirmed canvas uses SQLite only, not PostgreSQL). Down to 6 containers.
+
+**V2 file inventory (11 source files, ~1600 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~292 | Boot, Hono HTTP, /api/chat, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB table auto-init |
+| `src/index.ts` | ~295 | Boot, Hono HTTP, /api/chat, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
 | `src/agent.ts` | ~265 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction |
-| `src/conversations.ts` | ~240 | JSONL persistence, context compaction (needsCompaction, getMessagesForCompaction, saveCompactedContext) |
+| `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
-| `src/connectors/nostr.ts` | ~223 | NDK mentions + DMs + DVM startup |
+| `src/connectors/nostr.ts` | ~235 | NDK mentions + DMs + DVM startup + shared NDK instance export |
 | `src/connectors/whatsapp.ts` | ~175 | Baileys bot with pairing code auth |
 | `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
 | `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
 | `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
+| `src/services/heartbeat.ts` | ~200 | Autonomous Nostr posting (45-90 min jitter, [SILENT] support, rate-limited) |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
@@ -838,11 +841,12 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 16 (2026-02-10)
-**V1:** 5 containers running (api, web, landing, postgres, nginx). Agent + Syntropy KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API.
+**Last session:** 17 (2026-02-10)
+**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Heartbeat active — autonomous Nostr posting every 45-90 minutes.
+**Total containers:** 6 (down from 7 last session, from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
-**Next action:** L402/x402 revenue doors, Instagram connector, canvas API migration to V2
+**Next action:** Canvas API migration to V2, L402/x402 revenue doors
 
 | Component | Status |
 |-----------|--------|

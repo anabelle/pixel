@@ -17,6 +17,7 @@ import { startWhatsApp } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
+import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
 
 // ============================================================
 // Configuration
@@ -46,6 +47,7 @@ app.get("/health", (c) => {
     name: "pixel",
     uptime: process.uptime(),
     memory: process.memoryUsage(),
+    heartbeat: getHeartbeatStatus(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -272,6 +274,9 @@ async function boot() {
     console.error("[boot] Nostr failed to start:", err.message);
     console.error("[boot] Nostr stack:", err.stack);
   }
+
+  // Start heartbeat AFTER Nostr (needs NDK instance)
+  startHeartbeat();
 
   try {
     await startWhatsApp();
