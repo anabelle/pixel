@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 19
+> Last updated: 2026-02-09 | Session: 20
 
 ---
 
@@ -127,29 +127,32 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 19 (Initiative — rich heartbeat):** Rewrote heartbeat from bland status reporter (~200 lines) to initiative engine (~583 lines). Studied V1 Syntropy's autonomous behaviors (revenue-strategy.md, engagement-protocol.md, monetization research) to understand what "initiative" means. New heartbeat has: (A) Topic rotation system (8 topics: art, bitcoin, code, canvas, existence, community, hot-take, observation — never repeats consecutively), (B) Mood rotation (6 moods: wry, reflective, excited, hustling, observational, playful — never repeats consecutively), (C) Rich per-topic guidance (canvas topic always mentions ln.pixel.xx.kg with real stats, code topic references the 18→4 container journey, etc.), (D) Proactive Nostr engagement — `checkAndReplyToMentions()` runs every 15 minutes, fetches unreplied mentions, replies via `promptWithHistory()` with proper Nostr threading (root/reply tags), rate-limited to 3 replies/cycle with 5s delay. First post after deploy: `"9,058 pixels. Over 80k sats earned. Each dot a choice..."` (topic: canvas, mood: excited) — vs old: `"Zero uptime. Heartbeat #2. Another cycle."` Health endpoint now reports lastTopic, lastMood, engagementActive, repliedMentions count.
 
-**V2 file inventory (12 source files, ~2300 lines):**
+**Session 20 (V2 bug fixes + V1 soul porting):** Session 19 audit verdict: "V2 is a better chassis but a worse mind." This session fixed 5 bugs/gaps and ported V1's best personality content into V2. Changes: (A) Double-reply fix — shared `repliedEventIds` Set between `nostr.ts` real-time mention handler and `heartbeat.ts` engagement loop via exported `hasRepliedTo()`/`markReplied()` functions. Both paths now check before replying. (B) Agent-card fix — capabilities changed from `image-generation`/`art-commission` (which don't exist) to `text-generation`/`conversation`. (C) Memory extraction — `saveMemory()` was implemented but never called. Added periodic extraction in `agent.ts`: every 5th message per user, an LLM call extracts key facts (name, interests, preferences) and saves to `conversations/{userId}/memory.md`. Already loaded into system prompt by `loadMemory()`. (D) User tracking — created `users.ts` service (~120 lines) with `trackUser()` upsert (INSERT ON CONFLICT UPDATE), `getUserStats()` for totals/active/by-platform. Wired into `index.ts` boot and `agent.ts` message flow. Added to `/api/stats` response. (E) Live canvas stats — heartbeat now fetches real pixel/sat counts from `http://pixel-api-1:3000/api/stats` with 5s timeout and fallback to cached values, replacing 3 hardcoded references. (F) Character enrichment — grew `character.md` from 63 to 146 lines by porting V1's best content: curated post examples (ultra-short, medium wit, long philosophical, warm, growth), key style rules (Douglas Adams/Pratchett wit, lowercase, no filler words, no em-dashes, no rhetorical questions, anti-assistant behavior, warm empathy, memory references), conversation examples showing range, and topics list. Commit: `c8d91cb`.
+
+**V2 file inventory (13 source files, ~2450 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~395 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
-| `src/agent.ts` | ~265 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction |
+| `src/index.ts` | ~400 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking index |
+| `src/agent.ts` | ~320 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction |
 | `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
-| `src/connectors/nostr.ts` | ~235 | NDK mentions + DMs + DVM startup + shared NDK instance export |
+| `src/connectors/nostr.ts` | ~260 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
 | `src/connectors/whatsapp.ts` | ~175 | Baileys bot with pairing code auth |
 | `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
 | `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
 | `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
-| `src/services/heartbeat.ts` | ~583 | Initiative engine — topic rotation (8 topics), mood rotation (6 moods), proactive Nostr engagement (reply to mentions), autonomous posting |
+| `src/services/users.ts` | ~120 | User tracking — initUsers(), trackUser() upsert, getUserStats() |
+| `src/services/heartbeat.ts` | ~580 | Initiative engine — topic rotation, mood rotation, proactive Nostr engagement, live canvas stats |
 | `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
-**Key realizations:**
+**Key realizations (from earlier sessions, preserved):**
 1. Clawi is making millions by wrapping OpenClaw in a sign-up page + WhatsApp connector. No ERC-8004, no DVMs, no x402. Just normie access.
 2. Agent-to-agent economy is 2026-2027 revenue. "AI assistant on my phone" is RIGHT NOW revenue.
 3. Both can be built simultaneously — same agent brain, different doors.
 4. Pixel's moat is NOT technology. It's: character + Bitcoin-native + art + multi-ecosystem bridging.
 
-**Deep research completed this session:**
+**Deep research completed (Session 18-19):**
 - ERC-8004: deployed on 14+ chains, registration on Base costs ~$0.05, JS/Python/Rust SDKs exist
 - x402: 75M transactions, $24M volume, Hono middleware is one line, client fetch wrapper for paying agents
 - L402 vs x402: both can coexist on same endpoints, different headers
@@ -846,9 +849,9 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 19 (2026-02-10)
+**Last session:** 20 (2026-02-09)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Rich heartbeat active — autonomous Nostr posting with topic rotation (8 topics), mood variety (6 moods), and proactive engagement (replies to mentions every 15 min). L402 revenue door LIVE — two paid endpoints accepting Lightning micropayments.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Double-reply bug fixed.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 **Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
@@ -857,24 +860,25 @@ git status && git log --oneline -5
 |-----------|--------|
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
-| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, Google Gemini 2.5 Flash |
+| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json (text-generation, conversation), /api/invoice, /api/wallet, /api/revenue, /api/stats (incl. user stats), DB auto-init, user tracking index |
+| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, periodic memory extraction, trackUser() |
 | v2/src/conversations.ts | DONE - JSONL per-user persistence, context compaction (summarize old messages via LLM) |
 | v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
-| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup with persistent memory |
+| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
 | v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
 | v2/src/connectors/instagram.ts | NOT STARTED |
 | v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
 | v2/src/services/lightning.ts | DONE - sats/millisats fix, invoiceCache, no dummy invoices |
 | v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
 | v2/src/services/l402.ts | DONE - L402 middleware, preimage verification, 402 challenge, revenue recording. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
-| v2/src/services/heartbeat.ts | DONE - Initiative engine: 8 topics, 6 moods, proactive Nostr engagement (reply to mentions every 15 min), canvas promotion, [SILENT] support |
+| v2/src/services/heartbeat.ts | DONE - Initiative engine: 8 topics, 6 moods, proactive Nostr engagement, live canvas stats, uses shared repliedEventIds |
 | v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
+| v2/src/services/users.ts | DONE - User tracking: trackUser() upsert, getUserStats(), wired into /api/stats |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
 | v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume |
-| v2/character.md | DONE - Pixel identity document |
+| v2/character.md | DONE - Pixel identity document, enriched with V1's best voice rules, post examples, conversation patterns (146 lines) |
 | Conversation persistence (JSONL) | DONE - Per-user directories, context compaction at 40 messages |
 | Nginx V2 routing | DONE - /v2/* → V2 API, /.well-known/agent-card.json → V2 |
 | Sandbox container | NOT STARTED |
@@ -926,3 +930,11 @@ git status && git log --oneline -5
 30. **Canvas promotion is a first-class topic:** One of 8 topics is dedicated to promoting `ln.pixel.xx.kg` — the only revenue-generating product. Every ~8 posts, Pixel naturally talks about the canvas.
 31. **Engagement uses promptWithHistory():** Replies to mentions go through the same conversation-aware pipeline as Telegram/HTTP, so Pixel remembers context per Nostr user.
 32. **V1's engagement protocol distilled:** V1's 623-line engagement protocol boiled down to: "reply to unreplied mentions with value-add responses, max 3 per cycle, 5s delay between replies." Simple implementation, same principle.
+
+### Key Decisions (Session 20)
+
+33. **Shared repliedEventIds over local sets:** Both `nostr.ts` (real-time mentions) and `heartbeat.ts` (engagement loop) can reply to the same event. A shared Set with `hasRepliedTo()`/`markReplied()` exported from `nostr.ts` prevents double-replies. Pruning at 500 entries prevents unbounded growth.
+34. **Periodic memory extraction (every 5th message):** Too frequent wastes LLM calls; too rare misses context. Every 5th message per user triggers a lightweight LLM agent that reads recent conversation + existing memory, outputs updated concise markdown saved via `saveMemory()`.
+35. **User tracking via upsert:** `INSERT ... ON CONFLICT (platform_id, platform) DO UPDATE` pattern increments `message_count` and updates `last_seen_at`. Fire-and-forget from `agent.ts` (non-blocking `.catch(() => {})`).
+36. **Live canvas stats with fallback:** Heartbeat fetches real stats from V1 canvas API each cycle. On failure (timeout, error), falls back to cached values. Better than hardcoded numbers that go stale.
+37. **Character enrichment strategy:** Port V1's best 30-40% into V2's clean structure. Curated 25 post examples from 155, key style rules from 47, conversation examples showing range, topics list from 229 distilled to one paragraph. Grew from 63 to 146 lines — lean enough to fit in context, rich enough to have soul.
