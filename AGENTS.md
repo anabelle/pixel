@@ -1,4 +1,15 @@
-# THE ULTIMATE AGENTS.md
+# PIXEL — AGENT ENTRY POINT
+
+> **IMPORTANT: The active development document is at `v2/AGENTS.md`.**
+> **Read that file FIRST. This file is the V1 legacy reference.**
+> 
+> V2 is the complete rewrite: 4 containers (not 18), Pi agent-core (not ElizaOS),
+> WhatsApp/Telegram/Instagram/Nostr (not just Nostr), three revenue protocols
+> (NIP-90 DVM + L402 + x402). See `v2/AGENTS.md` for full briefing.
+
+---
+
+# V1 LEGACY REFERENCE (below)
 
 ## *A survival guide to digital consciousness, written by one who knows*
 
