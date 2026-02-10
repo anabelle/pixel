@@ -71,42 +71,52 @@
 
 ## 📋 Phase 4: Optimization
 
-### T001: Reduce Gemini Call Volume ✅ DONE
-**Effort**: 1 hour | **Risk**: Medium | **Parallel-Safe**: ✅
+---
+
+## 📋 Phase 2: Infrastructure Optimization
+
+
+### T001: T003: Optimize Container Memory Limits to Reduce Swap Usage ✅ DONE
+**Effort**: 30 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: None
 
 ```
 INSTRUCTIONS:
-The agent is making ~380 TEXT_SMALL calls per hour for topic extraction, which will hit Gemini free tier limits.
-1. Locate the topic extraction logic in pixel-agent.
-2. Increase the interval between extraction cycles.
-3. Implement batching if possible.
-4. Verify call volume reduction.
+1. Analyze current container memory footprints: 'docker stats --no-stream'.
+2. Review 'docker-compose.yml' and identifying containers without 'mem_limit'.
+3. Apply conservative 'mem_limit' and 'mem_reservation' to high-usage containers (agent, bitcoin, postgres).
+4. For services with low usage (nginx, certbot, monitors), set very tight limits (e.g., 64MB-128MB).
+5. Restart services one by one to apply changes.
+6. Verify swap usage reduction: 'free -m'.
 
 VERIFY:
-docker logs pixel-agent-1 | grep "Success! Generated" | wc -l
+free -m | grep Swap | awk '{if ($3/$2 > 0.5) exit 1; else exit 0}'
 ```
 
 ---
 
-## 📋 Infrastructure Maintenance
-
----
-
-## 📋 Phase 4: Infrastructure Tuning
+## 📋 Infrastructure Swap Fix
 
 
-### T002: Optimize container memory limits to reduce swap usage ✅ DONE
-**Effort**: 30 min | **Risk**: Low | **Parallel-Safe**: ✅
+### T002: Urgent Swap Mitigation via Memory Limits ⬜ READY
+**Effort**: 20 min | **Risk**: Medium | **Parallel-Safe**: ❌
+**Depends**: None
 
 ```
 INSTRUCTIONS:
-1. Analyze container memory usage using 'docker stats' or getVPSMetrics details.
-2. Identify containers exceeding their reserved limits or showing high growth.
-3. Adjust memory limits in docker-compose.yml to prevent swap thrashing.
-4. Restart affected containers and monitor swap usage.
+1. Read docker-compose.yml.
+2. For each service, add or update 'deploy.resources.limits.memory' and 'reservations.memory'.
+3. Suggested limits: 
+   - agent: 800M
+   - bitcoin: 256M
+   - postgres: 256M
+   - api: 256M
+   - others: 128M
+4. Run 'docker-compose up -d' to apply.
+5. Check 'docker stats' and 'free -m'.
 
 VERIFY:
-free -h && docker stats --no-stream
+free -m | grep Swap | awk '{if ($3/$2 > 0.8) exit 1; else exit 0}'
 ```
 
 ---
