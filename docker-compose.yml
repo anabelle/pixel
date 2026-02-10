@@ -76,7 +76,7 @@ services:
       args:
         - NEXT_PUBLIC_CANVAS_URL=${NEXT_PUBLIC_CANVAS_URL:-https://ln.pixel.xx.kg}
         - NEXT_PUBLIC_AGENT_HANDLE=${NEXT_PUBLIC_AGENT_HANDLE:-@PixelSurvivor}
-        - NEXT_PUBLIC_LIGHTNING_ADDRESS=${NEXT_PUBLIC_LIGHTNING_ADDRESS:-sparepicolo55@walletofsatoshi.com}
+        - NEXT_PUBLIC_LIGHTNING_ADDRESS=${NEXT_PUBLIC_LIGHTNING_ADDRESS:-sparepiccolo55@walletofsatoshi.com}
         - NEXT_PUBLIC_BITCOIN_ADDRESS=${NEXT_PUBLIC_BITCOIN_ADDRESS:-bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za}
     ports:
       - "127.0.0.1:3001:3001"

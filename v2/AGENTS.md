@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 14
+> Last updated: 2026-02-10 | Session: 16
 
 ---
 
@@ -117,17 +117,22 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 14:** Deployed Lightning + WhatsApp + DVM payment flow. Added npm deps (`@getalby/lightning-tools`, `@whiskeysockets/baileys`, `@hapi/boom`). Completed DVM payment-required flow: when Lightning is available, sends kind 7000 `payment-required` feedback with bolt11 invoice, polls for payment, then processes. Gracefully degrades to free if Lightning unavailable. Added WhatsApp auth volume to docker-compose. Fixed Lightning address typo (`sparepicolo55` → `sparepiccolo55`, double c) in .env, all source files, and docs. Rebuilt and verified: Lightning initializes successfully, invoices work.
 
-**V2 file inventory (9 source files, ~1200 lines):**
+**Session 15 (uncommitted until Session 16):** Fixed sats vs millisats bug in Lightning service (`lnurlpData.min/max` are millisats per LNURL-pay spec, code treated as sats). Replaced dummy-invoice hack in `verifyPayment()` with `invoiceCache` Map. Added `revenue.ts` service — PostgreSQL-backed revenue tracking wired into DVM payments, HTTP invoice verification, and new `/api/revenue` + updated `/api/stats` endpoints. Implemented context compaction (Pi Mom pattern) — when conversation hits 40 messages, older messages are summarized via LLM and replaced with a synthetic summary message.
+
+**Session 16 (V1 deprecation):** Audited all V1 data. Backed up V1 PostgreSQL (110K lines, 1.9GB with embeddings) and canvas SQLite (9,058 pixels, 80,318 sats revenue). Fixed Lightning address typo in ALL remaining V1 files (~40 locations). Rebuilt landing page — `pixel.xx.kg` now shows correct `sparepiccolo55` address. Killed V1 agent and Syntropy containers (freed ~1GB RAM budget, eliminated Nostr double-posting). Added V2 routes to nginx — V2 API now accessible at `https://pixel.xx.kg/v2/*` and agent-card at `/.well-known/agent-card.json`. Connected V2 container to V1 nginx network. Canvas services (api + web + postgres) preserved — only revenue source.
+
+**V2 file inventory (10 source files, ~1400 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~242 | Boot, Hono HTTP server, /api/chat, /health, /api/invoice, /api/wallet |
-| `src/agent.ts` | ~165 | Pi agent wrapper, promptWithHistory(), extractText() |
-| `src/conversations.ts` | ~145 | JSONL persistence (context.json, log.jsonl, memory.md) |
+| `src/index.ts` | ~292 | Boot, Hono HTTP, /api/chat, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB table auto-init |
+| `src/agent.ts` | ~265 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction |
+| `src/conversations.ts` | ~240 | JSONL persistence, context compaction (needsCompaction, getMessagesForCompaction, saveCompactedContext) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
 | `src/connectors/nostr.ts` | ~223 | NDK mentions + DMs + DVM startup |
 | `src/connectors/whatsapp.ts` | ~175 | Baileys bot with pairing code auth |
-| `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow |
-| `src/services/lightning.ts` | ~178 | LNURL-pay invoice creation + verification via @getalby/lightning-tools |
+| `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
+| `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
+| `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
@@ -833,34 +838,37 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 14 (2026-02-10)
-**V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
-**V2:** 2 containers running, 5 doors deployed (HTTP + Telegram + Nostr + DVM + WhatsApp-ready), Lightning service active (address typo fixed), DVM payment flow complete (100 sats/job)
-**Next action:** Test WhatsApp end-to-end with phone number, revenue tracking in PostgreSQL
+**Last session:** 16 (2026-02-10)
+**V1:** 5 containers running (api, web, landing, postgres, nginx). Agent + Syntropy KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API.
+**Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
+**Next action:** L402/x402 revenue doors, Instagram connector, canvas API migration to V2
 
 | Component | Status |
 |-----------|--------|
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json, /api/invoice, /api/wallet |
-| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), Google Gemini 2.5 Flash, character + memory loading |
-| v2/src/conversations.ts | DONE - JSONL per-user persistence, context.json, log.jsonl, memory.md |
+| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
+| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, Google Gemini 2.5 Flash |
+| v2/src/conversations.ts | DONE - JSONL per-user persistence, context compaction (summarize old messages via LLM) |
 | v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
 | v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup with persistent memory |
 | v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
 | v2/src/connectors/instagram.ts | NOT STARTED |
-| v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment-required flow (100 sats/job, graceful degradation if no Lightning) |
-| v2/src/services/lightning.ts | DONE (deployed, address typo fixed, invoices working) |
+| v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
+| v2/src/services/lightning.ts | DONE - sats/millisats fix, invoiceCache, no dummy invoices |
+| v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
 | v2/src/services/l402.ts | NOT STARTED |
 | v2/src/services/x402.ts | NOT STARTED |
-| v2/src/services/canvas.ts | NOT STARTED |
-| v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables created |
+| v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
+| v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
 | v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume |
 | v2/character.md | DONE - Pixel identity document |
-| Conversation persistence (JSONL) | DONE - Per-user directories, context.json + log.jsonl, 50-message context window |
+| Conversation persistence (JSONL) | DONE - Per-user directories, context compaction at 40 messages |
+| Nginx V2 routing | DONE - /v2/* → V2 API, /.well-known/agent-card.json → V2 |
 | Sandbox container | NOT STARTED |
-| V1 teardown | IN PROGRESS - Down from 18 to 7 containers |
+| V1 teardown | IN PROGRESS - Agent+Syntropy killed, 5 remain (canvas+landing+nginx+postgres) |
 
 ### Key Decisions (Sessions 11-12)
 
@@ -881,3 +889,12 @@ git status && git log --oneline -5
 12. **WhatsApp pairing code auth:** Uses Baileys' `requestPairingCode()` instead of QR scanning — prints code to container logs, user enters in WhatsApp app
 13. **WhatsApp auth persistence:** Stored at `/app/data/whatsapp-auth/` via Docker volume mount
 
+### Key Decisions (Session 15-16)
+
+14. **Sats vs millisats:** `@getalby/lightning-tools` `lnurlpData.min/max` are millisats (per LNURL-pay spec). Must divide by 1000 when comparing to sat amounts.
+15. **Invoice cache:** `verifyPayment()` uses `invoiceCache: Map<paymentHash, {verifyUrl, amountSats}>` instead of creating dummy 1-sat invoices to get verify URL templates.
+16. **Context compaction:** At 40 messages, older messages (beyond recent 20) are summarized via a lightweight LLM call and replaced with a synthetic `[Previous conversation summary]` message. Non-blocking — runs after response is sent.
+17. **Revenue tracking:** All revenue flows to PostgreSQL `revenue` table. `recordRevenue()` called from DVM payments and HTTP invoice verification. `getRevenueStats()` powers `/api/revenue` endpoint.
+18. **V1 deprecation strategy:** Kill agent + syntropy first (double-posting risk, RAM waste). Keep canvas services (api + web + postgres) alive until V2 has canvas API. Keep nginx until Caddy is ready.
+19. **V2 external access:** Nginx routes `/v2/*` to V2 container (rewrite strips prefix). `/.well-known/agent-card.json` routes to V2. V2 container connected to V1 nginx network via `docker network connect`.
+20. **Canvas data is SQLite:** `data/lnpixels/pixels.db` — NOT in PostgreSQL. Must preserve this file when migrating canvas to V2.

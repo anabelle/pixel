@@ -19,6 +19,12 @@ const DATA_DIR = process.env.DATA_DIR ?? "./conversations";
 // Maximum messages to keep in context (prevents unbounded growth)
 const MAX_CONTEXT_MESSAGES = 50;
 
+// When context hits this threshold, compaction is triggered
+const COMPACTION_THRESHOLD = 40;
+
+// After compaction, keep this many recent messages intact
+const KEEP_RECENT_MESSAGES = 20;
+
 /** Ensure the user's conversation directory exists */
 function ensureUserDir(userId: string): string {
   // Sanitize userId to prevent path traversal
@@ -169,4 +175,66 @@ export function getConversationStats(userId: string): {
     logEntries,
     hasMemory: existsSync(memoryPath),
   };
+}
+
+/**
+ * Check if a user's context needs compaction.
+ * Returns true when context reaches COMPACTION_THRESHOLD.
+ */
+export function needsCompaction(userId: string): boolean {
+  const messages = loadContext(userId);
+  return messages.length >= COMPACTION_THRESHOLD;
+}
+
+/**
+ * Get messages that should be summarized during compaction.
+ * Returns the older messages (everything except the most recent KEEP_RECENT_MESSAGES).
+ */
+export function getMessagesForCompaction(userId: string): {
+  toSummarize: any[];
+  toKeep: any[];
+} {
+  const messages = loadContext(userId);
+  if (messages.length < COMPACTION_THRESHOLD) {
+    return { toSummarize: [], toKeep: messages };
+  }
+
+  const toKeep = messages.slice(-KEEP_RECENT_MESSAGES);
+  const toSummarize = messages.slice(0, messages.length - KEEP_RECENT_MESSAGES);
+  return { toSummarize, toKeep };
+}
+
+/**
+ * Save compacted context — replaces old messages with a summary message
+ * followed by the recent messages.
+ *
+ * @param userId - User to compact context for
+ * @param summary - The LLM-generated summary text
+ * @param recentMessages - The recent messages to keep intact
+ */
+export function saveCompactedContext(
+  userId: string,
+  summary: string,
+  recentMessages: any[]
+): void {
+  const dir = ensureUserDir(userId);
+  const contextPath = join(dir, "context.json");
+
+  // Create a synthetic assistant message containing the conversation summary
+  const summaryMessage = {
+    role: "assistant",
+    content: `[Previous conversation summary]\n${summary}`,
+    metadata: { type: "compaction-summary", compactedAt: new Date().toISOString() },
+  };
+
+  const compacted = [summaryMessage, ...recentMessages];
+
+  try {
+    writeFileSync(contextPath, JSON.stringify(compacted, null, 0), "utf-8");
+    console.log(
+      `[conversations] Compacted context for ${userId}: ${recentMessages.length + 1} messages (was ${recentMessages.length + compacted.length})`
+    );
+  } catch (err: any) {
+    console.error(`[conversations] Failed to save compacted context for ${userId}:`, err.message);
+  }
 }

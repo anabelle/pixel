@@ -10,7 +10,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { loadContext, saveContext, appendToLog, loadMemory } from "./conversations.js";
+import { loadContext, saveContext, appendToLog, loadMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -162,7 +162,85 @@ export async function promptWithHistory(
     appendToLog(userId, message, responseText, platform);
   }
 
+  // Check if context needs compaction (async, non-blocking for the response)
+  if (needsCompaction(userId)) {
+    compactContext(userId, platform).catch((err) => {
+      console.error(`[agent] Compaction failed for ${userId}:`, err.message);
+    });
+  }
+
   return responseText || "";
+}
+
+/**
+ * Compact a user's conversation context by summarizing older messages.
+ *
+ * Takes the oldest messages, asks the LLM to summarize them into a short recap,
+ * then replaces them with a single summary message + the recent messages.
+ *
+ * This preserves context while preventing unbounded growth.
+ */
+async function compactContext(userId: string, platform: string): Promise<void> {
+  const { toSummarize, toKeep } = getMessagesForCompaction(userId);
+
+  if (toSummarize.length === 0) return;
+
+  // Extract text from messages to build a summary prompt
+  const conversationText = toSummarize
+    .map((msg: any) => {
+      const role = msg.role === "user" ? "User" : "Pixel";
+      return `${role}: ${extractText(msg)}`;
+    })
+    .filter((line: string) => line.length > 6) // Skip empty messages
+    .join("\n");
+
+  if (!conversationText.trim()) {
+    // Nothing meaningful to summarize — just trim
+    saveCompactedContext(userId, "(No prior conversation content)", toKeep);
+    return;
+  }
+
+  console.log(`[agent] Compacting context for ${userId}: summarizing ${toSummarize.length} messages`);
+
+  // Use a lightweight agent to generate the summary
+  const summaryAgent = new Agent({
+    initialState: {
+      systemPrompt: `You are a conversation summarizer. Summarize the following conversation into 3-5 concise bullet points. Focus on:
+- Key topics discussed
+- Important facts about the user (name, preferences, requests)
+- Any commitments or follow-ups mentioned
+- The general tone and relationship
+
+Be concise. This summary will be used as context for future conversations.`,
+      model: getPixelModel(),
+      thinkingLevel: "off",
+      tools: [],
+    },
+    getApiKey: async (provider: string) => resolveApiKey(provider),
+  });
+
+  let summaryText = "";
+  summaryAgent.subscribe((event: any) => {
+    if (event.type === "message_end" && event.message?.role === "assistant") {
+      const text = extractText(event.message);
+      if (text) summaryText = text;
+    }
+  });
+
+  try {
+    await summaryAgent.prompt(
+      `Summarize this conversation:\n\n${conversationText.slice(0, 4000)}`
+    );
+
+    if (summaryText) {
+      saveCompactedContext(userId, summaryText, toKeep);
+      console.log(`[agent] Context compacted for ${userId}: ${summaryText.length} char summary`);
+    }
+  } catch (err: any) {
+    console.error(`[agent] Summary generation failed for ${userId}:`, err.message);
+    // Fallback: just trim without summary
+    saveCompactedContext(userId, "(Summary unavailable — older context trimmed)", toKeep);
+  }
 }
 
 /** Create a raw Pixel agent instance (for advanced use cases) */

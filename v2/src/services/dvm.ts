@@ -15,6 +15,7 @@
 import NDK, { NDKEvent, type NDKFilter } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
 import { createInvoice, verifyPayment } from "./lightning.js";
+import { recordRevenue } from "./revenue.js";
 
 // Track processed jobs to avoid duplicates
 const processedJobs = new Set<string>();
@@ -189,6 +190,15 @@ export function startDvm(ndk: NDK, ourPubkey: string): void {
         }
 
         paidInvoice = { paymentHash: invoice.paymentHash, bolt11: invoice.paymentRequest };
+
+        // Record revenue from DVM payment
+        await recordRevenue({
+          source: "nostr_dvm",
+          amountSats: DVM_PRICE_SATS,
+          userId: event.pubkey,
+          txHash: invoice.paymentHash,
+          description: `DVM text gen job ${event.id.slice(0, 8)}`,
+        }).catch(() => {}); // Non-blocking
       } else {
         // Lightning not available — process for free
         console.log(`[dvm] Lightning unavailable, processing job ${event.id.slice(0, 8)} for free`);

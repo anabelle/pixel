@@ -8,6 +8,12 @@
  *
  * No NWC connection needed — works with any LNURL-pay compatible wallet.
  * Can upgrade to NWC later for full wallet control.
+ *
+ * UNITS NOTE:
+ * - LNURL-pay spec uses millisatoshis for minSendable/maxSendable
+ * - @getalby/lightning-tools lnurlpData.min/max are in millisats
+ * - requestInvoice({satoshi: N}) expects sats (converts internally)
+ * - All Pixel APIs use sats as the unit
  */
 
 import { LightningAddress } from "@getalby/lightning-tools";
@@ -15,6 +21,16 @@ import { LightningAddress } from "@getalby/lightning-tools";
 // Cache the LightningAddress instance
 let lnAddress: LightningAddress | null = null;
 let lnInitialized = false;
+
+// Cache verify URL template for payment verification
+// Maps paymentHash → { verifyUrl, amountSats, description }
+interface InvoiceCache {
+  verifyUrl: string;
+  amountSats: number;
+  description?: string;
+}
+const invoiceCache = new Map<string, InvoiceCache>();
+const MAX_VERIFY_CACHE = 500;
 
 /** Get or create the LightningAddress instance */
 async function getLnAddress(): Promise<LightningAddress | null> {
@@ -34,9 +50,13 @@ async function getLnAddress(): Promise<LightningAddress | null> {
     lnAddress = new LightningAddress(address);
     await lnAddress.fetch();
     lnInitialized = true;
+
+    // min/max from LNURL-pay are in millisats — convert for display
+    const minMsat = lnAddress.lnurlpData?.min ?? 1000;
+    const maxMsat = lnAddress.lnurlpData?.max ?? 1_000_000_000;
     console.log(`[lightning] Initialized: ${address}`);
     console.log(
-      `[lightning] Min: ${lnAddress.lnurlpData?.min} sats, Max: ${lnAddress.lnurlpData?.max} sats`
+      `[lightning] Min: ${Math.ceil(minMsat / 1000)} sats, Max: ${Math.floor(maxMsat / 1000)} sats`
     );
     return lnAddress;
   } catch (err: any) {
@@ -69,35 +89,51 @@ export async function createInvoice(
   const ln = await getLnAddress();
   if (!ln) return null;
 
-  // Validate amount against wallet limits
-  const min = ln.lnurlpData?.min ?? 1;
-  const max = ln.lnurlpData?.max ?? 1_000_000;
+  // min/max are in millisats — convert to sats for comparison
+  const minSats = Math.ceil((ln.lnurlpData?.min ?? 1000) / 1000);
+  const maxSats = Math.floor((ln.lnurlpData?.max ?? 1_000_000_000) / 1000);
 
-  if (amountSats < min) {
+  if (amountSats < minSats) {
     console.log(
-      `[lightning] Amount ${amountSats} below minimum ${min}, adjusting`
+      `[lightning] Amount ${amountSats} sats below minimum ${minSats} sats, adjusting`
     );
-    amountSats = min;
+    amountSats = minSats;
   }
-  if (amountSats > max) {
+  if (amountSats > maxSats) {
     console.error(
-      `[lightning] Amount ${amountSats} exceeds maximum ${max}`
+      `[lightning] Amount ${amountSats} sats exceeds maximum ${maxSats} sats`
     );
     return null;
   }
 
   try {
+    // requestInvoice expects satoshi in sats (converts to millisats internally)
     const invoice = await ln.requestInvoice({
       satoshi: amountSats,
       comment: comment ?? `Pixel — ${amountSats} sats`,
     });
+
+    // Cache the verify URL and amount for later payment verification
+    if (invoice.verify) {
+      // Evict old entries
+      if (invoiceCache.size > MAX_VERIFY_CACHE) {
+        const first = invoiceCache.keys().next().value;
+        if (first) invoiceCache.delete(first);
+      }
+      invoiceCache.set(invoice.paymentHash, {
+        verifyUrl: invoice.verify,
+        amountSats,
+        description: comment,
+      });
+    }
 
     return {
       paymentRequest: invoice.paymentRequest,
       paymentHash: invoice.paymentHash,
       amountSats,
       description: comment,
-      verify: invoice.verify,
+      verify: invoice.verify ?? undefined,
+      expiresAt: invoice.expiryDate ? Math.floor(invoice.expiryDate.getTime() / 1000) : undefined,
     };
   } catch (err: any) {
     console.error("[lightning] Failed to create invoice:", err.message);
@@ -108,32 +144,38 @@ export async function createInvoice(
 /**
  * Verify if a payment has been received
  *
+ * Uses the cached verify URL from the original invoice creation.
+ * No dummy invoice creation needed.
+ *
  * @param paymentHash - The payment hash from createInvoice()
- * @returns true if paid, false otherwise
+ * @returns { paid, preimage, amountSats, description } — paid is true if settled
  */
 export async function verifyPayment(
   paymentHash: string
-): Promise<{ paid: boolean; preimage?: string }> {
-  const ln = await getLnAddress();
-  if (!ln) return { paid: false };
+): Promise<{ paid: boolean; preimage?: string; amountSats?: number; description?: string }> {
+  const cached = invoiceCache.get(paymentHash);
+  if (!cached) {
+    console.log(`[lightning] No invoice cached for ${paymentHash.slice(0, 16)}...`);
+    return { paid: false };
+  }
 
   try {
-    // Create an invoice object for verification
-    const invoice = await ln.requestInvoice({ satoshi: 1 });
-    // Use the verify endpoint directly if available
-    if (invoice.verify) {
-      const verifyUrl = invoice.verify.replace(
-        /[^/]+$/,
-        paymentHash
-      );
-      const response = await fetch(verifyUrl);
-      if (response.ok) {
-        const data = await response.json() as { settled: boolean; preimage?: string };
-        return {
-          paid: data.settled === true,
-          preimage: data.preimage,
-        };
+    const response = await fetch(cached.verifyUrl);
+    if (response.ok) {
+      const data = (await response.json()) as {
+        settled: boolean;
+        preimage?: string;
+      };
+      if (data.settled) {
+        // Clean up cache after confirmed payment
+        invoiceCache.delete(paymentHash);
       }
+      return {
+        paid: data.settled === true,
+        preimage: data.preimage,
+        amountSats: cached.amountSats,
+        description: cached.description,
+      };
     }
     return { paid: false };
   } catch (err: any) {
@@ -155,14 +197,15 @@ export async function getWalletInfo(): Promise<{
   const ln = await getLnAddress();
   if (!ln) return null;
 
+  // Convert millisats to sats for the API response
   return {
     address:
       process.env.LIGHTNING_ADDRESS ??
       process.env.NEXT_PUBLIC_LIGHTNING_ADDRESS ??
       process.env.NAKAPAY_DESTINATION_WALLET ??
       "",
-    minSats: ln.lnurlpData?.min ?? 1,
-    maxSats: ln.lnurlpData?.max ?? 1_000_000,
+    minSats: Math.ceil((ln.lnurlpData?.min ?? 1000) / 1000),
+    maxSats: Math.floor((ln.lnurlpData?.max ?? 1_000_000_000) / 1000),
     description: ln.lnurlpData?.metadata ?? "",
     active: true,
   };

@@ -16,6 +16,7 @@ import { startNostr } from "./connectors/nostr.js";
 import { startWhatsApp } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
+import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 
 // ============================================================
 // Configuration
@@ -110,11 +111,12 @@ app.post("/api/chat", async (c) => {
 
 /** Revenue stats */
 app.get("/api/stats", async (c) => {
-  // TODO: query revenue table once populated
+  const revenueStats = await getRevenueStats();
   return c.json({
     treasury: {
-      sats: 80000,
-      note: "Approximate. NWC integration pending.",
+      recordedSats: revenueStats.totalSats,
+      bySource: revenueStats.bySource,
+      note: "Recorded revenue only. Historical balance (~80k sats) not included.",
     },
     containers: 4,
     version: "2.0.0",
@@ -154,6 +156,17 @@ app.post("/api/invoice", async (c) => {
 app.get("/api/invoice/:paymentHash/verify", async (c) => {
   const paymentHash = c.req.param("paymentHash");
   const result = await verifyPayment(paymentHash);
+
+  // Record revenue if payment is confirmed
+  if (result.paid && result.amountSats) {
+    await recordRevenue({
+      source: "http",
+      amountSats: result.amountSats,
+      txHash: paymentHash,
+      description: result.description ?? "HTTP invoice payment",
+    }).catch(() => {}); // Non-blocking
+  }
+
   return c.json(result);
 });
 
@@ -164,6 +177,12 @@ app.get("/api/wallet", async (c) => {
     return c.json({ error: "Lightning not configured", active: false }, 503);
   }
   return c.json(info);
+});
+
+/** Revenue stats */
+app.get("/api/revenue", async (c) => {
+  const stats = await getRevenueStats();
+  return c.json(stats);
 });
 
 // ============================================================
@@ -180,6 +199,37 @@ async function boot() {
   try {
     const result = await sql`SELECT 1 as ok`;
     console.log("[db] PostgreSQL connected");
+
+    // Ensure tables exist
+    await sql`
+      CREATE TABLE IF NOT EXISTS revenue (
+        id SERIAL PRIMARY KEY,
+        source TEXT NOT NULL,
+        amount_sats BIGINT,
+        amount_usd NUMERIC(10,4),
+        user_id TEXT,
+        description TEXT,
+        tx_hash TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        platform_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        display_name TEXT,
+        memory_md TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+        last_seen_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+        message_count INTEGER DEFAULT 0 NOT NULL,
+        active BOOLEAN DEFAULT TRUE NOT NULL
+      )
+    `;
+    console.log("[db] Tables verified");
+
+    // Initialize revenue tracking
+    initRevenue(db);
   } catch (err: any) {
     console.error("[db] PostgreSQL connection failed:", err.message);
     console.error("[db] Will continue without database — some features unavailable");
