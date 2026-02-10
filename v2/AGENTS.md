@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-10 | Session: 17
+> Last updated: 2026-02-10 | Session: 18
 
 ---
 
@@ -123,10 +123,12 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 17 (Heartbeat + cleanup):** Added autonomous heartbeat service (`src/services/heartbeat.ts`). Pixel now posts to Nostr every 45-90 minutes (randomized jitter), generating original content via its own LLM brain. Supports `[SILENT]` — if agent has nothing to say, it stays quiet. Rate-limited (30 min minimum between posts). First autonomous post verified live. Made V2 nginx network connection persistent by adding `pixel_pixel-net` as external network in `v2/docker-compose.yml` — no more manual `docker network connect`. Killed V1 PostgreSQL (confirmed canvas uses SQLite only, not PostgreSQL). Down to 6 containers.
 
-**V2 file inventory (11 source files, ~1600 lines):**
+**Session 18 (L402 revenue door):** Wired L402 middleware into production. `l402.ts` (302 lines, written in Session 17 research) was imported into `index.ts` and deployed with two paid endpoints: `/api/chat/premium` (10 sats) and `/api/generate` (50 sats). Free `/api/chat` preserved for connectors. Agent-card updated to advertise L402 pricing. Verified end-to-end: both endpoints return proper HTTP 402 with real Lightning invoices from Wallet of Satoshi. Zero new dependencies — L402 uses only Node.js `crypto` module + existing `lightning.ts` and `revenue.ts` services. Revenue auto-recorded on payment verification. Canvas migration deferred in favor of new revenue streams — canvas works and earns (80K sats), Socket.IO migration to Hono is complex. x402 research completed but not implemented (needs EVM wallet + npm deps).
+
+**V2 file inventory (12 source files, ~1900 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~295 | Boot, Hono HTTP, /api/chat, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
+| `src/index.ts` | ~395 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init |
 | `src/agent.ts` | ~265 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction |
 | `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
@@ -136,6 +138,7 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
 | `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
 | `src/services/heartbeat.ts` | ~200 | Autonomous Nostr posting (45-90 min jitter, [SILENT] support, rate-limited) |
+| `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations:**
@@ -841,12 +844,12 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 17 (2026-02-10)
+**Last session:** 18 (2026-02-10)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Heartbeat active — autonomous Nostr posting every 45-90 minutes.
-**Total containers:** 6 (down from 7 last session, from 18 at V1 peak)
+**V2:** 2 containers running (pixel, postgres-v2). V2 is now the ONLY agent brain — sole Nostr identity, sole Telegram bot, sole HTTP API. Heartbeat active — autonomous Nostr posting every 45-90 minutes. L402 revenue door LIVE — two paid endpoints accepting Lightning micropayments.
+**Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
-**Next action:** Canvas API migration to V2, L402/x402 revenue doors
+**Next action:** x402 revenue door (USDC on Base), commit Session 18
 
 | Component | Status |
 |-----------|--------|
@@ -862,8 +865,8 @@ git status && git log --oneline -5
 | v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
 | v2/src/services/lightning.ts | DONE - sats/millisats fix, invoiceCache, no dummy invoices |
 | v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
-| v2/src/services/l402.ts | NOT STARTED |
-| v2/src/services/x402.ts | NOT STARTED |
+| v2/src/services/l402.ts | DONE - L402 middleware, preimage verification, 402 challenge, revenue recording. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
+| v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
@@ -902,3 +905,12 @@ git status && git log --oneline -5
 18. **V1 deprecation strategy:** Kill agent + syntropy first (double-posting risk, RAM waste). Keep canvas services (api + web + postgres) alive until V2 has canvas API. Keep nginx until Caddy is ready.
 19. **V2 external access:** Nginx routes `/v2/*` to V2 container (rewrite strips prefix). `/.well-known/agent-card.json` routes to V2. V2 container connected to V1 nginx network via `docker network connect`.
 20. **Canvas data is SQLite:** `data/lnpixels/pixels.db` — NOT in PostgreSQL. Must preserve this file when migrating canvas to V2.
+
+### Key Decisions (Session 18)
+
+21. **Canvas migration deferred:** Canvas works and earns (80K sats, 9,058 pixels). Socket.IO complicates migration to Hono. Focus on new revenue streams instead of touching working income.
+22. **L402 before x402:** L402 needs zero new deps, works with existing Lightning service. x402 needs new npm packages + an EVM wallet address.
+23. **L402 pricing:** Premium chat at 10 sats, text generation at 50 sats. Free `/api/chat` preserved for Telegram/Nostr/WhatsApp connectors.
+24. **L402 simplified (no macaroons):** Uses raw payment hash as token, SHA256(preimage) verification via `crypto.timingSafeEqual`. Compatible with full L402/LSAT clients (accepts base64 macaroons too) but doesn't require macaroon minting.
+25. **Dual revenue strategy:** L402 (Lightning/Bitcoin) and x402 (USDC/Base) will coexist — different payment headers, same endpoints possible. "Accept payment through whatever door."
+26. **x402 requires EVM wallet:** Pixel needs a Base chain wallet address (receiving only, no private key on server). This is a blocker for x402.

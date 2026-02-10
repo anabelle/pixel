@@ -18,6 +18,7 @@ import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
+import { l402 } from "./services/l402.js";
 
 // ============================================================
 // Configuration
@@ -62,6 +63,8 @@ app.get("/.well-known/agent-card.json", (c) => {
     capabilities: ["text-generation", "image-generation", "art-commission"],
     endpoints: {
       chat: "/api/chat",
+      "chat-premium": "/api/chat/premium",
+      generate: "/api/generate",
       health: "/health",
     },
     identity: {
@@ -72,7 +75,11 @@ app.get("/.well-known/agent-card.json", (c) => {
     pricing: {
       model: "per-request",
       currency: "sats",
-      base_cost: 1,
+      free: { chat: "/api/chat" },
+      l402: {
+        "chat-premium": { sats: 10, description: "Priority chat response" },
+        generate: { sats: 50, description: "AI text generation" },
+      },
     },
   });
 });
@@ -186,6 +193,97 @@ app.get("/api/revenue", async (c) => {
   const stats = await getRevenueStats();
   return c.json(stats);
 });
+
+// ============================================================
+// L402-Gated Premium Endpoints
+// ============================================================
+
+/** Premium chat — L402-gated at 10 sats per request */
+app.post(
+  "/api/chat/premium",
+  l402({
+    sats: 10,
+    description: "Pixel premium chat — priority response",
+    onPayment: (info) => {
+      console.log(`[l402] Payment verified: ${info.amountSats} sats for ${info.endpoint}`);
+    },
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { message, userId = "anonymous" } = body;
+
+      if (!message || typeof message !== "string") {
+        return c.json({ error: "message is required" }, 400);
+      }
+
+      const responseText = await promptWithHistory(
+        { userId, platform: "http-premium" },
+        message
+      );
+
+      const l402Info = c.get("l402");
+
+      return c.json({
+        response: responseText ?? "[No response generated]",
+        userId,
+        premium: true,
+        payment: {
+          paymentHash: l402Info?.paymentHash,
+          amountSats: l402Info?.amountSats,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[chat/premium] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
+/** Text generation — L402-gated at 50 sats per request */
+app.post(
+  "/api/generate",
+  l402({
+    sats: 50,
+    description: "Pixel AI text generation",
+    onPayment: (info) => {
+      console.log(`[l402] Generation paid: ${info.amountSats} sats`);
+    },
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { prompt, userId = "anonymous", maxLength } = body;
+
+      if (!prompt || typeof prompt !== "string") {
+        return c.json({ error: "prompt is required" }, 400);
+      }
+
+      // Use a generation-specific system context
+      const genPrompt = `Generate the following (be creative, original, and concise):\n\n${prompt}`;
+      const responseText = await promptWithHistory(
+        { userId: `gen-${userId}`, platform: "http-generate" },
+        genPrompt
+      );
+
+      const l402Info = c.get("l402");
+
+      return c.json({
+        result: responseText ?? "[No response generated]",
+        prompt,
+        payment: {
+          paymentHash: l402Info?.paymentHash,
+          amountSats: l402Info?.amountSats,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[generate] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
 
 // ============================================================
 // Boot
