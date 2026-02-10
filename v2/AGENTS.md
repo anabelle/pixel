@@ -810,29 +810,39 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 10 (2026-02-09)
-**V1:** 18 containers running, healthy
-**V2:** Planning complete, no code yet
-**Next action:** Create GitHub issues for Week 1, then start building v2/src/index.ts
+**Last session:** 11 (2026-02-09)
+**V1:** 7 containers running, healthy (down from 18 — killed Bitcoin, Lightning, and 8 non-essential services)
+**V2:** 2 containers running, 3 doors open (HTTP + Telegram + Nostr)
+**Next action:** Conversation persistence (JSONL), WhatsApp connector, Lightning payment integration
 
 | Component | Status |
 |-----------|--------|
 | v2/AGENTS.md | DONE |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot) | NOT STARTED |
-| v2/src/agent.ts (Pi agent wrapper) | NOT STARTED |
-| v2/src/connectors/telegram.ts | NOT STARTED |
-| v2/src/connectors/nostr.ts | NOT STARTED |
+| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, agent-card.json |
+| v2/src/agent.ts (Pi agent wrapper) | DONE - Google Gemini 2.5 Flash via pi-ai, character loading |
+| v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot polling, /start, /help, message handler |
+| v2/src/connectors/nostr.ts | DONE - NDK, mention + DM listeners on 3 relays |
 | v2/src/connectors/whatsapp.ts | NOT STARTED |
 | v2/src/connectors/instagram.ts | NOT STARTED |
-| v2/src/connectors/http.ts | NOT STARTED |
 | v2/src/services/dvm.ts | NOT STARTED |
 | v2/src/services/lightning.ts | NOT STARTED |
 | v2/src/services/l402.ts | NOT STARTED |
 | v2/src/services/x402.ts | NOT STARTED |
 | v2/src/services/canvas.ts | NOT STARTED |
-| v2/Dockerfile | NOT STARTED |
-| v2/docker-compose.yml | NOT STARTED |
-| v2/character.md | NOT STARTED |
+| v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables created |
+| v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches |
+| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433) |
+| v2/character.md | DONE - Pixel identity document |
+| Conversation persistence (JSONL) | NOT STARTED - Currently stateless per-request |
 | Sandbox container | NOT STARTED |
-| V1 teardown | NOT STARTED |
+| V1 teardown | IN PROGRESS - Down from 18 to 7 containers |
+
+### Key Decisions Made This Session
+
+1. **AI Provider:** Google Gemini 2.5 Flash (free tier) via pi-ai directly, NOT OpenRouter (out of credits, 402 error)
+2. **Env var mapping:** `GOOGLE_GENERATIVE_AI_API_KEY` from .env, pi-ai expects `GEMINI_API_KEY` — handled in `resolveApiKey()`
+3. **Event filtering:** Pi agent-core emits `message_end` for BOTH user and assistant messages — must filter by `role === "assistant"`
+4. **NDK connect:** `ndk.connect()` hangs indefinitely — wrapped with 15s timeout, NDK reconnects in background
+5. **No Dockerfile patches:** Zero patches needed. Pi-ai handles Google API natively.
+

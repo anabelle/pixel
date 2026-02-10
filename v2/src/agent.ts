@@ -56,19 +56,19 @@ function buildSystemPrompt(userId: string, platform: string): string {
 
 /** Get the AI model based on environment config */
 function getPixelModel() {
-  const provider = process.env.AI_PROVIDER ?? "openrouter";
-  const modelId = process.env.AI_MODEL ?? "google/gemini-2.5-flash";
+  const provider = process.env.AI_PROVIDER ?? "google";
+  const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
   return getModel(provider as any, modelId);
 }
 
 /** Get API key for the given provider (called by pi-agent-core per LLM call) */
 function resolveApiKey(provider?: string): string {
-  const p = provider ?? process.env.AI_PROVIDER ?? "openrouter";
+  const p = provider ?? process.env.AI_PROVIDER ?? "google";
   switch (p) {
     case "openrouter":
       return process.env.OPENROUTER_API_KEY ?? "";
     case "google":
-      return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
     case "anthropic":
       return process.env.ANTHROPIC_API_KEY ?? "";
     default:

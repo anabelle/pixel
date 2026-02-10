@@ -20,6 +20,8 @@ services:
       - DATABASE_URL=postgresql://pixel:pixel@postgres-v2:5432/pixel_v2
       - DATA_DIR=/app/conversations
       - CHARACTER_PATH=/app/character.md
+      - AI_PROVIDER=google
+      - AI_MODEL=gemini-2.5-flash
     volumes:
       - ./conversations:/app/conversations
       - ./skills:/app/skills

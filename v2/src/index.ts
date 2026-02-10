@@ -11,6 +11,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createPixelAgent } from "./agent.js";
 import * as schema from "./db.js";
+import { startTelegram } from "./connectors/telegram.js";
+import { startNostr } from "./connectors/nostr.js";
 
 // ============================================================
 // Configuration
@@ -102,13 +104,14 @@ app.post("/api/chat", async (c) => {
     // Collect response from assistant message_end events only
     const responseChunks: string[] = [];
     agent.subscribe((event: any) => {
-      console.log(`[chat] Event: ${event.type}${event.message?.role ? ` (role=${event.message.role})` : ""}`);
-
       if (event.type === "message_end" && event.message?.role === "assistant") {
-        console.log(`[chat] Assistant message:`, JSON.stringify(event.message).slice(0, 500));
-        const text = extractText(event.message);
-        console.log(`[chat] Extracted text: "${text}"`);
-        if (text) responseChunks.push(text);
+        const msg = event.message as any;
+        if (msg.stopReason === "error") {
+          console.error(`[chat] LLM error: ${msg.errorMessage}`);
+        } else {
+          const text = extractText(msg);
+          if (text) responseChunks.push(text);
+        }
       }
     });
 
@@ -131,8 +134,6 @@ app.post("/api/chat", async (c) => {
     if (!responseText) {
       responseText = "[No response generated — check AI provider config]";
     }
-
-    console.log(`[chat] Response length: ${responseText.length}`);
 
     return c.json({
       response: responseText,
@@ -190,9 +191,22 @@ async function boot() {
   console.log(`[http] Agent card: http://0.0.0.0:${PORT}/.well-known/agent-card.json`);
   console.log();
 
-  // TODO: Start connectors
-  // - Telegram (grammY)
-  // - Nostr (NDK)
+  // Start connectors
+  try {
+    await startTelegram();
+  } catch (err: any) {
+    console.error("[boot] Telegram failed to start:", err.message);
+  }
+
+  try {
+    console.log("[boot] Starting Nostr connector...");
+    await startNostr();
+  } catch (err: any) {
+    console.error("[boot] Nostr failed to start:", err.message);
+    console.error("[boot] Nostr stack:", err.stack);
+  }
+
+  // TODO: Start more connectors
   // - WhatsApp (Baileys) — Week 3
   // - Instagram — Month 2+
 

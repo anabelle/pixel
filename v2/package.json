@@ -12,7 +12,9 @@
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.52.9",
     "@mariozechner/pi-ai": "^0.52.9",
+    "@nostr-dev-kit/ndk": "^2.12.0",
     "@sinclair/typebox": "^0.34.0",
+    "grammy": "^1.35.0",
     "hono": "^4.7.0",
     "drizzle-orm": "^0.44.0",
     "postgres": "^3.4.0"
