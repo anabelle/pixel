@@ -10,9 +10,14 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { loadContext, saveContext, appendToLog, loadMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
+import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
+import { trackUser } from "./services/users.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
+
+// Track message count per user for periodic memory extraction
+const userMessageCounts = new Map<string, number>();
+const MEMORY_EXTRACT_INTERVAL = 5; // Extract memory every N messages
 
 /** Load Pixel's character document */
 function loadCharacter(): string {
@@ -162,6 +167,9 @@ export async function promptWithHistory(
     appendToLog(userId, message, responseText, platform);
   }
 
+  // Track user in PostgreSQL (non-blocking)
+  trackUser(userId, platform).catch(() => {});
+
   // Check if context needs compaction (async, non-blocking for the response)
   if (needsCompaction(userId)) {
     compactContext(userId, platform).catch((err) => {
@@ -169,7 +177,72 @@ export async function promptWithHistory(
     });
   }
 
+  // Periodically extract and save user memory (every N messages)
+  const count = (userMessageCounts.get(userId) ?? 0) + 1;
+  userMessageCounts.set(userId, count);
+  if (count % MEMORY_EXTRACT_INTERVAL === 0 && responseText) {
+    extractAndSaveMemory(userId, agent.state?.messages as any[]).catch((err) => {
+      console.error(`[agent] Memory extraction failed for ${userId}:`, err.message);
+    });
+  }
+
   return responseText || "";
+}
+
+/**
+ * Extract key facts about a user from their conversation and save to memory.md.
+ * Runs asynchronously — doesn't block the response.
+ */
+async function extractAndSaveMemory(userId: string, messages: any[]): Promise<void> {
+  if (!messages || messages.length < 4) return; // Need some conversation to extract from
+
+  const existingMemory = loadMemory(userId);
+  const recentExchanges = messages.slice(-10)
+    .map((msg: any) => {
+      const role = msg.role === "user" ? "User" : "Pixel";
+      return `${role}: ${extractText(msg)}`;
+    })
+    .filter((line: string) => line.length > 6)
+    .join("\n");
+
+  if (!recentExchanges.trim()) return;
+
+  const memoryAgent = new Agent({
+    initialState: {
+      systemPrompt: `You extract key facts about a user from conversation. Output a concise markdown document with:
+- Name (if mentioned)
+- Interests/topics they care about
+- Notable preferences or opinions
+- Relationship context (how they interact with Pixel)
+- Any requests or commitments made
+
+${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMemory}` : "No existing memory — create fresh."}
+
+Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`,
+      model: getPixelModel(),
+      thinkingLevel: "off",
+      tools: [],
+    },
+    getApiKey: async (provider: string) => resolveApiKey(provider),
+  });
+
+  let memoryText = "";
+  memoryAgent.subscribe((event: any) => {
+    if (event.type === "message_end" && event.message?.role === "assistant") {
+      const text = extractText(event.message);
+      if (text) memoryText = text;
+    }
+  });
+
+  try {
+    await memoryAgent.prompt(`Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 2000)}`);
+    if (memoryText && memoryText.trim().length > 10) {
+      saveMemory(userId, memoryText.trim());
+      console.log(`[agent] Memory saved for ${userId} (${memoryText.length} chars)`);
+    }
+  } catch (err: any) {
+    console.error(`[agent] Memory extraction LLM call failed:`, err.message);
+  }
 }
 
 /**

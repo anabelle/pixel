@@ -24,10 +24,30 @@ const THROTTLE_MS = 60_000; // 1 minute
 let sharedNdk: NDK | null = null;
 let sharedPubkey: string | null = null;
 
+// Shared set of event IDs we've already replied to — prevents double-replies
+// between the real-time mention subscription and the heartbeat engagement loop
+const repliedEventIds = new Set<string>();
+
 /** Get the active Nostr instance (NDK + pubkey) for use by other services */
 export function getNostrInstance(): { ndk: NDK; pubkey: string } | null {
   if (!sharedNdk || !sharedPubkey) return null;
   return { ndk: sharedNdk, pubkey: sharedPubkey };
+}
+
+/** Check if we've already replied to this event */
+export function hasRepliedTo(eventId: string): boolean {
+  return repliedEventIds.has(eventId);
+}
+
+/** Mark an event as replied to (called by heartbeat engagement loop) */
+export function markReplied(eventId: string): void {
+  repliedEventIds.add(eventId);
+  // Prune old entries (keep last 500)
+  if (repliedEventIds.size > 500) {
+    const arr = [...repliedEventIds];
+    repliedEventIds.clear();
+    for (const id of arr.slice(-500)) repliedEventIds.add(id);
+  }
 }
 
 /** Convert nsec to hex private key */
@@ -133,6 +153,7 @@ export async function startNostr(): Promise<void> {
 
   mentionSub.on("event", async (event: NDKEvent) => {
     if (event.pubkey === pubkey) return;
+    if (hasRepliedTo(event.id)) return; // Already replied (shared with heartbeat)
     if (isThrottled(event.pubkey)) return;
 
     const content = event.content;
@@ -146,7 +167,10 @@ export async function startNostr(): Promise<void> {
         content
       );
 
-      if (!response) return;
+      if (!response) {
+        markReplied(event.id); // Don't retry empty responses
+        return;
+      }
 
       // Reply as kind 1 with proper threading tags
       const reply = new NDKEvent(ndk);
@@ -168,9 +192,11 @@ export async function startNostr(): Promise<void> {
       }
 
       await reply.publish();
+      markReplied(event.id); // Mark as replied in shared set
       console.log(`[nostr] Replied to ${event.pubkey.slice(0, 8)}...`);
     } catch (err: any) {
       console.error(`[nostr] Reply error:`, err.message);
+      markReplied(event.id); // Don't retry failed replies
     }
   });
 

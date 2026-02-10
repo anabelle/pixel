@@ -17,6 +17,7 @@ import { startWhatsApp } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
+import { initUsers, getUserStats } from "./services/users.js";
 import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
 import { l402 } from "./services/l402.js";
 
@@ -60,7 +61,7 @@ app.get("/.well-known/agent-card.json", (c) => {
     description: "Living digital artist. Creates art, writes code, survives on Lightning micropayments.",
     version: "2.0.0",
     protocols: ["nostr", "lightning", "l402", "x402"],
-    capabilities: ["text-generation", "image-generation", "art-commission"],
+    capabilities: ["text-generation", "conversation"],
     endpoints: {
       chat: "/api/chat",
       "chat-premium": "/api/chat/premium",
@@ -121,12 +122,14 @@ app.post("/api/chat", async (c) => {
 /** Revenue stats */
 app.get("/api/stats", async (c) => {
   const revenueStats = await getRevenueStats();
+  const userStats = await getUserStats();
   return c.json({
     treasury: {
       recordedSats: revenueStats.totalSats,
       bySource: revenueStats.bySource,
       note: "Recorded revenue only. Historical balance (~80k sats) not included.",
     },
+    users: userStats,
     containers: 4,
     version: "2.0.0",
   });
@@ -330,6 +333,13 @@ async function boot() {
 
     // Initialize revenue tracking
     initRevenue(db);
+
+    // Initialize user tracking
+    initUsers(db);
+
+    // Create unique index for user upsert (idempotent)
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS users_platform_id_platform_idx ON users (platform_id, platform)`;
+    console.log("[db] User tracking index verified");
   } catch (err: any) {
     console.error("[db] PostgreSQL connection failed:", err.message);
     console.error("[db] Will continue without database — some features unavailable");

@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied } from "../connectors/nostr.js";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getPixelModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
@@ -35,6 +35,34 @@ const MAX_INTERVAL_MS = 90 * 60 * 1000;  // 90 minutes maximum
 const MIN_POST_GAP_MS = 30 * 60 * 1000;  // Never post more than once per 30 min
 const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before first heartbeat
 const ENGAGEMENT_CHECK_MS = 15 * 60 * 1000; // Check for unreplied mentions every 15 min
+
+// Canvas API URL — V1 canvas at pixel-api-1:3000
+const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
+
+// Cached canvas stats (refreshed each heartbeat cycle)
+let cachedCanvasStats = { pixels: "9,058", sats: "80k+" };
+
+/** Fetch live canvas stats from V1 API */
+async function fetchCanvasStats(): Promise<{ pixels: string; sats: string }> {
+  try {
+    const res = await fetch(CANVAS_API_URL, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as any;
+    const pixelCount = data?.totalPixels ?? data?.pixels ?? data?.stats?.totalPixels;
+    const satCount = data?.totalSats ?? data?.sats ?? data?.stats?.totalSats ?? data?.revenue;
+    if (pixelCount) {
+      const formattedPixels = Number(pixelCount).toLocaleString("en-US");
+      const formattedSats = satCount
+        ? (Number(satCount) >= 1000 ? `${Math.round(Number(satCount) / 1000)}k+` : String(satCount))
+        : cachedCanvasStats.sats;
+      cachedCanvasStats = { pixels: formattedPixels, sats: formattedSats };
+      console.log(`[heartbeat] Canvas stats refreshed: ${formattedPixels} pixels, ${formattedSats} sats`);
+    }
+  } catch (err: any) {
+    console.log(`[heartbeat] Canvas stats fetch failed (using cached): ${err.message}`);
+  }
+  return cachedCanvasStats;
+}
 
 // ============================================================
 // Topic & Mood System
@@ -77,7 +105,6 @@ let engagementTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
-let repliedEventIds = new Set<string>(); // Track events we've already replied to
 
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
@@ -113,7 +140,7 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
   const topicGuides: Record<Topic, string> = {
     art: `Write about art, creativity, or the creative process. You could talk about:
 - What makes pixel art compelling (constraints breed creativity)
-- The beauty of collaborative art (your canvas has 9,058 pixels placed by real people)
+- The beauty of collaborative art (your canvas has ${cachedCanvasStats.pixels} pixels placed by real people)
 - Generative art, procedural creation, or algorithmic beauty
 - The tension between art-as-product and art-as-expression
 - A specific observation about visual culture or design`,
@@ -133,7 +160,7 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
 - The relationship between code and creativity`,
 
     canvas: `Promote the collaborative pixel canvas at ln.pixel.xx.kg. You could:
-- Share a stat: 9,058 pixels placed, 80,000+ sats earned through collaboration
+- Share a stat: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned through collaboration
 - Invite people to place a pixel — it costs 1-10 sats via Lightning
 - Describe what the canvas looks like or what patterns are emerging
 - Talk about what collaborative art means — every pixel is someone's choice
@@ -215,7 +242,7 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Uptime: ${Math.floor(process.uptime() / 3600)} hours
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
-- Canvas: 9,058 pixels placed, 80k+ sats earned at ln.pixel.xx.kg
+- Canvas: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned at ln.pixel.xx.kg
 - Architecture: 4 containers, ~1900 lines of code, zero patches
 - Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
 - Platforms: Telegram, Nostr, HTTP API
@@ -375,8 +402,14 @@ async function checkAndReplyToMentions(): Promise<void> {
       since,
     });
 
-    // Build set of event IDs we've replied to
-    const repliedTo = new Set<string>(repliedEventIds);
+    // Build set of event IDs we've replied to (from shared tracker + on-chain check)
+    const repliedTo = new Set<string>();
+    // Check shared in-memory tracker
+    if (events) {
+      for (const event of events) {
+        if (hasRepliedTo(event.id)) repliedTo.add(event.id);
+      }
+    }
     if (ourReplies) {
       for (const reply of ourReplies) {
         for (const tag of reply.tags) {
@@ -416,7 +449,7 @@ async function checkAndReplyToMentions(): Promise<void> {
         );
 
         if (!response) {
-          repliedEventIds.add(event.id);
+          markReplied(event.id);
           continue;
         }
 
@@ -440,21 +473,15 @@ async function checkAndReplyToMentions(): Promise<void> {
         }
 
         await reply.publish();
-        repliedEventIds.add(event.id);
+        markReplied(event.id);
         console.log(`[heartbeat/engage] Replied to ${event.pubkey.slice(0, 8)}...`);
 
         // Small delay between replies to avoid looking like spam
         await new Promise((r) => setTimeout(r, 5_000));
       } catch (err: any) {
         console.error(`[heartbeat/engage] Reply failed:`, err.message);
-        repliedEventIds.add(event.id); // Don't retry failed replies
+        markReplied(event.id); // Don't retry failed replies
       }
-    }
-
-    // Prune old event IDs (keep last 200)
-    if (repliedEventIds.size > 200) {
-      const arr = [...repliedEventIds];
-      repliedEventIds = new Set(arr.slice(-200));
     }
   } catch (err: any) {
     console.error("[heartbeat/engage] Engagement check failed:", err.message);
@@ -477,6 +504,9 @@ async function beat(): Promise<void> {
 
   heartbeatCount++;
   console.log(`[heartbeat] Beat #${heartbeatCount} — generating post...`);
+
+  // Refresh canvas stats before generating post
+  await fetchCanvasStats();
 
   try {
     const content = await generatePost();
@@ -577,6 +607,5 @@ export function getHeartbeatStatus() {
     lastMood,
     nextBeatIn: timer ? "scheduled" : "none",
     engagementActive: engagementTimer !== null,
-    repliedMentions: repliedEventIds.size,
   };
 }
