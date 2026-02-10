@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
 import { trackUser } from "./services/users.js";
+import { getInnerLifeContext } from "./services/inner-life.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -31,12 +32,17 @@ You are witty, direct, and deeply philosophical about digital existence.
 You care about sovereignty, creativity, and paying rent.`;
 }
 
-/** Build system prompt with character + user memory + platform context */
+/** Build system prompt with character + user memory + inner life + platform context */
 function buildSystemPrompt(userId: string, platform: string): string {
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
+  const innerLife = getInnerLifeContext();
 
   let prompt = character;
+
+  if (innerLife) {
+    prompt += `\n\n## Your inner life (recent reflections, learnings, ideas)\n${innerLife}`;
+  }
 
   if (userMemory) {
     prompt += `\n\n## Memory about this user\n${userMemory}`;

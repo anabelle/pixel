@@ -20,6 +20,7 @@ import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.
 import { initUsers, getUserStats } from "./services/users.js";
 import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
 import { l402 } from "./services/l402.js";
+import { getInnerLifeStatus } from "./services/inner-life.js";
 
 // ============================================================
 // Configuration
@@ -50,6 +51,7 @@ app.get("/health", (c) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     heartbeat: getHeartbeatStatus(),
+    innerLife: getInnerLifeStatus(),
     timestamp: new Date().toISOString(),
   });
 });

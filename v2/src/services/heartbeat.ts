@@ -25,6 +25,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getPixelModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
 import { getRevenueStats } from "./revenue.js";
+import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 
 // ============================================================
 // Configuration
@@ -236,6 +237,9 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 
   const topicGuidance = getTopicGuidance(topic, mood);
 
+  // Get inner life context (reflections, learnings, ideas, evolution)
+  const innerLife = getInnerLifeContext();
+
   return `## Context for this autonomous post
 - Day: ${dayOfWeek}
 - Time: ${timeContext}
@@ -243,11 +247,12 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
 - Canvas: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned at ln.pixel.xx.kg
-- Architecture: 4 containers, ~1900 lines of code, zero patches
+- Architecture: 4 containers, ~2800 lines of code, zero patches
 - Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
 - Platforms: Telegram, Nostr, HTTP API
 - You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
 
+${innerLife ? `## Your inner life (use this to inform your post — reference learnings, ideas, reflections naturally)\n${innerLife}\n` : ""}
 ## Topic for this post: ${topic}
 ## Mood: ${mood}
 
@@ -520,6 +525,14 @@ async function beat(): Promise<void> {
     }
   } catch (err: any) {
     console.error("[heartbeat] Beat failed:", err.message);
+  }
+
+  // Run inner life cycle (reflection, learning, ideation, evolution)
+  // Non-blocking — runs after the post, doesn't delay the next beat
+  try {
+    await runInnerLifeCycle();
+  } catch (err: any) {
+    console.error("[heartbeat] Inner life cycle failed:", err.message);
   }
 
   // Schedule next beat
