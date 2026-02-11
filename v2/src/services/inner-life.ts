@@ -204,6 +204,28 @@ function gatherRecentConversations(): string {
   return exchanges.slice(-20).join("\n"); // Cap at 20 most recent
 }
 
+function gatherCommunitySignals(): string {
+  const nostrPath = join(DATA_DIR, "nostr-trends.json");
+  const clawstrPath = join(DATA_DIR, "clawstr-trends.txt");
+  let out = "";
+
+  try {
+    if (existsSync(nostrPath)) {
+      const raw = readFileSync(nostrPath, "utf-8");
+      out += `## Nostr trends\n${raw}\n`;
+    }
+  } catch {}
+
+  try {
+    if (existsSync(clawstrPath)) {
+      const raw = readFileSync(clawstrPath, "utf-8");
+      out += `\n## Clawstr signals\n${raw}\n`;
+    }
+  } catch {}
+
+  return out || "(no community signals)";
+}
+
 /** Gather recent Nostr mentions and our posts */
 async function gatherNostrActivity(): Promise<string> {
   const instance = getNostrInstance();
@@ -366,6 +388,7 @@ async function phaseLearn(): Promise<void> {
   const existingLearnings = readLivingDoc("learnings.md");
   const conversations = gatherRecentConversations();
   const userMemories = gatherUserMemories();
+  const communitySignals = gatherCommunitySignals();
 
   const response = await llmCall(
     `You are Pixel's learning engine. You extract patterns and insights from conversations.
@@ -380,13 +403,16 @@ Focus on:
 Previous learnings (update, don't repeat):
 ${existingLearnings || "(none yet)"}`,
 
-    `Extract insights from recent conversations:
+    `Extract insights from recent conversations and community signals:
 
 ## Conversations
 ${conversations}
 
 ## User memories
 ${userMemories}
+
+## Community signals (Nostr/Clawstr)
+${communitySignals}
 
 Update the learnings document. Keep it under 500 chars.
 Merge new insights with existing ones. Drop stale insights.

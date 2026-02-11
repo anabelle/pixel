@@ -6,7 +6,7 @@
  */
 
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { desc, sql, eq } from "drizzle-orm";
+import { desc, sql, eq, gte } from "drizzle-orm";
 import { revenue } from "../db.js";
 import type * as schema from "../db.js";
 import { audit } from "./audit.js";
@@ -118,5 +118,24 @@ export async function getRevenueStats(): Promise<{
   } catch (err: any) {
     console.error("[revenue] Failed to get stats:", err.message);
     return { totalSats: 0, bySource: [], recent: [] };
+  }
+}
+
+/**
+ * Get total sats received in the last N days.
+ */
+export async function getRevenueSince(days: number): Promise<number> {
+  if (!db) return 0;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  try {
+    const result = await db
+      .select({ total: sql<number>`COALESCE(SUM(amount_sats), 0)::int` })
+      .from(revenue)
+      .where(gte(revenue.createdAt, since));
+    return result[0]?.total ?? 0;
+  } catch (err: any) {
+    console.error("[revenue] Failed to get recent stats:", err.message);
+    return 0;
   }
 }

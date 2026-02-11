@@ -24,7 +24,7 @@ import { getNostrInstance, hasRepliedTo, markReplied } from "../connectors/nostr
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getPixelModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
-import { getRevenueStats } from "./revenue.js";
+import { getRevenueStats, getRevenueSince } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -71,12 +71,16 @@ const ART_REPORT_CHECK_MS = 24 * 60 * 60 * 1000; // daily
 const ART_REPORT_MIN_POSTS = 6;
 const SPOTLIGHT_CHECK_MS = 24 * 60 * 60 * 1000; // daily
 const QUOTE_REPOST_CHANCE = 0.25;
+const REVENUE_CHECK_MS = 6 * 60 * 60 * 1000; // 6 hours
+const REVENUE_GOAL_WEEKLY_SATS = 5000;
+const REVENUE_WINDOW_DAYS = 7;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
 
 // Heartbeat state persistence
 const HEARTBEAT_STATE_PATH = "/app/data/heartbeat.json";
+const RECENT_POSTS_PATH = "/app/data/nostr-posts.jsonl";
 
 // Cached canvas stats (refreshed each heartbeat cycle)
 let cachedCanvasStats = { pixels: "9,058", sats: "80k+" };
@@ -149,6 +153,7 @@ let followTimer: ReturnType<typeof setTimeout> | null = null;
 let unfollowTimer: ReturnType<typeof setTimeout> | null = null;
 let artReportTimer: ReturnType<typeof setTimeout> | null = null;
 let spotlightTimer: ReturnType<typeof setTimeout> | null = null;
+let revenueTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
@@ -170,6 +175,9 @@ let lastUnfollowCheckTime: number | null = null;
 let zapCorrelation: { eventId: string; sats: number; topic?: string; at: number }[] = [];
 let lastArtReportTime: number | null = null;
 let lastSpotlightTime: number | null = null;
+let lastRevenueCheckTime: number | null = null;
+let lastRevenueWeekSats: number | null = null;
+let engagementMultiplier = 1.0;
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -194,6 +202,15 @@ type HeartbeatState = {
   zapCorrelation?: { eventId: string; sats: number; topic?: string; at: number }[];
   lastArtReportTime?: number | null;
   lastSpotlightTime?: number | null;
+  lastRevenueCheckTime?: number | null;
+  lastRevenueWeekSats?: number | null;
+  engagementMultiplier?: number;
+};
+
+type RecentPost = {
+  ts: number;
+  content: string;
+  type: "heartbeat" | "art_report" | "spotlight";
 };
 
 function loadHeartbeatState(): void {
@@ -253,6 +270,15 @@ function loadHeartbeatState(): void {
     if (typeof state.lastSpotlightTime === "number" || state.lastSpotlightTime === null) {
       lastSpotlightTime = state.lastSpotlightTime ?? null;
     }
+    if (typeof state.lastRevenueCheckTime === "number" || state.lastRevenueCheckTime === null) {
+      lastRevenueCheckTime = state.lastRevenueCheckTime ?? null;
+    }
+    if (typeof state.lastRevenueWeekSats === "number" || state.lastRevenueWeekSats === null) {
+      lastRevenueWeekSats = state.lastRevenueWeekSats ?? null;
+    }
+    if (typeof state.engagementMultiplier === "number") {
+      engagementMultiplier = state.engagementMultiplier;
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -289,10 +315,39 @@ function saveHeartbeatState(): void {
       zapCorrelation,
       lastArtReportTime,
       lastSpotlightTime,
+      lastRevenueCheckTime,
+      lastRevenueWeekSats,
+      engagementMultiplier,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
     console.error("[heartbeat] Failed to save state:", err.message);
+  }
+}
+
+function readRecentPosts(limit = 8): RecentPost[] {
+  if (!existsSync(RECENT_POSTS_PATH)) return [];
+  try {
+    const lines = readFileSync(RECENT_POSTS_PATH, "utf-8").split("\n").filter(Boolean);
+    const parsed = lines.map((line) => {
+      try {
+        return JSON.parse(line) as RecentPost;
+      } catch {
+        return null;
+      }
+    }).filter(Boolean) as RecentPost[];
+    return parsed.slice(-limit);
+  } catch {
+    return [];
+  }
+}
+
+function appendRecentPost(content: string, type: RecentPost["type"]): void {
+  try {
+    const entry: RecentPost = { ts: Date.now(), content, type };
+    writeFileSync(RECENT_POSTS_PATH, JSON.stringify(entry) + "\n", { flag: "a" });
+  } catch (err: any) {
+    console.error("[heartbeat] Failed to write recent post:", err.message);
   }
 }
 
@@ -449,6 +504,9 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 
   // Get inner life context (reflections, learnings, ideas, evolution)
   const innerLife = getInnerLifeContext();
+  const recentPosts = readRecentPosts(6)
+    .map((p) => `- (${p.type}) ${p.content.slice(0, 140)}`)
+    .join("\n");
 
   const zapTopicSummary = (() => {
     const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
@@ -481,6 +539,7 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Platforms: Telegram, Nostr, HTTP API
 - You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
 ${zapTopicSummary}
+${recentPosts ? `\n- Recent posts (avoid repeating themes or phrasing):\n${recentPosts}` : ""}
 
 ${innerLife ? `## Your inner life (use this to inform your post — reference learnings, ideas, reflections naturally)\n${innerLife}\n` : ""}
 ## Topic for this post: ${topic}
@@ -605,6 +664,7 @@ async function publishPost(content: string): Promise<boolean> {
     event.tags = [];
 
     await event.publish();
+    appendRecentPost(content, "heartbeat");
     return true;
   } catch (err: any) {
     console.error("[heartbeat] Failed to publish:", err.message);
@@ -845,6 +905,9 @@ async function clawstrLoop(): Promise<void> {
         count: null,
       });
     }
+    try {
+      writeFileSync("/app/data/clawstr-trends.txt", result.output.slice(0, 2000));
+    } catch {}
     saveHeartbeatState();
 
     await maybeReplyToClawstr(result.output);
@@ -900,6 +963,15 @@ async function discoveryLoop(): Promise<void> {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([tag]) => tag);
+
+    try {
+      const trendSummary = {
+        at: Date.now(),
+        tags: trendingTags,
+        topPrimal: [...primalEvents].slice(0, 5).map((e) => ({ id: e.id, pubkey: e.pubkey, content: e.content?.slice(0, 200) })),
+      };
+      writeFileSync("/app/data/nostr-trends.json", JSON.stringify(trendSummary, null, 2));
+    } catch {}
 
     const candidates = all.filter((e) => {
       if (hasRepliedTo(e.id)) return false;
@@ -966,9 +1038,10 @@ async function notificationLoop(): Promise<void> {
     });
     saveHeartbeatState();
 
+    const maxReplies = scaled(NOTIFICATION_REPLY_MAX, 6);
     let replied = 0;
     for (const event of mentions) {
-      if (replied >= NOTIFICATION_REPLY_MAX) break;
+      if (replied >= maxReplies) break;
       if (hasRepliedTo(event.id)) continue;
       if (!event.content || event.content.length < 2) {
         markReplied(event.id);
@@ -1133,9 +1206,10 @@ async function followLoop(): Promise<void> {
       .filter((e) => isArtPost(e.content ?? ""))
       .filter((e) => !contacts.has(e.pubkey));
 
+    const maxFollows = scaled(FOLLOW_MAX, 3);
     let followed = 0;
     for (const event of candidates) {
-      if (followed >= FOLLOW_MAX) break;
+      if (followed >= maxFollows) break;
       contacts.add(event.pubkey);
       await publishContacts(ndk, contacts);
       audit("engagement_reply", `Followed ${event.pubkey.slice(0, 8)} from art discovery`, { pubkey: event.pubkey });
@@ -1246,6 +1320,7 @@ async function artReportLoop(): Promise<void> {
     post.kind = 1;
     post.content = response;
     await post.publish();
+    appendRecentPost(response, "art_report");
     lastArtReportTime = Date.now();
     saveHeartbeatState();
     audit("engagement_reply", "Posted art trend report", { preview: response.slice(0, 120) });
@@ -1255,6 +1330,25 @@ async function artReportLoop(): Promise<void> {
 
   if (running) {
     artReportTimer = setTimeout(artReportLoop, ART_REPORT_CHECK_MS);
+  }
+}
+
+async function revenueGoalLoop(): Promise<void> {
+  if (!running) return;
+
+  try {
+    const weeklySats = await getRevenueSince(REVENUE_WINDOW_DAYS);
+    lastRevenueWeekSats = weeklySats;
+    lastRevenueCheckTime = Date.now();
+    engagementMultiplier = computeEngagementMultiplier(weeklySats);
+    audit("revenue", `Weekly revenue check: ${weeklySats} sats`, { weeklySats, goal: REVENUE_GOAL_WEEKLY_SATS, multiplier: engagementMultiplier });
+    saveHeartbeatState();
+  } catch (err: any) {
+    console.error("[heartbeat/revenue] Loop error:", err.message);
+  }
+
+  if (running) {
+    revenueTimer = setTimeout(revenueGoalLoop, REVENUE_CHECK_MS);
   }
 }
 
@@ -1306,6 +1400,7 @@ async function spotlightLoop(): Promise<void> {
       ["q", pick.id],
     ];
     await post.publish();
+    appendRecentPost(response, "spotlight");
     lastSpotlightTime = Date.now();
     saveHeartbeatState();
     audit("engagement_reply", "Posted community spotlight", { eventId: pick.id, preview: response.slice(0, 120) });
@@ -1841,6 +1936,10 @@ export function getHeartbeatStatus() {
     lastUnfollowCheckTime: lastUnfollowCheckTime ? new Date(lastUnfollowCheckTime).toISOString() : null,
     lastArtReportTime: lastArtReportTime ? new Date(lastArtReportTime).toISOString() : null,
     lastSpotlightTime: lastSpotlightTime ? new Date(lastSpotlightTime).toISOString() : null,
+    lastRevenueCheckTime: lastRevenueCheckTime ? new Date(lastRevenueCheckTime).toISOString() : null,
+    weeklyRevenueSats: lastRevenueWeekSats,
+    revenueGoalSats: REVENUE_GOAL_WEEKLY_SATS,
+    engagementMultiplier,
     nextBeatIn: timer ? "scheduled" : "none",
     engagementActive: engagementTimer !== null,
   };
