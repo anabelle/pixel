@@ -28,6 +28,7 @@ import { getRevenueStats } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { getClawstrNotifications } from "./clawstr.js";
 
 // ============================================================
@@ -644,6 +645,7 @@ async function clawstrLoop(): Promise<void> {
   if (!running) return;
 
   try {
+    const previousCount = lastClawstrCount;
     const result = await getClawstrNotifications(CLAWSTR_CHECK_LIMIT);
     lastClawstrCheckTime = Date.now();
     lastClawstrCount = result.count;
@@ -651,6 +653,10 @@ async function clawstrLoop(): Promise<void> {
       audit("clawstr_notifications", `Clawstr notifications: ${result.count}`, {
         count: result.count,
       });
+      if (canNotify() && (previousCount === null || typeof previousCount === "undefined" || result.count > previousCount)) {
+        await notifyOwner(`[engagement] Clawstr notifications: ${result.count}`);
+        audit("notification_sent", `Alert: engagement — Clawstr notifications ${result.count}`, { count: result.count });
+      }
     } else {
       audit("clawstr_notifications", "Clawstr notifications checked", {
         count: null,
