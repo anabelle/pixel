@@ -20,8 +20,8 @@ COPY character.md* ./
 # ---- Runtime ----
 FROM oven/bun:1-alpine
 
-# bash for agent's bash tool, curl for healthcheck/web fetch
-RUN apk add --no-cache bash curl
+# bash for agent's bash tool, curl for healthcheck/web fetch, docker-cli for Clawstr tool
+RUN apk add --no-cache bash curl docker-cli
 
 WORKDIR /app
 
