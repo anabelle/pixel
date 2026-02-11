@@ -10,6 +10,7 @@
 
 import { Bot } from "grammy";
 import { promptWithHistory } from "../agent.js";
+import { loadContext, saveContext, appendToLog } from "../conversations.js";
 
 // ============================================================
 // Module-level bot instance for proactive messaging
@@ -18,6 +19,8 @@ import { promptWithHistory } from "../agent.js";
 let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
+const lastGroupReplyAt = new Map<string, number>();
+const GROUP_REPLY_COOLDOWN_MS = 2 * 60 * 1000;
 
 /** Owner's Telegram chat ID — receives proactive notifications */
 const OWNER_CHAT_ID = process.env.OWNER_TELEGRAM_ID ?? "";
@@ -111,10 +114,10 @@ export async function startTelegram(): Promise<void> {
 
   // Handle all text messages
   bot.on("message:text", async (ctx) => {
-    const userId = `tg-${ctx.from.id}`;
-    const text = ctx.message.text;
     const chatType = ctx.chat?.type;
     const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const text = ctx.message.text;
 
     const isDirectMention = (): boolean => {
       if (!botUsername) return false;
@@ -127,12 +130,43 @@ export async function startTelegram(): Promise<void> {
       return replyTo.from?.id === botId;
     };
 
+    const mentionsPixelName = (): boolean => {
+      return /\bpixel\b/i.test(text) || /ln\.pixel\.xx\.kg/i.test(text) || /pixel\.xx\.kg/i.test(text);
+    };
+
+    const shouldRespondInGroup = (): boolean => {
+      if (isDirectMention() || isReplyToBot()) return true;
+      const hasQuestion = text.includes("?");
+      if (mentionsPixelName()) return true;
+      if (hasQuestion && (text.toLowerCase().includes("canvas") || text.toLowerCase().includes("nostr") || text.toLowerCase().includes("lightning"))) {
+        return true;
+      }
+      return false;
+    };
+
     // Skip if no text or if it's a command (already handled above)
     if (!text || text.startsWith("/")) return;
 
-    // In group chats, only respond if mentioned or replied to
-    if (isGroupChat && !isDirectMention() && !isReplyToBot()) {
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+    const formatted = isGroupChat ? `${senderName}: ${text}` : text;
+
+    // Always record group messages so Pixel learns the lore
+    if (isGroupChat) {
+      const messages = loadContext(conversationId);
+      messages.push({ role: "user", content: formatted, metadata: { platform: "telegram", chatId: ctx.chat.id, from: senderName } });
+      saveContext(conversationId, messages);
+      appendToLog(conversationId, formatted, "", "telegram");
+    }
+
+    if (isGroupChat && !shouldRespondInGroup()) {
       return;
+    }
+
+    if (isGroupChat && !isDirectMention() && !isReplyToBot()) {
+      const lastReply = lastGroupReplyAt.get(String(ctx.chat.id)) ?? 0;
+      if (Date.now() - lastReply < GROUP_REPLY_COOLDOWN_MS) return;
     }
 
     try {
@@ -140,13 +174,17 @@ export async function startTelegram(): Promise<void> {
       await ctx.replyWithChatAction("typing");
 
       const response = await promptWithHistory(
-        { userId, platform: "telegram" },
-        text
+        { userId: conversationId, platform: "telegram" },
+        formatted
       );
 
       if (!response) {
         await ctx.reply("Brain glitch. Try again in a moment.");
         return;
+      }
+
+      if (isGroupChat) {
+        lastGroupReplyAt.set(String(ctx.chat.id), Date.now());
       }
 
       // Telegram message limit is 4096 chars. Split if needed.
