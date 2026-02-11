@@ -47,6 +47,7 @@ const CLAWSTR_REPLY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
 const CLAWSTR_MIN_REPLY_LENGTH = 12;
 const TOPIC_HISTORY_LIMIT = 6;
 const CANVAS_TOPIC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
+const CLAWSTR_REPLY_HISTORY_LIMIT = 50;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -125,6 +126,7 @@ let lastClawstrCheckTime: number | null = null;
 let lastClawstrCount: number | null = null;
 let lastClawstrReplyTime: number | null = null;
 let clawstrRepliedIds: string[] = [];
+let clawstrReplyHistory: string[] = [];
 let topicHistory: Topic[] = [];
 let lastCanvasPostTime: number | null = null;
 
@@ -139,6 +141,7 @@ type HeartbeatState = {
   clawstrRepliedIds?: string[];
   topicHistory?: Topic[];
   lastCanvasPostTime?: number | null;
+  clawstrReplyHistory?: string[];
 };
 
 function loadHeartbeatState(): void {
@@ -162,6 +165,9 @@ function loadHeartbeatState(): void {
     if (Array.isArray(state.clawstrRepliedIds)) {
       clawstrRepliedIds = state.clawstrRepliedIds.slice(0, 200);
     }
+    if (Array.isArray(state.clawstrReplyHistory)) {
+      clawstrReplyHistory = state.clawstrReplyHistory.slice(-CLAWSTR_REPLY_HISTORY_LIMIT);
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -184,6 +190,7 @@ function saveHeartbeatState(): void {
       lastClawstrCount,
       lastClawstrReplyTime,
       clawstrRepliedIds,
+      clawstrReplyHistory,
       topicHistory,
       lastCanvasPostTime,
     };
@@ -746,6 +753,14 @@ function markClawstrReplied(eventId: string): void {
   }
 }
 
+function normalizeReply(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function maybeReplyToClawstr(output: string): Promise<void> {
   if (!output) return;
   const now = Date.now();
@@ -759,6 +774,11 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
     if (replied >= CLAWSTR_REPLY_MAX) break;
     try {
       const post = await getClawstrPost(id);
+      const postLower = post.toLowerCase();
+      if (postLower.includes("/c/clawnch") || postLower.includes("!clawnch")) {
+        markClawstrReplied(id);
+        continue;
+      }
       const prompt = [
         "Reply on Clawstr. Be brief, specific, and human. If there is nothing meaningful to add, respond with [SILENT].",
         "Do not use markdown.",
@@ -782,8 +802,20 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
         continue;
       }
 
+      const normalized = normalizeReply(cleaned);
+      if (normalized && clawstrReplyHistory.includes(normalized)) {
+        markClawstrReplied(id);
+        continue;
+      }
+
       await replyClawstr(id, cleaned);
       markClawstrReplied(id);
+      if (normalized) {
+        clawstrReplyHistory.push(normalized);
+        if (clawstrReplyHistory.length > CLAWSTR_REPLY_HISTORY_LIMIT) {
+          clawstrReplyHistory = clawstrReplyHistory.slice(-CLAWSTR_REPLY_HISTORY_LIMIT);
+        }
+      }
       lastClawstrReplyTime = Date.now();
       saveHeartbeatState();
       audit("clawstr_reply", `Replied on Clawstr ${id.slice(0, 12)}...`, {
