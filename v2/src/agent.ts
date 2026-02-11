@@ -7,7 +7,7 @@
  */
 
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, complete } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
@@ -135,11 +135,13 @@ export async function promptWithHistory(
 
   // Collect response from assistant message_end events
   const responseChunks: string[] = [];
+  let llmError: string | null = null;
   agent.subscribe((event: any) => {
     if (event.type === "message_end" && event.message?.role === "assistant") {
       const msg = event.message as any;
       if (msg.stopReason === "error") {
         console.error(`[agent] LLM error for ${userId}: ${msg.errorMessage}`);
+        llmError = msg.errorMessage ?? "Unknown LLM error";
       } else {
         const text = extractText(msg);
         if (text) responseChunks.push(text);
@@ -162,6 +164,31 @@ export async function promptWithHistory(
       if (assistantMsgs.length > 0) {
         responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
       }
+    }
+  }
+
+  // Last-resort fallback if agent-core errored out
+  if (!responseText && llmError) {
+    try {
+      const model = getPixelModel();
+      const fallbackContext = {
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+        tools: [],
+      } as any;
+      const fallback = await complete(model as any, fallbackContext);
+      if (fallback?.message) {
+        responseText = extractText(fallback.message as any);
+      } else if (typeof fallback?.text === "string") {
+        responseText = fallback.text;
+      }
+      if (responseText) {
+        console.log(`[agent] Fallback response used for ${userId}`);
+      }
+    } catch (err: any) {
+      console.error(`[agent] Fallback LLM call failed for ${userId}:`, err.message);
     }
   }
 
