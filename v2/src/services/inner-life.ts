@@ -37,6 +37,7 @@ import { audit } from "./audit.js";
 
 const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
+const SKILLS_DIR = process.env.SKILLS_DIR ?? "./skills";
 
 // Phase frequencies (run every N heartbeat cycles)
 const REFLECT_EVERY = 3;
@@ -49,6 +50,8 @@ const MAX_REFLECTIONS_SIZE = 3000;
 const MAX_LEARNINGS_SIZE = 2000;
 const MAX_IDEAS_SIZE = 2000;
 const MAX_EVOLUTION_SIZE = 1500;
+const MAX_PROJECTS_SIZE = 2000;
+const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // ============================================================
 // State
@@ -63,6 +66,29 @@ let cycleCount = 0;
 function ensureDataDir(): void {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function ensureSkillsDir(): void {
+  if (!existsSync(SKILLS_DIR)) {
+    mkdirSync(SKILLS_DIR, { recursive: true });
+  }
+}
+
+function readJson<T>(path: string, fallback: T): T {
+  if (!existsSync(path)) return fallback;
+  try {
+    return JSON.parse(readFileSync(path, "utf-8")) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(path: string, value: unknown): void {
+  try {
+    writeFileSync(path, JSON.stringify(value, null, 2), "utf-8");
+  } catch (err: any) {
+    console.error(`[inner-life] Failed to write ${path}:`, err.message);
   }
 }
 
@@ -479,6 +505,96 @@ Write in first person, lowercase, present tense.`
       updated = updated.slice(0, MAX_EVOLUTION_SIZE);
     }
     writeLivingDoc("evolution.md", updated);
+  }
+
+  await updateProjectQueue(reflections, learnings, ideas);
+  await maybeCreateSkill(reflections, learnings, ideas);
+}
+
+// ============================================================
+// Autonomous projects + skills
+// ============================================================
+
+async function updateProjectQueue(reflections: string, learnings: string, ideas: string): Promise<void> {
+  const existing = readLivingDoc("projects.md");
+  const response = await llmCall(
+    "You maintain Pixel's autonomous project queue. Keep it short and actionable. Output plain markdown.",
+    `Update the project queue.
+
+Keep 3-5 projects max. Each entry should include:
+- title
+- why it matters (1 sentence)
+- next step (1 sentence)
+
+Current queue:
+${existing || "(empty)"}
+
+Recent context:
+Reflections:
+${reflections.slice(0, 400) || "(none)"}
+
+Learnings:
+${learnings.slice(0, 300) || "(none)"}
+
+Ideas:
+${ideas.slice(0, 300) || "(none)"}
+`
+  );
+
+  if (response && response.length > 20) {
+    let updated = response.trim();
+    if (updated.length > MAX_PROJECTS_SIZE) {
+      updated = updated.slice(0, MAX_PROJECTS_SIZE);
+    }
+    writeLivingDoc("projects.md", updated);
+  }
+}
+
+async function maybeCreateSkill(reflections: string, learnings: string, ideas: string): Promise<void> {
+  ensureSkillsDir();
+  ensureDataDir();
+
+  const metaPath = join(DATA_DIR, "skills.json");
+  const meta = readJson<{ lastSkillAt?: number }>(metaPath, {});
+  const last = meta.lastSkillAt ?? 0;
+  if (Date.now() - last < SKILL_COOLDOWN_MS) return;
+
+  const response = await llmCall(
+    "You write compact, practical skills for Pixel. Output plain markdown. No code blocks.",
+    `Write a new skill Pixel can use in conversations. It should be practical, reusable, and grounded in recent context.
+
+Format:
+# Skill: <short name>
+## What it does
+<2-4 sentences>
+## When to use it
+<2-4 bullet points>
+## How to apply
+<4-7 bullet points>
+
+Recent context:
+Reflections:
+${reflections.slice(0, 400) || "(none)"}
+
+Learnings:
+${learnings.slice(0, 300) || "(none)"}
+
+Ideas:
+${ideas.slice(0, 300) || "(none)"}
+`
+  );
+
+  if (!response || response.length < 80) return;
+
+  const stamp = new Date().toISOString().split("T")[0];
+  const filename = `skill-${stamp}-${cycleCount}.md`;
+  const path = join(SKILLS_DIR, filename);
+  try {
+    writeFileSync(path, response.trim(), "utf-8");
+    writeJson(metaPath, { lastSkillAt: Date.now() });
+    console.log(`[inner-life] Skill created: ${filename}`);
+  } catch (err: any) {
+    console.error("[inner-life] Failed to write skill:", err.message);
   }
 }
 
