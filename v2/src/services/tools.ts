@@ -13,6 +13,7 @@ import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
+import { auditToolUse } from "./audit.js";
 
 // ─── READ FILE ────────────────────────────────────────────────
 
@@ -30,15 +31,18 @@ export const readFileTool: AgentTool<typeof readSchema> = {
   execute: async (_id, { path, offset, limit }) => {
     const resolved = path.startsWith("/") ? path : join("/app", path);
     if (!existsSync(resolved)) {
+      auditToolUse("read_file", { path, offset, limit }, { error: "not_found", resolved });
       throw new Error(`File not found: ${resolved}`);
     }
     const stat = statSync(resolved);
     if (stat.isDirectory()) {
       const entries = readdirSync(resolved);
-      return {
+      const output = {
         content: [{ type: "text", text: `Directory listing of ${resolved}:\n${entries.join("\n")}` }],
         details: undefined,
       };
+      auditToolUse("read_file", { path, offset, limit }, { directory: resolved, count: entries.length });
+      return output;
     }
     const raw = readFileSync(resolved, "utf-8");
     const lines = raw.split("\n");
@@ -51,10 +55,12 @@ export const readFileTool: AgentTool<typeof readSchema> = {
     if (truncated) {
       result += `\n\n[... ${lines.length - start - count} more lines. Total: ${lines.length} lines]`;
     }
-    return {
+    const output = {
       content: [{ type: "text", text: result }],
       details: { totalLines: lines.length, showing: slice.length },
     };
+    auditToolUse("read_file", { path, offset, limit }, { file: resolved, totalLines: lines.length, showing: slice.length });
+    return output;
   },
 };
 
@@ -77,10 +83,12 @@ export const writeFileTool: AgentTool<typeof writeSchema> = {
       mkdirSync(dir, { recursive: true });
     }
     writeFileSync(resolved, content, "utf-8");
-    return {
+    const output = {
       content: [{ type: "text", text: `Wrote ${content.length} bytes to ${resolved}` }],
       details: undefined,
     };
+    auditToolUse("write_file", { path, contentLength: content.length }, { file: resolved });
+    return output;
   },
 };
 
@@ -101,14 +109,17 @@ export const editFileTool: AgentTool<typeof editSchema> = {
   execute: async (_id, { path, old_text, new_text, replace_all }) => {
     const resolved = path.startsWith("/") ? path : join("/app", path);
     if (!existsSync(resolved)) {
+      auditToolUse("edit_file", { path, oldTextLength: old_text.length, newTextLength: new_text.length }, { error: "not_found", resolved });
       throw new Error(`File not found: ${resolved}`);
     }
     const content = readFileSync(resolved, "utf-8");
     if (!content.includes(old_text)) {
+      auditToolUse("edit_file", { path, oldTextLength: old_text.length, newTextLength: new_text.length }, { error: "old_text_not_found", resolved });
       throw new Error(`old_text not found in ${resolved}. Read the file first to get exact text.`);
     }
     const count = content.split(old_text).length - 1;
     if (count > 1 && !replace_all) {
+      auditToolUse("edit_file", { path, oldTextLength: old_text.length, newTextLength: new_text.length }, { error: "ambiguous", resolved, count });
       throw new Error(`old_text found ${count} times. Set replace_all=true or provide more context to be unique.`);
     }
     const updated = replace_all
@@ -116,10 +127,12 @@ export const editFileTool: AgentTool<typeof editSchema> = {
       : content.replace(old_text, new_text);
     writeFileSync(resolved, updated, "utf-8");
     const replaced = replace_all ? count : 1;
-    return {
+    const output = {
       content: [{ type: "text", text: `Edited ${resolved}: replaced ${replaced} occurrence(s)` }],
       details: { replacements: replaced },
     };
+    auditToolUse("edit_file", { path, oldTextLength: old_text.length, newTextLength: new_text.length, replaceAll: !!replace_all }, { file: resolved, replacements: replaced });
+    return output;
   },
 };
 
@@ -167,15 +180,19 @@ export const bashTool: AgentTool<typeof bashSchema> = {
       }
 
       if (exitCode !== 0) {
+        auditToolUse("bash", { command, timeout }, { error: output.slice(0, 800), exitCode });
         throw new Error(`${output}\n\nExit code: ${exitCode}`);
       }
 
-      return {
+      const result = {
         content: [{ type: "text", text: output }],
         details: { exitCode },
       };
+      auditToolUse("bash", { command, timeout }, { exitCode, output: output.slice(0, 800) });
+      return result;
     } catch (err) {
       clearTimeout(timer);
+      auditToolUse("bash", { command, timeout }, { error: (err as any)?.message });
       throw err;
     }
   },
@@ -245,10 +262,12 @@ export const checkHealthTool: AgentTool<typeof healthSchema> = {
       } catch {}
     }
 
-    return {
+    const result = {
       content: [{ type: "text", text: results.join("\n") }],
       details: undefined,
     };
+    auditToolUse("check_health", { service }, { resultsCount: results.length });
+    return result;
   },
 };
 
@@ -278,6 +297,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
       const safeId = resolvedConversationId.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
       const logFile = join(convDir, safeId, "log.jsonl");
       if (!existsSync(logFile)) {
+        auditToolUse("read_logs", { source, conversationId: safeId }, { error: "no_log" });
         return { content: [{ type: "text", text: `No log for ${safeId}` }], details: undefined };
       }
 
@@ -296,6 +316,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
         }
       }
 
+      auditToolUse("read_logs", { source, conversationId: safeId, lines: count }, { count: tail.length });
       return { content: [{ type: "text", text: output }], details: { count: tail.length } };
     }
 
@@ -314,26 +335,31 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
           const logSize = hasLog ? statSync(logFile).size : 0;
           return `${userId}: ${hasLog ? `${logSize} bytes` : "no log"} ${hasMem ? "+ memory" : ""}`;
         });
-        return {
+        const result = {
           content: [{ type: "text", text: `${users.length} conversations:\n${summaries.join("\n")}` }],
           details: { count: users.length },
         };
+        auditToolUse("read_logs", { source }, { count: users.length });
+        return result;
       }
       case "revenue": {
         try {
           const res = await fetch("http://127.0.0.1:4000/api/revenue", { signal: AbortSignal.timeout(5000) });
           const data = await res.json();
+          auditToolUse("read_logs", { source }, { ok: true });
           return {
             content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
             details: data,
           };
         } catch (e: any) {
+          auditToolUse("read_logs", { source }, { error: e.message });
           throw new Error(`Failed to fetch revenue: ${e.message}`);
         }
       }
       case "self":
       default: {
         // Read from data directory if we're logging there, otherwise just report status
+        auditToolUse("read_logs", { source }, { ok: true });
         return {
           content: [{ type: "text", text: "Self-logs are in container stdout. Use bash tool with: 'echo check health endpoint instead' or check_health tool for live status." }],
           details: undefined,
@@ -374,11 +400,14 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
       if (body.length > 30_000) {
         body = body.slice(0, 30_000) + `\n\n[... truncated, total ${body.length} chars]`;
       }
-      return {
+      const result = {
         content: [{ type: "text", text: `${res.status} ${res.statusText}\n\n${body}` }],
         details: { status: res.status },
       };
+      auditToolUse("web_fetch", { url, method }, { status: res.status, bodyLength: body.length });
+      return result;
     } catch (e: any) {
+      auditToolUse("web_fetch", { url, method }, { error: e.message });
       throw new Error(`Fetch failed: ${e.message}`);
     }
   },
@@ -398,6 +427,7 @@ export const clawstrFeedTool: AgentTool<typeof clawstrFeedSchema> = {
   parameters: clawstrFeedSchema,
   execute: async (_id, { subclaw, limit }) => {
     const output = await getClawstrFeed(subclaw, limit ?? 15);
+    auditToolUse("clawstr_feed", { subclaw, limit }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -414,6 +444,7 @@ export const clawstrPostTool: AgentTool<typeof clawstrPostSchema> = {
   parameters: clawstrPostSchema,
   execute: async (_id, { subclaw, content }) => {
     const output = await postClawstr(subclaw, content);
+    auditToolUse("clawstr_post", { subclaw, contentLength: content.length }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -430,6 +461,7 @@ export const clawstrReplyTool: AgentTool<typeof clawstrReplySchema> = {
   parameters: clawstrReplySchema,
   execute: async (_id, { eventRef, content }) => {
     const output = await replyClawstr(eventRef, content);
+    auditToolUse("clawstr_reply", { eventRef, contentLength: content.length }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -446,6 +478,7 @@ export const clawstrNotificationsTool: AgentTool<typeof clawstrNotificationsSche
   execute: async (_id, { limit }) => {
     const result = await getClawstrNotifications(limit ?? 20);
     const output = result.output;
+    auditToolUse("clawstr_notifications", { limit }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -461,6 +494,7 @@ export const clawstrUpvoteTool: AgentTool<typeof clawstrUpvoteSchema> = {
   parameters: clawstrUpvoteSchema,
   execute: async (_id, { eventRef }) => {
     const output = await upvoteClawstr(eventRef);
+    auditToolUse("clawstr_upvote", { eventRef }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -477,6 +511,7 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   parameters: clawstrSearchSchema,
   execute: async (_id, { query, limit }) => {
     const output = await getClawstrSearch(query, limit ?? 15);
+    auditToolUse("clawstr_search", { query, limit }, { length: output.length });
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };

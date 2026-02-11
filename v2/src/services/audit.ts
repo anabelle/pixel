@@ -134,6 +134,23 @@ export function audit(type: AuditType, summary: string, data?: Record<string, an
   console.log(`[audit] ${type}: ${summary}`);
 }
 
+export function auditToolUse(tool: string, input?: unknown, output?: unknown): void {
+  const sanitize = (value: unknown) => {
+    if (value == null) return value;
+    if (typeof value === "string") return value.slice(0, 800);
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return String(value).slice(0, 800);
+    }
+  };
+
+  audit("tool_use", `Tool: ${tool}`, {
+    input: sanitize(input),
+    output: sanitize(output),
+  });
+}
+
 /**
  * Get recent audit entries (from memory buffer).
  * For full history, read the JSONL file directly.
