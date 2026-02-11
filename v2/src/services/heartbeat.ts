@@ -27,6 +27,7 @@ import { promptWithHistory } from "../agent.js";
 import { getRevenueStats } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
+import { getClawstrNotifications } from "./clawstr.js";
 
 // ============================================================
 // Configuration
@@ -37,6 +38,8 @@ const MAX_INTERVAL_MS = 90 * 60 * 1000;  // 90 minutes maximum
 const MIN_POST_GAP_MS = 30 * 60 * 1000;  // Never post more than once per 30 min
 const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before first heartbeat
 const ENGAGEMENT_CHECK_MS = 15 * 60 * 1000; // Check for unreplied mentions every 15 min
+const CLAWSTR_CHECK_MS = 6 * 60 * 60 * 1000; // Check Clawstr notifications every 6h
+const CLAWSTR_CHECK_LIMIT = 10;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -104,9 +107,12 @@ let lastPostTime = 0;
 let heartbeatCount = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let engagementTimer: ReturnType<typeof setTimeout> | null = null;
+let clawstrTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
+let lastClawstrCheckTime: number | null = null;
+let lastClawstrCount: number | null = null;
 
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
@@ -581,6 +587,33 @@ async function engagementLoop(): Promise<void> {
   }
 }
 
+/** Clawstr notifications loop — runs on its own interval */
+async function clawstrLoop(): Promise<void> {
+  if (!running) return;
+
+  try {
+    const result = await getClawstrNotifications(CLAWSTR_CHECK_LIMIT);
+    lastClawstrCheckTime = Date.now();
+    lastClawstrCount = result.count;
+    if (typeof result.count === "number") {
+      audit("clawstr_notifications", `Clawstr notifications: ${result.count}`, {
+        count: result.count,
+      });
+    } else {
+      audit("clawstr_notifications", "Clawstr notifications checked", {
+        count: null,
+      });
+    }
+  } catch (err: any) {
+    console.error("[heartbeat/clawstr] Loop error:", err.message);
+    audit("clawstr_error", `Clawstr loop failed: ${err.message}`, { error: err.message });
+  }
+
+  if (running) {
+    clawstrTimer = setTimeout(clawstrLoop, CLAWSTR_CHECK_MS);
+  }
+}
+
 // ============================================================
 // Public API
 // ============================================================
@@ -602,6 +635,7 @@ export function startHeartbeat(): void {
   console.log(`[heartbeat] Starting (first post in ~${Math.round(STARTUP_DELAY_MS / 60_000)} minutes)`);
   console.log(`[heartbeat] Topics: ${TOPICS.join(", ")}`);
   console.log(`[heartbeat] Engagement check every ${ENGAGEMENT_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Clawstr check every ${CLAWSTR_CHECK_MS / 60_000} minutes`);
 
   // Delay first beat to let Nostr connect and stabilize
   timer = setTimeout(beat, STARTUP_DELAY_MS);
@@ -609,6 +643,9 @@ export function startHeartbeat(): void {
   // Start engagement loop (checks for unreplied mentions)
   // Slight delay so Nostr connection is stable
   engagementTimer = setTimeout(engagementLoop, STARTUP_DELAY_MS + 60_000);
+
+  // Start Clawstr loop (notifications)
+  clawstrTimer = setTimeout(clawstrLoop, STARTUP_DELAY_MS + 120_000);
 }
 
 /** Stop the heartbeat service */
@@ -622,6 +659,10 @@ export function stopHeartbeat(): void {
     clearTimeout(engagementTimer);
     engagementTimer = null;
   }
+  if (clawstrTimer) {
+    clearTimeout(clawstrTimer);
+    clawstrTimer = null;
+  }
   console.log("[heartbeat] Stopped");
 }
 
@@ -633,6 +674,8 @@ export function getHeartbeatStatus() {
     lastPostTime: lastPostTime ? new Date(lastPostTime).toISOString() : null,
     lastTopic,
     lastMood,
+    lastClawstrCheckTime: lastClawstrCheckTime ? new Date(lastClawstrCheckTime).toISOString() : null,
+    lastClawstrCount,
     nextBeatIn: timer ? "scheduled" : "none",
     engagementActive: engagementTimer !== null,
   };

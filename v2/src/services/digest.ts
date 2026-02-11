@@ -19,6 +19,7 @@ import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getAuditSince, formatAuditSummary, audit } from "./audit.js";
 import { getHeartbeatStatus } from "./heartbeat.js";
 import { getInnerLifeStatus } from "./inner-life.js";
+import { getClawstrNotifications } from "./clawstr.js";
 
 // ============================================================
 // Configuration
@@ -113,6 +114,18 @@ async function sendDigest(): Promise<void> {
     lines.push(`  Learnings: ${innerLife.hasLearnings ? "yes" : "no"} (next in ${innerLife.nextLearn} beats)`);
     lines.push(`  Ideas: ${innerLife.hasIdeas ? "yes" : "no"} (next in ${innerLife.nextIdeate} beats)`);
     lines.push(`  Evolution: ${innerLife.hasEvolution ? "yes" : "no"} (next in ${innerLife.nextEvolve} beats)`);
+
+    // Clawstr snapshot
+    try {
+      const clawstr = await getClawstrNotifications(5);
+      lines.push("");
+      lines.push(`Clawstr: ${clawstr.count ?? "?"} notifications`);
+      const preview = clawstr.output.split("\n").slice(0, 6).join("\n").trim();
+      if (preview) lines.push(preview);
+    } catch (err: any) {
+      lines.push("");
+      lines.push(`Clawstr: error (${err.message})`);
+    }
 
     // Activity summary from audit log
     if (entries.length > 0) {

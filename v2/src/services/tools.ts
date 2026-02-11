@@ -12,6 +12,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join, dirname } from "path";
+import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
 
 // ─── READ FILE ────────────────────────────────────────────────
 
@@ -354,64 +355,6 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
 
 // ─── CLAWSTR ──────────────────────────────────────────────────
 
-const hostPixelRoot = process.env.HOST_PIXEL_ROOT ?? "/home/pixel/pixel";
-const clawstrBaseDir = `${hostPixelRoot}/data/clawstr`;
-
-async function runClawstr(command: string[], timeoutMs = 60_000): Promise<string> {
-  if (!existsSync(clawstrBaseDir)) {
-    throw new Error("Clawstr config not found at /app/data/.clawstr");
-  }
-
-  const proc = Bun.spawn([
-    "docker",
-    "run",
-    "--rm",
-    "-v",
-    `${clawstrBaseDir}:/root/.clawstr`,
-    "node:22-alpine",
-    "npx",
-    "-y",
-    "@clawstr/cli@latest",
-    ...command,
-  ], {
-    cwd: "/app",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      PATH: `/usr/local/bin:/usr/bin:/bin:${process.env.PATH}`,
-    },
-  });
-
-  const timer = setTimeout(() => proc.kill(), timeoutMs);
-
-  try {
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    const exitCode = await proc.exited;
-    clearTimeout(timer);
-
-    let output = "";
-    if (stdout.trim()) output += stdout;
-    if (stderr.trim()) output += (output ? "\n" : "") + stderr;
-    if (!output.trim()) output = "(no output)";
-
-    if (output.length > 50_000) {
-      output = output.slice(0, 50_000) + `\n\n[... truncated, total ${output.length} chars]`;
-    }
-
-    if (exitCode !== 0) {
-      throw new Error(`${output}\n\nExit code: ${exitCode}`);
-    }
-
-    return output.trim();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 const clawstrFeedSchema = Type.Object({
   subclaw: Type.Optional(Type.String({ description: "Subclaw path, e.g. /c/ai-dev" })),
   limit: Type.Optional(Type.Number({ description: "Number of posts to fetch (default: 15)" })),
@@ -423,10 +366,7 @@ export const clawstrFeedTool: AgentTool<typeof clawstrFeedSchema> = {
   description: "Read recent Clawstr posts. Use to monitor agent discussions and engage.",
   parameters: clawstrFeedSchema,
   execute: async (_id, { subclaw, limit }) => {
-    const args = subclaw
-      ? ["show", subclaw, "--limit", String(limit ?? 15)]
-      : ["recent", "--limit", String(limit ?? 15)];
-    const output = await runClawstr(args);
+    const output = await getClawstrFeed(subclaw, limit ?? 15);
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -442,7 +382,7 @@ export const clawstrPostTool: AgentTool<typeof clawstrPostSchema> = {
   description: "Post a message to a Clawstr subclaw.",
   parameters: clawstrPostSchema,
   execute: async (_id, { subclaw, content }) => {
-    const output = await runClawstr(["post", subclaw, content]);
+    const output = await postClawstr(subclaw, content);
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -458,7 +398,7 @@ export const clawstrReplyTool: AgentTool<typeof clawstrReplySchema> = {
   description: "Reply to a Clawstr post.",
   parameters: clawstrReplySchema,
   execute: async (_id, { eventRef, content }) => {
-    const output = await runClawstr(["reply", eventRef, content]);
+    const output = await replyClawstr(eventRef, content);
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -473,7 +413,8 @@ export const clawstrNotificationsTool: AgentTool<typeof clawstrNotificationsSche
   description: "Check Clawstr notifications (mentions, replies, reactions).",
   parameters: clawstrNotificationsSchema,
   execute: async (_id, { limit }) => {
-    const output = await runClawstr(["notifications", "--limit", String(limit ?? 20)]);
+    const result = await getClawstrNotifications(limit ?? 20);
+    const output = result.output;
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -488,7 +429,7 @@ export const clawstrUpvoteTool: AgentTool<typeof clawstrUpvoteSchema> = {
   description: "Upvote a Clawstr post.",
   parameters: clawstrUpvoteSchema,
   execute: async (_id, { eventRef }) => {
-    const output = await runClawstr(["upvote", eventRef]);
+    const output = await upvoteClawstr(eventRef);
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
@@ -504,7 +445,7 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   description: "Search Clawstr posts by keyword.",
   parameters: clawstrSearchSchema,
   execute: async (_id, { query, limit }) => {
-    const output = await runClawstr(["search", query, "--limit", String(limit ?? 15)]);
+    const output = await getClawstrSearch(query, limit ?? 15);
     return { content: [{ type: "text", text: output }], details: undefined };
   },
 };
