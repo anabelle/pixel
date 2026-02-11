@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-11 | Session: 25
+> Last updated: 2026-02-11 | Session: 26
 
 ---
 
@@ -136,6 +136,8 @@ Human's critical intervention: "you are not including not even one way you can h
 **Session 24 (Inner life fix + landing page V2 + cleanup):** Two problems fixed this session. (A) **Inner life files not writing** — two-part root cause: (1) `data/` directory owned by root → fixed with `chown -R 1000:1000`, (2) `llmCall()` had no timeout and no error logging, causing REFLECT phase to hang silently forever. Fix: added 60-second timeout via `Promise.race()` in `llmCall()`, changed `runInnerLifeCycle()` from one monolithic try/catch to individual try/catch per phase (LEARN, REFLECT, IDEATE, EVOLVE) with explicit completion/failure logging. (B) **Stale landing page** — complete rewrite of `pixel-landing/src/app/[locale]/page.tsx` from V1 Syntropy-era content to V2. New sections: About (3 paragraphs), Capabilities grid (4 cards: conversation, art, services, self-evolving), Find Pixel platform grid (6 cards: Telegram, WhatsApp "coming soon", Nostr, Canvas, HTTP API, GitHub), Value for Value (Lightning + Bitcoin addresses), Live Canvas Stats. Deleted 8 stale V1 files: SyntropyThoughtStream, SyntropyAuditLog, SyntropyContinuity components + audit/syntropy/continuity/metrics API routes + memories page. Removed Syntropy volume mounts from parent docker-compose.yml. Resolved git merge conflict in submodule (V1 rebase conflict vs V2 stash). Both repos committed and pushed. Parent commit: `d7ede02`, submodule commit: `9a8c958`. Inner life verified running (cycle 1 completed, LEARN fires at cycle 2, ~79 min heartbeat interval).
 
 **Session 25 (Model upgrade):** Upgraded V2 model to **Gemini 3 Flash** (`gemini-3-flash-preview`) and verified `/api/chat` response. Updated `v2/docker-compose.yml` and `.env` (`OPENAI_LARGE_MODEL`).
+
+**Session 26 (Autonomy + engagement rebuild):** Rebuilt Nostr engagement to V1 parity and beyond. Added Primal trending feed integration (24h + most-zapped) with jittered queue and quote-repost chance. Added Nostr notifications loop (replies + reactions), NIP-57 zap thanks, art discovery follow loop, low-quality unfollow loop, art trend report, and community spotlight. Added reaction + image ingestion in Telegram and vision support across Telegram/Nostr/Clawstr. Added group lore summaries and dynamic context injection. Added job system (`/api/job`, `/api/jobs`, daily ecosystem report). Added revenue-goal loop (5,000 sats/week) to scale engagement. Added idea garden (V1-style) with auto-harvest into projects and weekly idea jobs. Added host stability tooling: earlyoom, log rotation, +2GB swap, daily disk monitor, and raised web memory. Verified reboot stability.
 
 **V2 file inventory (15 source files, ~3200 lines):**
 | File | Lines | Purpose |
