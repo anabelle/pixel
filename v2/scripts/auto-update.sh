@@ -42,8 +42,17 @@ if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
   exit 0
 fi
 
-log "UPDATE: pulling latest changes"
-git pull --ff-only
+# Check if remote is ahead of local (we're behind)
+# If local is ahead of remote, don't rebuild
+if git merge-base --is-ancestor HEAD @{u}; then
+  # HEAD is ancestor of upstream, meaning upstream has new commits
+  log "UPDATE: origin is ahead, pulling latest changes"
+  git pull --ff-only
+else
+  # Local has commits that remote doesn't (or diverged)
+  log "SKIP: local is ahead of origin (commits not pushed)"
+  exit 0
+fi
 
 log "UPDATE: rebuilding pixel container"
 docker compose -f v2/docker-compose.yml up -d --build pixel
