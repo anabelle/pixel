@@ -46,6 +46,7 @@ export type AuditType =
   | "engagement_reply"
   | "engagement_check"
   | "engagement_error"
+  | "zap_thanks"
   // Inner life
   | "inner_life_learn"
   | "inner_life_reflect"

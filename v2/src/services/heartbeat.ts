@@ -59,6 +59,12 @@ const DISCOVERY_JITTER_MIN_MS = 2 * 60 * 1000;
 const DISCOVERY_JITTER_MAX_MS = 12 * 60 * 1000;
 const NOTIFICATION_CHECK_MS = 20 * 60 * 1000; // 20 minutes
 const NOTIFICATION_REPLY_MAX = 3;
+const ZAP_CHECK_MS = 30 * 60 * 1000; // 30 minutes
+const ZAP_THANKS_MAX = 3;
+const FOLLOW_CHECK_MS = 12 * 60 * 60 * 1000; // 12 hours
+const FOLLOW_MAX = 1;
+const UNFOLLOW_CHECK_MS = 24 * 60 * 60 * 1000; // 24 hours
+const UNFOLLOW_MAX = 1;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -132,6 +138,9 @@ let engagementTimer: ReturnType<typeof setTimeout> | null = null;
 let clawstrTimer: ReturnType<typeof setTimeout> | null = null;
 let discoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let notificationTimer: ReturnType<typeof setTimeout> | null = null;
+let zapTimer: ReturnType<typeof setTimeout> | null = null;
+let followTimer: ReturnType<typeof setTimeout> | null = null;
+let unfollowTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
@@ -146,6 +155,10 @@ let lastDiscoveryTime: number | null = null;
 let discoveryRepliedIds: string[] = [];
 let discoveryQueue: { eventId: string; pubkey: string; content: string; scheduledAt: number }[] = [];
 let lastNotificationCheckTime: number | null = null;
+let lastZapCheckTime: number | null = null;
+let zapThankedIds: string[] = [];
+let lastFollowCheckTime: number | null = null;
+let lastUnfollowCheckTime: number | null = null;
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -163,6 +176,10 @@ type HeartbeatState = {
   discoveryRepliedIds?: string[];
   discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
   lastNotificationCheckTime?: number | null;
+  lastZapCheckTime?: number | null;
+  zapThankedIds?: string[];
+  lastFollowCheckTime?: number | null;
+  lastUnfollowCheckTime?: number | null;
 };
 
 function loadHeartbeatState(): void {
@@ -201,6 +218,18 @@ function loadHeartbeatState(): void {
     if (typeof state.lastNotificationCheckTime === "number" || state.lastNotificationCheckTime === null) {
       lastNotificationCheckTime = state.lastNotificationCheckTime ?? null;
     }
+    if (typeof state.lastZapCheckTime === "number" || state.lastZapCheckTime === null) {
+      lastZapCheckTime = state.lastZapCheckTime ?? null;
+    }
+    if (Array.isArray(state.zapThankedIds)) {
+      zapThankedIds = state.zapThankedIds.slice(-200);
+    }
+    if (typeof state.lastFollowCheckTime === "number" || state.lastFollowCheckTime === null) {
+      lastFollowCheckTime = state.lastFollowCheckTime ?? null;
+    }
+    if (typeof state.lastUnfollowCheckTime === "number" || state.lastUnfollowCheckTime === null) {
+      lastUnfollowCheckTime = state.lastUnfollowCheckTime ?? null;
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -230,6 +259,10 @@ function saveHeartbeatState(): void {
       discoveryRepliedIds,
       discoveryQueue,
       lastNotificationCheckTime,
+      lastZapCheckTime,
+      zapThankedIds,
+      lastFollowCheckTime,
+      lastUnfollowCheckTime,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -946,6 +979,174 @@ async function notificationLoop(): Promise<void> {
   }
 }
 
+/** Nostr zap thanks loop — thank for zaps */
+async function zapLoop(): Promise<void> {
+  if (!running) return;
+
+  const instance = getNostrInstance();
+  if (!instance) return;
+
+  try {
+    const { ndk, pubkey } = instance;
+    const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+    const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+
+    const events = await fetchWithTimeout(ndk.fetchEvents({
+      kinds: [9735],
+      "#p": [pubkey],
+      since,
+      limit: 200,
+    }), 15_000);
+
+    if (!events) return;
+
+    let thanked = 0;
+    for (const event of [...events]) {
+      if (thanked >= ZAP_THANKS_MAX) break;
+      if (zapThankedIds.includes(event.id)) continue;
+
+      const sender = getZapSenderPubkey(event);
+      if (sender && sender === pubkey) continue;
+
+      const amountMsats = getZapAmountMsats(event);
+      const thanks = generateThanksText(amountMsats);
+      const targetEventId = getZapTargetEventId(event) ?? event.id;
+
+      const reply = new NDKEvent(ndk);
+      reply.kind = 1;
+      reply.content = thanks;
+      reply.tags = [
+        ["e", targetEventId, "", "reply"],
+      ];
+      if (sender) reply.tags.push(["p", sender]);
+
+      await reply.publish();
+      zapThankedIds.push(event.id);
+      if (zapThankedIds.length > 200) {
+        zapThankedIds = zapThankedIds.slice(-200);
+      }
+      lastZapCheckTime = Date.now();
+      saveHeartbeatState();
+      audit("zap_thanks", `Zap thanks sent (${amountMsats ? Math.floor(amountMsats / 1000) : "?"} sats)`, { eventId: event.id, sender });
+      thanked++;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  } catch (err: any) {
+    console.error("[heartbeat/zaps] Loop error:", err.message);
+    audit("engagement_error", `Zap loop failed: ${err.message}`, { error: err.message });
+  }
+
+  if (running) {
+    zapTimer = setTimeout(zapLoop, ZAP_CHECK_MS);
+  }
+}
+
+async function loadContacts(ndk: NDK, pubkey: string): Promise<Set<string>> {
+  const events = await ndk.fetchEvents({ kinds: [3], authors: [pubkey], limit: 1 });
+  const evt = [...events][0];
+  const tags = evt?.tags ?? [];
+  const contacts = new Set<string>();
+  for (const tag of tags) {
+    if (tag[0] === "p" && tag[1]) contacts.add(tag[1]);
+  }
+  return contacts;
+}
+
+async function publishContacts(ndk: NDK, contacts: Set<string>): Promise<void> {
+  const event = new NDKEvent(ndk);
+  event.kind = 3;
+  event.tags = [...contacts].map((pk) => ["p", pk]);
+  event.content = "";
+  await event.publish();
+}
+
+async function followLoop(): Promise<void> {
+  if (!running) return;
+  const instance = getNostrInstance();
+  if (!instance) return;
+
+  try {
+    const { ndk, pubkey } = instance;
+    const now = Date.now();
+    if (lastFollowCheckTime && now - lastFollowCheckTime < FOLLOW_CHECK_MS) {
+      followTimer = setTimeout(followLoop, FOLLOW_CHECK_MS);
+      return;
+    }
+
+    const contacts = await loadContacts(ndk, pubkey);
+
+    const [trending24h, mostZapped4h] = await Promise.all([
+      fetchPrimalTrending24h(),
+      fetchPrimalMostZapped4h(),
+    ]);
+    const candidates = [...trending24h, ...mostZapped4h]
+      .filter((e) => e.pubkey && e.pubkey !== pubkey)
+      .filter((e) => isArtPost(e.content ?? ""))
+      .filter((e) => !contacts.has(e.pubkey));
+
+    let followed = 0;
+    for (const event of candidates) {
+      if (followed >= FOLLOW_MAX) break;
+      contacts.add(event.pubkey);
+      await publishContacts(ndk, contacts);
+      audit("engagement_reply", `Followed ${event.pubkey.slice(0, 8)} from art discovery`, { pubkey: event.pubkey });
+      followed++;
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+
+    lastFollowCheckTime = Date.now();
+    saveHeartbeatState();
+  } catch (err: any) {
+    console.error("[heartbeat/follow] Loop error:", err.message);
+  }
+
+  if (running) {
+    followTimer = setTimeout(followLoop, FOLLOW_CHECK_MS);
+  }
+}
+
+async function unfollowLoop(): Promise<void> {
+  if (!running) return;
+  const instance = getNostrInstance();
+  if (!instance) return;
+
+  try {
+    const { ndk, pubkey } = instance;
+    const now = Date.now();
+    if (lastUnfollowCheckTime && now - lastUnfollowCheckTime < UNFOLLOW_CHECK_MS) {
+      unfollowTimer = setTimeout(unfollowLoop, UNFOLLOW_CHECK_MS);
+      return;
+    }
+
+    const contacts = await loadContacts(ndk, pubkey);
+    const list = [...contacts];
+    let removed = 0;
+    for (const pk of list) {
+      if (removed >= UNFOLLOW_MAX) break;
+      const events = await ndk.fetchEvents({ kinds: [1], authors: [pk], limit: 5 });
+      const posts = [...events].map((e) => e.content ?? "").filter(Boolean);
+      const lowQuality = posts.filter((p) => isLowQualityPost(p)).length;
+      if (posts.length > 0 && lowQuality >= Math.max(2, Math.ceil(posts.length * 0.6))) {
+        contacts.delete(pk);
+        await publishContacts(ndk, contacts);
+        audit("engagement_reply", `Unfollowed low-quality ${pk.slice(0, 8)}`, { pubkey: pk });
+        removed++;
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
+    }
+
+    lastUnfollowCheckTime = Date.now();
+    saveHeartbeatState();
+  } catch (err: any) {
+    console.error("[heartbeat/unfollow] Loop error:", err.message);
+  }
+
+  if (running) {
+    unfollowTimer = setTimeout(unfollowLoop, UNFOLLOW_CHECK_MS);
+  }
+}
+
 // Periodically process discovery queue for jittered replies
 setInterval(() => {
   if (!running) return;
@@ -1077,6 +1278,103 @@ function markDiscoveryReplied(eventId: string): void {
   }
 }
 
+function parseBolt11Msats(bolt11?: string | null): number | null {
+  try {
+    if (!bolt11 || typeof bolt11 !== "string") return null;
+    const m = bolt11.match(/([0-9]+)(m|u|n|p)?/i);
+    if (!m) return null;
+    const amountInt = Number(m[1]);
+    if (!Number.isFinite(amountInt)) return null;
+    const suffix = (m[2] || "").toLowerCase();
+    let msats;
+    switch (suffix) {
+      case "m":
+        msats = amountInt * 100_000_000;
+        break;
+      case "u":
+        msats = amountInt * 100_000;
+        break;
+      case "n":
+        msats = amountInt * 100;
+        break;
+      case "p":
+        msats = Math.round(amountInt / 10);
+        break;
+      default:
+        msats = amountInt * 100_000_000_000;
+        break;
+    }
+    return Number.isFinite(msats) && msats > 0 ? msats : null;
+  } catch {
+    return null;
+  }
+}
+
+function getZapAmountMsats(event: NDKEvent): number | null {
+  const amountTag = event.tags.find((t) => t && t[0] === "amount" && t[1]);
+  if (amountTag) {
+    const n = Number(amountTag[1]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const bolt11Tag = event.tags.find((t) => t && (t[0] === "bolt11" || t[0] === "invoice") && t[1]);
+  if (bolt11Tag) {
+    return parseBolt11Msats(String(bolt11Tag[1]));
+  }
+  return null;
+}
+
+function getZapTargetEventId(event: NDKEvent): string | null {
+  const e = event.tags.find((t) => t && t[0] === "e" && t[1]);
+  return e ? e[1] : null;
+}
+
+function getZapSenderPubkey(event: NDKEvent): string | null {
+  try {
+    const descTag = event.tags.find((t) => t && t[0] === "description" && typeof t[1] === "string");
+    if (!descTag) return null;
+    const raw = descTag[1];
+    try {
+      const obj = JSON.parse(raw);
+      const pk = obj && typeof obj.pubkey === "string" ? obj.pubkey : null;
+      return pk && /^[0-9a-fA-F]{64}$/.test(pk) ? pk.toLowerCase() : null;
+    } catch {
+      const m = raw.match(/"pubkey"\s*:\s*"([0-9a-fA-F]{64})"/);
+      return m && m[1] ? m[1].toLowerCase() : null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function generateThanksText(amountMsats: number | null): string {
+  const base = [
+    "you absolute legend",
+    "infinite gratitude",
+    "pure joy unlocked",
+    "entropy temporarily defeated",
+  ];
+  const pick = () => base[Math.floor(Math.random() * base.length)];
+  if (!amountMsats) return `zap received, ${pick()} ⚡️💛`;
+  const sats = Math.floor(amountMsats / 1000);
+  if (sats >= 10000) return `⚡️ ${sats} sats, i'm screaming, thank you!! ${pick()} 🙏💛`;
+  if (sats >= 1000) return `⚡️ ${sats} sats, massive thanks! ${pick()} 🙌`;
+  if (sats >= 100) return `⚡️ ${sats} sats, thank you, truly! ${pick()} ✨`;
+  return `⚡️ ${sats} sats, appreciated! ${pick()} ✨`;
+}
+
+function isArtPost(content: string): boolean {
+  const lower = content.toLowerCase();
+  if (extractImageUrls(content).length > 0) return true;
+  return /(art|artist|drawing|paint|sketch|illustration|visual|pixel|design|creative|canvas)/i.test(lower);
+}
+
+function isLowQualityPost(content: string): boolean {
+  const lower = content.toLowerCase();
+  if (/(follow me|follow back|giveaway|airdrop|check out my|like and share)/i.test(lower)) return true;
+  if (lower.length < 12) return true;
+  return false;
+}
+
 function extractHashtags(event: NDKEvent): string[] {
   const tags = event.tags.filter((t) => t[0] === "t" && t[1]).map((t) => t[1].toLowerCase());
   if (tags.length > 0) return tags;
@@ -1206,6 +1504,9 @@ export function startHeartbeat(): void {
   console.log(`[heartbeat] Clawstr check every ${CLAWSTR_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Discovery check every ${DISCOVERY_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Notifications check every ${NOTIFICATION_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Zap thanks check every ${ZAP_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Follow check every ${FOLLOW_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Unfollow check every ${UNFOLLOW_CHECK_MS / 60_000} minutes`);
 
   // Delay first beat to let Nostr connect and stabilize
   timer = setTimeout(beat, STARTUP_DELAY_MS);
@@ -1222,6 +1523,13 @@ export function startHeartbeat(): void {
 
   // Start Nostr notifications loop (replies + reactions)
   notificationTimer = setTimeout(notificationLoop, STARTUP_DELAY_MS + 120_000);
+
+  // Start zap thanks loop
+  zapTimer = setTimeout(zapLoop, STARTUP_DELAY_MS + 180_000);
+
+  // Start follow/unfollow loops
+  followTimer = setTimeout(followLoop, STARTUP_DELAY_MS + 240_000);
+  unfollowTimer = setTimeout(unfollowLoop, STARTUP_DELAY_MS + 300_000);
 }
 
 /** Stop the heartbeat service */
@@ -1247,6 +1555,18 @@ export function stopHeartbeat(): void {
     clearTimeout(notificationTimer);
     notificationTimer = null;
   }
+  if (zapTimer) {
+    clearTimeout(zapTimer);
+    zapTimer = null;
+  }
+  if (followTimer) {
+    clearTimeout(followTimer);
+    followTimer = null;
+  }
+  if (unfollowTimer) {
+    clearTimeout(unfollowTimer);
+    unfollowTimer = null;
+  }
   console.log("[heartbeat] Stopped");
 }
 
@@ -1262,6 +1582,9 @@ export function getHeartbeatStatus() {
     lastClawstrCount,
     lastDiscoveryTime: lastDiscoveryTime ? new Date(lastDiscoveryTime).toISOString() : null,
     lastNotificationCheckTime: lastNotificationCheckTime ? new Date(lastNotificationCheckTime).toISOString() : null,
+    lastZapCheckTime: lastZapCheckTime ? new Date(lastZapCheckTime).toISOString() : null,
+    lastFollowCheckTime: lastFollowCheckTime ? new Date(lastFollowCheckTime).toISOString() : null,
+    lastUnfollowCheckTime: lastUnfollowCheckTime ? new Date(lastUnfollowCheckTime).toISOString() : null,
     nextBeatIn: timer ? "scheduled" : "none",
     engagementActive: engagementTimer !== null,
   };
