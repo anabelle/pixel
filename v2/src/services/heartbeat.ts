@@ -29,7 +29,7 @@ import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
-import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr } from "./clawstr.js";
+import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr, isSelfPost } from "./clawstr.js";
 import { extractImageUrls, fetchImages } from "./vision.js";
 import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
 
@@ -1834,6 +1834,13 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
       }
 
       const post = await getClawstrPost(id);
+      
+      // Don't reply to self
+      if (isSelfPost(post)) {
+        markClawstrReplied(id);
+        continue;
+      }
+      
       const postLower = post.toLowerCase();
       if (postLower.includes("/c/clawnch") || postLower.includes("!clawnch")) {
         markClawstrReplied(id);

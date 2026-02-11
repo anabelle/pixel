@@ -106,4 +106,24 @@ export function extractNotificationIds(output: string): string[] {
   return Array.from(ids);
 }
 
+// Pixel's pubkey - don't reply to self
+const PIXEL_PUBKEY = "5c22920b9761496e931f53a382c2def2ce9d24ebf0961603eda79f1b24b9f2bf";
+
+export function isSelfPost(output: string): boolean {
+  // Check if the post is from Pixel by looking for his pubkey in the output
+  // Format: "💬 <pubkey> • <timestamp>" or similar patterns
+  const lines = output.split("\n");
+  for (const line of lines) {
+    // Look for pubkey pattern in the line
+    if (line.includes(PIXEL_PUBKEY.slice(0, 16))) {
+      return true;
+    }
+    // Also check for npub format
+    if (line.includes("npub1ts3fyzuhv9ykaycl2w3c9sk77t8f6f8t7ztpvqld5703kf9e72lsnsyjh6")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export { runClawstrCommand };
