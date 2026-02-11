@@ -23,7 +23,7 @@ services:
       - DATA_DIR=/app/conversations
       - CHARACTER_PATH=/app/character.md
       - AI_PROVIDER=google
-      - AI_MODEL=gemini-2.5-flash
+      - AI_MODEL=gemini-3-flash-preview
       - HOST_PIXEL_ROOT=/home/pixel/pixel
     volumes:
       - ./conversations:/app/conversations
