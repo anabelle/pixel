@@ -100,7 +100,7 @@ export async function startNostr(): Promise<void> {
     return;
   }
 
-  const relayUrls = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social")
+  const relayUrls = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social,wss://relay.primal.net")
     .split(",")
     .map((r) => r.trim())
     .filter(Boolean);

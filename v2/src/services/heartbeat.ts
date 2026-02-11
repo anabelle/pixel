@@ -50,9 +50,12 @@ const TOPIC_HISTORY_LIMIT = 6;
 const CANVAS_TOPIC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CLAWSTR_REPLY_HISTORY_LIMIT = 50;
 const DISCOVERY_CHECK_MS = 6 * 60 * 60 * 1000; // 6 hours
-const DISCOVERY_REPLY_MAX = 3;
+const DISCOVERY_REPLY_MAX = 4;
 const DISCOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
 const DISCOVERY_HISTORY_LIMIT = 300;
+const DISCOVERY_QUEUE_LIMIT = 12;
+const DISCOVERY_JITTER_MIN_MS = 2 * 60 * 1000;
+const DISCOVERY_JITTER_MAX_MS = 12 * 60 * 1000;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -137,6 +140,7 @@ let topicHistory: Topic[] = [];
 let lastCanvasPostTime: number | null = null;
 let lastDiscoveryTime: number | null = null;
 let discoveryRepliedIds: string[] = [];
+let discoveryQueue: { eventId: string; pubkey: string; content: string; scheduledAt: number }[] = [];
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -152,6 +156,7 @@ type HeartbeatState = {
   clawstrReplyHistory?: string[];
   lastDiscoveryTime?: number | null;
   discoveryRepliedIds?: string[];
+  discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
 };
 
 function loadHeartbeatState(): void {
@@ -184,6 +189,9 @@ function loadHeartbeatState(): void {
     if (Array.isArray(state.discoveryRepliedIds)) {
       discoveryRepliedIds = state.discoveryRepliedIds.slice(-DISCOVERY_HISTORY_LIMIT);
     }
+    if (Array.isArray(state.discoveryQueue)) {
+      discoveryQueue = state.discoveryQueue.slice(-DISCOVERY_QUEUE_LIMIT);
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -211,6 +219,7 @@ function saveHeartbeatState(): void {
       lastCanvasPostTime,
       lastDiscoveryTime,
       discoveryRepliedIds,
+      discoveryQueue,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -808,58 +817,10 @@ async function discoveryLoop(): Promise<void> {
       if (e.content.length > 800) return false;
       return true;
     });
-
-    let replied = 0;
-    for (const event of candidates) {
-      if (replied >= DISCOVERY_REPLY_MAX) break;
-      if (lastDiscoveryTime && Date.now() - lastDiscoveryTime < DISCOVERY_COOLDOWN_MS && replied > 0) break;
-
-      const tagsHint = trendingTags.length > 0 ? `Trending topics: ${trendingTags.join(", ")}.` : "";
-      const prompt = [
-        "Engage a trending Nostr post with a brief, thoughtful reply. Add value, connect context, or ask a smart question.",
-        "Be concise (max 2-3 sentences). No hashtags. No emojis.",
-        tagsHint,
-        "Post:",
-        event.content,
-      ].join("\n");
-
-      const images = await fetchImages(extractImageUrls(event.content));
-      const response = await promptWithHistory(
-        { userId: `nostr-${event.pubkey}`, platform: "nostr" },
-        prompt,
-        images.length > 0 ? images : undefined
-      );
-
-      if (!response || response.includes("[SILENT]")) {
-        markDiscoveryReplied(event.id);
-        continue;
-      }
-
-      const reply = new NDKEvent(ndk);
-      reply.kind = 1;
-      reply.content = response;
-      reply.tags = [
-        ["e", event.id, "", "reply"],
-        ["p", event.pubkey],
-      ];
-      reply.tags.push(["e", event.id, "", "root"]);
-
-      await reply.publish();
-      await publishReaction(ndk, event);
-
-      if (Math.random() < 0.35) {
-        await publishRepost(ndk, event);
-      }
-
-      markReplied(event.id);
-      markDiscoveryReplied(event.id);
-      lastDiscoveryTime = Date.now();
-      saveHeartbeatState();
-      audit("engagement_reply", `Discovery replied to ${event.pubkey.slice(0, 8)}...`, { eventId: event.id, preview: response.slice(0, 120) });
-
-      replied++;
-      await new Promise((r) => setTimeout(r, 4_000));
-    }
+    enqueueDiscoveryCandidates(candidates, trendingTags);
+    processDiscoveryQueue(trendingTags).catch((err) => {
+      console.error("[heartbeat/discovery] Queue error:", err.message);
+    });
   } catch (err: any) {
     console.error("[heartbeat/discovery] Loop error:", err.message);
     audit("engagement_error", `Discovery loop failed: ${err.message}`, { error: err.message });
@@ -868,6 +829,99 @@ async function discoveryLoop(): Promise<void> {
   if (running) {
     discoveryTimer = setTimeout(discoveryLoop, DISCOVERY_CHECK_MS);
   }
+}
+
+// Periodically process discovery queue for jittered replies
+setInterval(() => {
+  if (!running) return;
+  processDiscoveryQueue([]).catch(() => {});
+}, 60_000);
+
+function enqueueDiscoveryCandidates(candidates: NDKEvent[], trendingTags: string[]): void {
+  const now = Date.now();
+  const existing = new Set(discoveryQueue.map((item) => item.eventId));
+  let added = 0;
+
+  for (const event of candidates) {
+    if (added >= DISCOVERY_REPLY_MAX) break;
+    if (existing.has(event.id)) continue;
+    if (lastDiscoveryTime && now - lastDiscoveryTime < DISCOVERY_COOLDOWN_MS && added > 0) break;
+
+    const jitter = DISCOVERY_JITTER_MIN_MS + Math.floor(Math.random() * (DISCOVERY_JITTER_MAX_MS - DISCOVERY_JITTER_MIN_MS));
+    const scheduledAt = now + jitter + added * 2_000;
+
+    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, scheduledAt });
+    added++;
+  }
+
+  if (discoveryQueue.length > DISCOVERY_QUEUE_LIMIT) {
+    discoveryQueue = discoveryQueue.slice(-DISCOVERY_QUEUE_LIMIT);
+  }
+
+  if (added > 0) saveHeartbeatState();
+}
+
+async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
+  if (discoveryQueue.length === 0) return;
+  const now = Date.now();
+  const nextIndex = discoveryQueue.findIndex((item) => item.scheduledAt <= now);
+  if (nextIndex === -1) return;
+
+  const instance = getNostrInstance();
+  if (!instance) return;
+  const { ndk } = instance;
+
+  const item = discoveryQueue.splice(nextIndex, 1)[0];
+  saveHeartbeatState();
+
+  if (discoveryRepliedIds.includes(item.eventId) || hasRepliedTo(item.eventId)) return;
+
+  const tagsHint = trendingTags.length > 0 ? `Trending topics: ${trendingTags.join(", ")}.` : "";
+  const prompt = [
+    "Engage a trending Nostr post with a brief, thoughtful reply. Add value, connect context, or ask a smart question.",
+    "Be concise (max 2-3 sentences). No hashtags. No emojis.",
+    tagsHint,
+    "Post:",
+    item.content,
+  ].join("\n");
+
+  const images = await fetchImages(extractImageUrls(item.content));
+  const response = await promptWithHistory(
+    { userId: `nostr-${item.pubkey}`, platform: "nostr" },
+    prompt,
+    images.length > 0 ? images : undefined
+  );
+
+  if (!response || response.includes("[SILENT]")) {
+    markDiscoveryReplied(item.eventId);
+    return;
+  }
+
+  const eventStub = new NDKEvent(ndk);
+  eventStub.id = item.eventId;
+  eventStub.pubkey = item.pubkey;
+
+  const reply = new NDKEvent(ndk);
+  reply.kind = 1;
+  reply.content = response;
+  reply.tags = [
+    ["e", item.eventId, "", "reply"],
+    ["p", item.pubkey],
+    ["e", item.eventId, "", "root"],
+  ];
+
+  await reply.publish();
+  await publishReaction(ndk, eventStub);
+
+  if (Math.random() < 0.35) {
+    await publishRepost(ndk, eventStub);
+  }
+
+  markReplied(item.eventId);
+  markDiscoveryReplied(item.eventId);
+  lastDiscoveryTime = Date.now();
+  saveHeartbeatState();
+  audit("engagement_reply", `Discovery replied to ${item.pubkey.slice(0, 8)}...`, { eventId: item.eventId, preview: response.slice(0, 120) });
 }
 
 function markClawstrReplied(eventId: string): void {
