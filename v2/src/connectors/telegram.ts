@@ -20,15 +20,15 @@ let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
 const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
-const groupBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null }>();
+const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string }>();
 const GROUP_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const GROUP_PING_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const GROUP_PING_CHECK_MS = 10 * 60 * 1000; // 10 minutes
 const REACTION_REPLY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
 const groupReactionReply = new Map<number, { lastReply: number | null; messageIds: Set<number> }>();
-const GROUP_BATCH_WINDOW_MS = 8000; // 8 seconds
-const GROUP_BATCH_MAX = 6;
-const GROUP_BATCH_MAX_CHARS = 1200;
+const CHAT_BATCH_WINDOW_MS = 20_000; // 20 seconds
+const CHAT_BATCH_MAX = 8;
+const CHAT_BATCH_MAX_CHARS = 1600;
 
 /** Owner's Telegram chat ID — receives proactive notifications */
 const OWNER_CHAT_ID = process.env.OWNER_TELEGRAM_ID ?? "";
@@ -140,38 +140,9 @@ export async function startTelegram(): Promise<void> {
       groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     }
 
-    if (isGroupChat) {
-      appendToLog(conversationId, formatted, "", "telegram");
-      queueGroupMessage(ctx.chat.id, conversationId, formatted);
-      return;
-    }
-
-    try {
-      // Show typing indicator
-      await ctx.replyWithChatAction("typing");
-
-      const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram" },
-        formatted
-      );
-
-      if (!response || response.includes("[SILENT]")) {
-        return;
-      }
-
-      // Telegram message limit is 4096 chars. Split if needed.
-      if (response.length <= 4096) {
-        await ctx.reply(response);
-      } else {
-        const chunks = splitMessage(response, 4096);
-        for (const chunk of chunks) {
-          await ctx.reply(chunk);
-        }
-      }
-    } catch (error: any) {
-      console.error(`[telegram] Error for ${conversationId}:`, error.message);
-      await ctx.reply("Something broke. I'll be back in a moment.").catch(() => {});
-    }
+    appendToLog(conversationId, formatted, "", "telegram");
+    queueChatMessage(ctx.chat.id, conversationId, formatted);
+    return;
   });
 
   // Handle photo messages (vision)
@@ -387,12 +358,12 @@ If not worth responding, output [SILENT].`;
   }, GROUP_PING_CHECK_MS);
 }
 
-function queueGroupMessage(chatId: number, conversationId: string, line: string): void {
-  const entry = groupBuffers.get(chatId) ?? { items: [], timer: null };
+function queueChatMessage(chatId: number, conversationId: string, line: string): void {
+  const entry = chatBuffers.get(chatId) ?? { items: [], timer: null, conversationId };
   entry.items.push(line);
 
-  if (entry.items.length > GROUP_BATCH_MAX) {
-    entry.items = entry.items.slice(-GROUP_BATCH_MAX);
+  if (entry.items.length > CHAT_BATCH_MAX) {
+    entry.items = entry.items.slice(-CHAT_BATCH_MAX);
   }
 
   if (entry.timer) {
@@ -400,33 +371,33 @@ function queueGroupMessage(chatId: number, conversationId: string, line: string)
   }
 
   entry.timer = setTimeout(() => {
-    flushGroupMessages(chatId, conversationId).catch((err) => {
-      console.error("[telegram] Group flush failed:", err.message);
+    flushChatMessages(chatId).catch((err) => {
+      console.error("[telegram] Chat flush failed:", err.message);
     });
-  }, GROUP_BATCH_WINDOW_MS);
+  }, CHAT_BATCH_WINDOW_MS);
 
-  groupBuffers.set(chatId, entry);
+  chatBuffers.set(chatId, entry);
 }
 
-async function flushGroupMessages(chatId: number, conversationId: string): Promise<void> {
-  const entry = groupBuffers.get(chatId);
+async function flushChatMessages(chatId: number): Promise<void> {
+  const entry = chatBuffers.get(chatId);
   if (!entry || entry.items.length === 0) return;
 
   const items = entry.items.slice();
   entry.items = [];
   entry.timer = null;
-  groupBuffers.set(chatId, entry);
+  chatBuffers.set(chatId, entry);
 
   const joined = items.join("\n");
-  const trimmed = joined.length > GROUP_BATCH_MAX_CHARS
-    ? joined.slice(-GROUP_BATCH_MAX_CHARS)
+  const trimmed = joined.length > CHAT_BATCH_MAX_CHARS
+    ? joined.slice(-CHAT_BATCH_MAX_CHARS)
     : joined;
 
   const prompt = `Recent group messages (batched):\n${trimmed}\n\nRespond once to the batch if useful. If nothing to add, output [SILENT].`;
 
   await botInstance?.api.sendChatAction(chatId, "typing");
   const response = await promptWithHistory(
-    { userId: conversationId, platform: "telegram" },
+    { userId: entry.conversationId, platform: "telegram" },
     prompt
   );
 
