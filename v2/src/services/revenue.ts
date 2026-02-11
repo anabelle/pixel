@@ -9,6 +9,8 @@ import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { desc, sql, eq } from "drizzle-orm";
 import { revenue } from "../db.js";
 import type * as schema from "../db.js";
+import { audit } from "./audit.js";
+import { alertOwner } from "./digest.js";
 
 // Will be set by initRevenue() from index.ts
 let db: PostgresJsDatabase<typeof schema> | null = null;
@@ -48,6 +50,8 @@ export async function recordRevenue(entry: RevenueEntry): Promise<void> {
       txHash: entry.txHash ?? null,
     });
     console.log(`[revenue] Recorded: ${entry.source} — ${entry.amountSats} sats`);
+    audit("revenue", `${entry.source}: ${entry.amountSats} sats`, { source: entry.source, amountSats: entry.amountSats, userId: entry.userId, description: entry.description });
+    alertOwner("revenue", `${entry.amountSats} sats from ${entry.source}${entry.description ? ` — ${entry.description}` : ""}`, { source: entry.source, amountSats: entry.amountSats }).catch(() => {});
   } catch (err: any) {
     console.error("[revenue] Failed to record:", err.message);
     // Still log it even if DB fails

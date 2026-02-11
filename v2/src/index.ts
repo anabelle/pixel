@@ -21,6 +21,8 @@ import { initUsers, getUserStats } from "./services/users.js";
 import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
 import { l402 } from "./services/l402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
+import { audit, getRecentAudit } from "./services/audit.js";
+import { startDigest, alertOwner, getDigestStatus } from "./services/digest.js";
 
 // ============================================================
 // Configuration
@@ -52,6 +54,7 @@ app.get("/health", (c) => {
     memory: process.memoryUsage(),
     heartbeat: getHeartbeatStatus(),
     innerLife: getInnerLifeStatus(),
+    digest: getDigestStatus(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -199,6 +202,13 @@ app.get("/api/revenue", async (c) => {
   return c.json(stats);
 });
 
+/** Recent audit entries */
+app.get("/api/audit", (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const entries = getRecentAudit(Math.min(limit, 200));
+  return c.json({ entries, count: entries.length });
+});
+
 // ============================================================
 // L402-Gated Premium Endpoints
 // ============================================================
@@ -299,6 +309,7 @@ async function boot() {
   console.log("  PIXEL V2 — One brain, many doors.");
   console.log("=".repeat(60));
   console.log();
+  audit("boot", "Pixel V2 starting...");
 
   // Test database connection
   try {
@@ -388,6 +399,9 @@ async function boot() {
   // Start heartbeat AFTER Nostr (needs NDK instance)
   startHeartbeat();
 
+  // Start digest/notification service
+  startDigest();
+
   try {
     await startWhatsApp();
   } catch (err: any) {
@@ -396,6 +410,8 @@ async function boot() {
 
   console.log("[boot] Pixel V2 is alive.");
   console.log();
+  audit("boot", "Pixel V2 is alive — all services started");
+  alertOwner("boot", "Pixel V2 just booted — all services started").catch(() => {});
 }
 
 boot().catch((err) => {

@@ -26,6 +26,7 @@ import { getPixelModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
 import { getRevenueStats } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
+import { audit } from "./audit.js";
 
 // ============================================================
 // Configuration
@@ -320,6 +321,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
   // Check for [SILENT] response
   if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
     console.log(`[heartbeat] Agent chose silence on topic '${topic}' — nothing to post`);
+    audit("heartbeat_silent", `Chose silence on topic '${topic}' (mood: ${mood})`, { topic, mood });
     return null;
   }
 
@@ -397,15 +399,19 @@ async function checkAndReplyToMentions(): Promise<void> {
       since,
     };
 
-    const events = await ndk.fetchEvents(filter);
+    // Timeout helper — NDK fetchEvents can hang on slow relays
+    const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+
+    const events = await fetchWithTimeout(ndk.fetchEvents(filter), 15_000);
     if (!events || events.size === 0) return;
 
     // Also fetch our recent replies to check what we've already responded to
-    const ourReplies = await ndk.fetchEvents({
+    const ourReplies = await fetchWithTimeout(ndk.fetchEvents({
       kinds: [1],
       authors: [pubkey],
       since,
-    });
+    }), 15_000);
 
     // Build set of event IDs we've replied to (from shared tracker + on-chain check)
     const repliedTo = new Set<string>();
@@ -436,6 +442,7 @@ async function checkAndReplyToMentions(): Promise<void> {
 
     if (unreplied.length === 0) {
       console.log("[heartbeat/engage] No unreplied mentions found");
+      audit("engagement_check", "No unreplied mentions found");
       return;
     }
 
@@ -480,6 +487,7 @@ async function checkAndReplyToMentions(): Promise<void> {
         await reply.publish();
         markReplied(event.id);
         console.log(`[heartbeat/engage] Replied to ${event.pubkey.slice(0, 8)}...`);
+        audit("engagement_reply", `Replied to ${event.pubkey.slice(0, 8)} on Nostr`, { from: event.pubkey, contentPreview: event.content?.slice(0, 80), responsePreview: response?.slice(0, 80) });
 
         // Small delay between replies to avoid looking like spam
         await new Promise((r) => setTimeout(r, 5_000));
@@ -521,22 +529,29 @@ async function beat(): Promise<void> {
       if (published) {
         lastPostTime = Date.now();
         console.log(`[heartbeat] Posted: "${content.slice(0, 80)}${content.length > 80 ? "..." : ""}"`);
+        audit("heartbeat_post", content.slice(0, 120), { topic: lastTopic, mood: lastMood, beatNumber: heartbeatCount, contentLength: content.length });
       }
+    } else {
+      // generatePost returned null — either [SILENT] (already audited) or generation failed
     }
   } catch (err: any) {
     console.error("[heartbeat] Beat failed:", err.message);
+    audit("heartbeat_error", `Beat #${heartbeatCount} failed: ${err.message}`, { error: err.message });
   }
 
+  // Schedule next beat FIRST — inner life must never block the next heartbeat
+  scheduleNext();
+
   // Run inner life cycle (reflection, learning, ideation, evolution)
-  // Non-blocking — runs after the post, doesn't delay the next beat
+  // Master timeout ensures this never hangs, even if NDK or LLM calls stall
   try {
-    await runInnerLifeCycle();
+    const innerLifeTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Inner life cycle timed out after 120s")), 120_000)
+    );
+    await Promise.race([runInnerLifeCycle(), innerLifeTimeout]);
   } catch (err: any) {
     console.error("[heartbeat] Inner life cycle failed:", err.message);
   }
-
-  // Schedule next beat
-  scheduleNext();
 }
 
 /** Schedule the next heartbeat */

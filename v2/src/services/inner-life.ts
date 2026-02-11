@@ -28,6 +28,7 @@ import { getPixelModel, extractText, loadCharacter } from "../agent.js";
 import { getNostrInstance } from "../connectors/nostr.js";
 import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
+import { audit } from "./audit.js";
 
 
 // ============================================================
@@ -186,19 +187,23 @@ async function gatherNostrActivity(): Promise<string> {
   const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60; // last 6 hours
 
   try {
-    // Our recent posts
-    const ourPosts = await ndk.fetchEvents({
+    // Timeout helper — NDK fetchEvents can hang indefinitely on slow relays
+    const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+
+    // Our recent posts (15s timeout)
+    const ourPosts = await fetchWithTimeout(ndk.fetchEvents({
       kinds: [1],
       authors: [pubkey],
       since,
-    });
+    }), 15_000);
 
-    // Mentions of us
-    const mentions = await ndk.fetchEvents({
+    // Mentions of us (15s timeout)
+    const mentions = await fetchWithTimeout(ndk.fetchEvents({
       kinds: [1],
       "#p": [pubkey],
       since,
-    });
+    }), 15_000);
 
     const lines: string[] = [];
 
@@ -494,8 +499,10 @@ export async function runInnerLifeCycle(): Promise<void> {
     try {
       await phaseLearn();
       console.log("[inner-life] LEARN phase completed");
+      audit("inner_life_learn", `LEARN completed (cycle ${cycleCount})`);
     } catch (err: any) {
       console.error("[inner-life] LEARN phase failed:", err.message);
+      audit("inner_life_error", `LEARN failed: ${err.message}`, { phase: "learn", error: err.message });
     }
   }
 
@@ -504,8 +511,10 @@ export async function runInnerLifeCycle(): Promise<void> {
     try {
       await phaseReflect();
       console.log("[inner-life] REFLECT phase completed");
+      audit("inner_life_reflect", `REFLECT completed (cycle ${cycleCount})`);
     } catch (err: any) {
       console.error("[inner-life] REFLECT phase failed:", err.message);
+      audit("inner_life_error", `REFLECT failed: ${err.message}`, { phase: "reflect", error: err.message });
     }
   }
 
@@ -514,8 +523,10 @@ export async function runInnerLifeCycle(): Promise<void> {
     try {
       await phaseIdeate();
       console.log("[inner-life] IDEATE phase completed");
+      audit("inner_life_ideate", `IDEATE completed (cycle ${cycleCount})`);
     } catch (err: any) {
       console.error("[inner-life] IDEATE phase failed:", err.message);
+      audit("inner_life_error", `IDEATE failed: ${err.message}`, { phase: "ideate", error: err.message });
     }
   }
 
@@ -524,8 +535,10 @@ export async function runInnerLifeCycle(): Promise<void> {
     try {
       await phaseEvolve();
       console.log("[inner-life] EVOLVE phase completed");
+      audit("inner_life_evolve", `EVOLVE completed (cycle ${cycleCount})`);
     } catch (err: any) {
       console.error("[inner-life] EVOLVE phase failed:", err.message);
+      audit("inner_life_error", `EVOLVE failed: ${err.message}`, { phase: "evolve", error: err.message });
     }
   }
 }

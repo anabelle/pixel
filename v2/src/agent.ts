@@ -14,6 +14,7 @@ import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCom
 import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
 import { pixelTools } from "./services/tools.js";
+import { audit } from "./services/audit.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -246,6 +247,7 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
     if (memoryText && memoryText.trim().length > 10) {
       saveMemory(userId, memoryText.trim());
       console.log(`[agent] Memory saved for ${userId} (${memoryText.length} chars)`);
+      audit("memory_extraction", `Memory saved for ${userId} (${memoryText.length} chars)`, { userId, memoryLength: memoryText.length });
     }
   } catch (err: any) {
     console.error(`[agent] Memory extraction LLM call failed:`, err.message);
@@ -315,6 +317,7 @@ Be concise. This summary will be used as context for future conversations.`,
     if (summaryText) {
       saveCompactedContext(userId, summaryText, toKeep);
       console.log(`[agent] Context compacted for ${userId}: ${summaryText.length} char summary`);
+      audit("conversation_compaction", `Context compacted for ${userId} (${toSummarize.length} msgs summarized)`, { userId, summarized: toSummarize.length, summaryLength: summaryText.length });
     }
   } catch (err: any) {
     console.error(`[agent] Summary generation failed for ${userId}:`, err.message);

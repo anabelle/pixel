@@ -3,10 +3,77 @@
  *
  * Pattern: receive message → identify user → promptWithHistory → send response
  * Each Telegram user gets persistent conversation context via JSONL.
+ *
+ * Also exports sendTelegramMessage() for proactive notifications
+ * (heartbeat digests, audit alerts, revenue events, inner life updates).
  */
 
 import { Bot } from "grammy";
 import { promptWithHistory } from "../agent.js";
+
+// ============================================================
+// Module-level bot instance for proactive messaging
+// ============================================================
+
+let botInstance: Bot | null = null;
+let botUsername: string | null = null;
+let botId: number | null = null;
+
+/** Owner's Telegram chat ID — receives proactive notifications */
+const OWNER_CHAT_ID = process.env.OWNER_TELEGRAM_ID ?? "";
+
+/**
+ * Send a proactive message to a specific Telegram chat.
+ * Used by audit, digest, and notification services.
+ *
+ * @param chatId - Telegram chat ID (numeric string or number)
+ * @param text - Message text (supports Telegram markdown)
+ * @param parseMode - Optional parse mode ("Markdown" or "HTML")
+ */
+export async function sendTelegramMessage(
+  chatId: string | number,
+  text: string,
+  parseMode?: "Markdown" | "HTML"
+): Promise<boolean> {
+  if (!botInstance) return false;
+
+  try {
+    // Split long messages (Telegram limit is 4096 chars)
+    if (text.length <= 4096) {
+      await botInstance.api.sendMessage(chatId, text, {
+        parse_mode: parseMode,
+      });
+    } else {
+      const chunks = splitMessage(text, 4096);
+      for (const chunk of chunks) {
+        await botInstance.api.sendMessage(chatId, chunk, {
+          parse_mode: parseMode,
+        });
+      }
+    }
+    return true;
+  } catch (err: any) {
+    console.error(`[telegram] Failed to send message to ${chatId}:`, err.message);
+    return false;
+  }
+}
+
+/**
+ * Send a proactive message to the owner (human operator).
+ * Convenience wrapper — uses OWNER_TELEGRAM_ID from env.
+ */
+export async function notifyOwner(text: string, parseMode?: "Markdown" | "HTML"): Promise<boolean> {
+  if (!OWNER_CHAT_ID) {
+    console.log("[telegram] No OWNER_TELEGRAM_ID set, cannot notify owner");
+    return false;
+  }
+  return sendTelegramMessage(OWNER_CHAT_ID, text, parseMode);
+}
+
+/** Check if proactive messaging is available */
+export function canNotify(): boolean {
+  return botInstance !== null && OWNER_CHAT_ID !== "";
+}
 
 /** Start the Telegram bot connector */
 export async function startTelegram(): Promise<void> {
@@ -17,6 +84,7 @@ export async function startTelegram(): Promise<void> {
   }
 
   const bot = new Bot(token);
+  botInstance = bot; // Store for proactive messaging
 
   // /start command
   bot.command("start", async (ctx) => {
@@ -45,9 +113,27 @@ export async function startTelegram(): Promise<void> {
   bot.on("message:text", async (ctx) => {
     const userId = `tg-${ctx.from.id}`;
     const text = ctx.message.text;
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+
+    const isDirectMention = (): boolean => {
+      if (!botUsername) return false;
+      return text.includes(`@${botUsername}`);
+    };
+
+    const isReplyToBot = (): boolean => {
+      const replyTo = ctx.message.reply_to_message;
+      if (!replyTo || !botId) return false;
+      return replyTo.from?.id === botId;
+    };
 
     // Skip if no text or if it's a command (already handled above)
     if (!text || text.startsWith("/")) return;
+
+    // In group chats, only respond if mentioned or replied to
+    if (isGroupChat && !isDirectMention() && !isReplyToBot()) {
+      return;
+    }
 
     try {
       // Show typing indicator
@@ -87,6 +173,11 @@ export async function startTelegram(): Promise<void> {
   bot.start({
     onStart: (botInfo) => {
       console.log(`[telegram] Bot @${botInfo.username} started (polling)`);
+      botUsername = botInfo.username;
+      botId = botInfo.id;
+      if (OWNER_CHAT_ID) {
+        console.log(`[telegram] Owner notifications enabled (chat ${OWNER_CHAT_ID})`);
+      }
     },
   });
 

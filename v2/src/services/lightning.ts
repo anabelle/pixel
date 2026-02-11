@@ -155,7 +155,12 @@ export async function verifyPayment(
 ): Promise<{ paid: boolean; preimage?: string; amountSats?: number; description?: string }> {
   const cached = invoiceCache.get(paymentHash);
   if (!cached) {
-    console.log(`[lightning] No invoice cached for ${paymentHash.slice(0, 16)}...`);
+    // Only log once per hash to avoid spam during polling loops
+    if (!(verifyPayment as any).__warned?.has(paymentHash)) {
+      if (!(verifyPayment as any).__warned) (verifyPayment as any).__warned = new Set();
+      (verifyPayment as any).__warned.add(paymentHash);
+      console.log(`[lightning] No invoice cached for ${paymentHash.slice(0, 16)}... (suppressing further logs)`);
+    }
     return { paid: false };
   }
 
