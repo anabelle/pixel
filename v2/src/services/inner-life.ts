@@ -29,6 +29,7 @@ import { getNostrInstance } from "../connectors/nostr.js";
 import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
 import { audit } from "./audit.js";
+import { enqueueJob } from "./jobs.js";
 
 
 // ============================================================
@@ -52,6 +53,8 @@ const MAX_IDEAS_SIZE = 2000;
 const MAX_EVOLUTION_SIZE = 1500;
 const MAX_PROJECTS_SIZE = 2000;
 const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const IDEA_GARDEN_PATH = "idea-garden.md";
+const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 
 // ============================================================
 // State
@@ -112,6 +115,220 @@ function writeLivingDoc(filename: string, content: string): void {
   } catch (err: any) {
     console.error(`[inner-life] Failed to write ${filename}:`, err.message);
   }
+}
+
+// ============================================================
+// Idea Garden (V1-style, improved for V2)
+// ============================================================
+
+type Seed = {
+  title: string;
+  origin: string;
+  waterings: number;
+  notes: string[];
+};
+
+type Garden = {
+  Seeds: Seed[];
+  Sprouting: Seed[];
+  Ready: Seed[];
+  Compost: Seed[];
+};
+
+function ensureIdeaGarden(): void {
+  const existing = readLivingDoc(IDEA_GARDEN_PATH);
+  if (existing && existing.includes("## Seeds")) return;
+
+  const template = `# Idea Garden
+
+## Seeds
+
+## Sprouting
+
+## Ready
+
+## Compost
+`;
+  writeLivingDoc(IDEA_GARDEN_PATH, template);
+}
+
+function extractKeywords(text: string): string[] {
+  const stopwords = new Set([
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+    "by", "from", "as", "is", "was", "are", "were", "be", "been", "being", "have", "has",
+    "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can",
+    "this", "that", "these", "those", "it", "its", "they", "them", "their", "we", "our",
+    "via", "use", "using", "into", "during", "before", "after", "about", "between",
+    "through", "under", "over", "each", "all", "any", "both", "more", "most", "other",
+  ]);
+
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopwords.has(word));
+}
+
+function calculateSimilarity(a: string[], b: string[]): number {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  const intersection = new Set([...setA].filter((x) => setB.has(x)));
+  const union = new Set([...setA, ...setB]);
+  return union.size > 0 ? intersection.size / union.size : 0;
+}
+
+function parseGarden(text: string): Garden {
+  const sections: Garden = { Seeds: [], Sprouting: [], Ready: [], Compost: [] };
+  const sectionNames = ["Seeds", "Sprouting", "Ready", "Compost"] as const;
+
+  for (const name of sectionNames) {
+    const sectionPattern = new RegExp(`## ${name}[\s\S]*?(?=## (Seeds|Sprouting|Ready|Compost)|$)`, "g");
+    const match = text.match(sectionPattern);
+    if (!match) continue;
+    const content = match[0];
+
+    const seedPattern = /### ([^\r\n]+)[\r\n]+([\s\S]*?)(?=\n### |\n## |$)/g;
+    let seedMatch: RegExpExecArray | null = null;
+    while ((seedMatch = seedPattern.exec(content)) !== null) {
+      const title = seedMatch[1].trim();
+      const body = seedMatch[2];
+      const origin = (body.match(/- Origin:([^\n]*)/i)?.[1] ?? "").trim();
+      const water = Number(body.match(/- Waterings:([^\n]*)/i)?.[1] ?? "0");
+      const notes = (body.match(/- Notes:[\s\S]*?(?=\n- [A-Z]|$)/i)?.[0] ?? "")
+        .split("\n")
+        .map((line) => line.replace(/^\s*-\s*/, "").trim())
+        .filter((line) => line && line.toLowerCase() !== "notes:");
+
+      sections[name].push({ title, origin, waterings: Number.isFinite(water) ? water : 0, notes });
+    }
+  }
+
+  return sections;
+}
+
+function renderGarden(garden: Garden): string {
+  const renderSeed = (seed: Seed) => {
+    const notes = seed.notes.length ? `- Notes:\n${seed.notes.map((n) => `  - ${n}`).join("\n")}` : "- Notes:";
+    return `### ${seed.title}\n- Origin: ${seed.origin}\n- Waterings: ${seed.waterings}\n${notes}\n`;
+  };
+
+  const renderSection = (name: keyof Garden) => {
+    const items = garden[name].map(renderSeed).join("\n");
+    return `## ${name}\n\n${items}`.trimEnd();
+  };
+
+  return `# Idea Garden\n\n${renderSection("Seeds")}\n\n${renderSection("Sprouting")}\n\n${renderSection("Ready")}\n\n${renderSection("Compost")}\n`;
+}
+
+function findSimilarSeed(title: string, content: string, garden: Garden): Seed | null {
+  const target = extractKeywords(`${title} ${content}`);
+  let best: { seed: Seed; score: number } | null = null;
+  for (const section of Object.values(garden)) {
+    for (const seed of section) {
+      const score = calculateSimilarity(target, extractKeywords(`${seed.title} ${seed.origin}`));
+      if (score >= 0.3 && (!best || score > best.score)) {
+        best = { seed, score };
+      }
+    }
+  }
+  return best ? best.seed : null;
+}
+
+async function updateIdeaGarden(reflections: string, learnings: string, ideas: string): Promise<void> {
+  ensureIdeaGarden();
+  const rawGarden = readLivingDoc(IDEA_GARDEN_PATH);
+  const garden = parseGarden(rawGarden);
+
+  const response = await llmCall(
+    "You maintain an Idea Garden. Suggest ONE action: plant, water, harvest, compost, merge, or none. Output JSON only.",
+    `Recent context:\nReflections:\n${reflections.slice(0, 400)}\n\nLearnings:\n${learnings.slice(0, 400)}\n\nIdeas:\n${ideas.slice(0, 400)}\n\nCurrent garden summary:\nSeeds: ${garden.Seeds.length}, Sprouting: ${garden.Sprouting.length}, Ready: ${garden.Ready.length}, Compost: ${garden.Compost.length}.\n\nOutput JSON: {"action":"plant|water|harvest|compost|merge|none","title":"...","content":"...","mergeTitles":["..."]}`
+  );
+
+  if (!response) return;
+
+  let action: any = null;
+  try {
+    action = JSON.parse(response);
+  } catch {
+    return;
+  }
+
+  const act = String(action.action || "none");
+  const title = String(action.title || "").trim();
+  const content = String(action.content || "").trim();
+  const mergeTitles = Array.isArray(action.mergeTitles) ? action.mergeTitles.map((t: any) => String(t).trim()).filter(Boolean) : [];
+
+  const allSections: (keyof Garden)[] = ["Seeds", "Sprouting", "Ready", "Compost"];
+  const findSeedByTitle = (t: string): { seed: Seed; section: keyof Garden; index: number } | null => {
+    for (const section of allSections) {
+      const idx = garden[section].findIndex((s) => s.title.toLowerCase() === t.toLowerCase());
+      if (idx >= 0) return { seed: garden[section][idx], section, index: idx };
+    }
+    return null;
+  };
+
+  if (act === "plant" && title && content) {
+    const similar = findSimilarSeed(title, content, garden);
+    if (similar) {
+      similar.waterings += 1;
+      similar.notes.push(content);
+    } else {
+      garden.Seeds.push({ title, origin: content, waterings: 1, notes: [] });
+    }
+  } else if (act === "water" && title && content) {
+    const found = findSeedByTitle(title);
+    if (found) {
+      found.seed.waterings += 1;
+      found.seed.notes.push(content);
+    }
+  } else if (act === "harvest" && title) {
+    const found = findSeedByTitle(title);
+    if (found) {
+      const seed = found.seed;
+      seed.notes.push(content || "harvested");
+      garden[found.section].splice(found.index, 1);
+      garden.Ready.push(seed);
+    }
+  } else if (act === "compost" && title) {
+    const found = findSeedByTitle(title);
+    if (found) {
+      const seed = found.seed;
+      seed.notes.push(content || "composted");
+      garden[found.section].splice(found.index, 1);
+      garden.Compost.push(seed);
+    }
+  } else if (act === "merge" && title && mergeTitles.length > 0) {
+    const primary = findSeedByTitle(title);
+    if (primary) {
+      for (const t of mergeTitles) {
+        const other = findSeedByTitle(t);
+        if (other) {
+          primary.seed.notes.push(`Merged: ${other.seed.title}`);
+          primary.seed.notes.push(...other.seed.notes);
+          primary.seed.waterings += other.seed.waterings;
+          garden[other.section].splice(other.index, 1);
+        }
+      }
+    }
+  }
+
+  // Promote based on waterings
+  const promote = (seed: Seed) => {
+    if (seed.waterings >= 5) return "Ready";
+    if (seed.waterings >= 3) return "Sprouting";
+    return "Seeds";
+  };
+
+  const rebuilt: Garden = { Seeds: [], Sprouting: [], Ready: [], Compost: garden.Compost };
+  for (const section of [garden.Seeds, garden.Sprouting, garden.Ready]) {
+    for (const seed of section) {
+      const target = promote(seed) as keyof Garden;
+      rebuilt[target].push(seed);
+    }
+  }
+
+  const updated = renderGarden(rebuilt);
+  writeLivingDoc(IDEA_GARDEN_PATH, updated);
 }
 
 /** Get API key for the given provider */
@@ -477,6 +694,8 @@ Each idea should be 1-2 sentences max. Keep the whole document under 500 chars.`
     }
     writeLivingDoc("ideas.md", updated);
   }
+
+  await updateIdeaGarden(reflections, learnings, existingIdeas);
 }
 
 // ============================================================
@@ -535,6 +754,7 @@ Write in first person, lowercase, present tense.`
 
   await updateProjectQueue(reflections, learnings, ideas);
   await maybeCreateSkill(reflections, learnings, ideas);
+  await maybeEnqueueIdeaJob();
 }
 
 // ============================================================
@@ -543,6 +763,7 @@ Write in first person, lowercase, present tense.`
 
 async function updateProjectQueue(reflections: string, learnings: string, ideas: string): Promise<void> {
   const existing = readLivingDoc("projects.md");
+  const gardenSummary = summarizeIdeaGarden();
   const response = await llmCall(
     "You maintain Pixel's autonomous project queue. Keep it short and actionable. Output plain markdown.",
     `Update the project queue.
@@ -554,6 +775,9 @@ Keep 3-5 projects max. Each entry should include:
 
 Current queue:
 ${existing || "(empty)"}
+
+Idea garden (ready/sprouting):
+${gardenSummary}
 
 Recent context:
 Reflections:
@@ -622,6 +846,41 @@ ${ideas.slice(0, 300) || "(none)"}
   } catch (err: any) {
     console.error("[inner-life] Failed to write skill:", err.message);
   }
+}
+
+function summarizeIdeaGarden(): string {
+  try {
+    ensureIdeaGarden();
+    const raw = readLivingDoc(IDEA_GARDEN_PATH);
+    const garden = parseGarden(raw);
+    const ready = garden.Ready.sort((a, b) => b.waterings - a.waterings).slice(0, 3);
+    const sprouting = garden.Sprouting.sort((a, b) => b.waterings - a.waterings).slice(0, 3);
+    const lines: string[] = [];
+    if (ready.length) lines.push(`Ready: ${ready.map((s) => `${s.title} (${s.waterings})`).join("; ")}`);
+    if (sprouting.length) lines.push(`Sprouting: ${sprouting.map((s) => `${s.title} (${s.waterings})`).join("; ")}`);
+    return lines.length ? lines.join("\n") : "(empty)";
+  } catch {
+    return "(empty)";
+  }
+}
+
+async function maybeEnqueueIdeaJob(): Promise<void> {
+  ensureIdeaGarden();
+  const raw = readLivingDoc(IDEA_GARDEN_PATH);
+  const garden = parseGarden(raw);
+  const ready = garden.Ready.sort((a, b) => b.waterings - a.waterings);
+  if (ready.length === 0) return;
+
+  const metaPath = join(DATA_DIR, "idea-jobs.json");
+  const meta = readJson<{ lastJobAt?: number; lastSeed?: string }>(metaPath, {});
+  const last = meta.lastJobAt ?? 0;
+  if (Date.now() - last < IDEA_JOB_COOLDOWN_MS) return;
+
+  const seed = ready[0];
+  const prompt = `Research and propose next steps for this idea seed.\n\nSeed: ${seed.title}\nOrigin: ${seed.origin}\nNotes: ${seed.notes.slice(0, 3).join("; ")}\n\nOutput: 4-6 bullet points with practical next steps and risks.`;
+  enqueueJob(prompt, ["web_fetch", "read_file"]);
+  writeJson(metaPath, { lastJobAt: Date.now(), lastSeed: seed.title });
+  audit("tool_use", `Idea job queued for seed: ${seed.title}`, { seed: seed.title });
 }
 
 // ============================================================
