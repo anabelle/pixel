@@ -51,6 +51,7 @@ const TOPIC_HISTORY_LIMIT = 6;
 const CANVAS_TOPIC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CLAWSTR_REPLY_HISTORY_LIMIT = 50;
 const CLAWSTR_TARGET_DEDUP_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CLAWSTR_INFLIGHT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const DISCOVERY_CHECK_MS = 6 * 60 * 60 * 1000; // 6 hours
 const DISCOVERY_REPLY_MAX = 4;
 const DISCOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -164,6 +165,8 @@ let lastClawstrReplyTime: number | null = null;
 let clawstrRepliedIds: string[] = [];
 let clawstrReplyHistory: string[] = [];
 let clawstrReplyTargets: { id: string; at: number }[] = [];
+let clawstrReplySent: { id: string; at: number }[] = [];
+let clawstrReplyInFlight: { id: string; at: number }[] = [];
 let topicHistory: Topic[] = [];
 let lastCanvasPostTime: number | null = null;
 let lastDiscoveryTime: number | null = null;
@@ -194,6 +197,8 @@ type HeartbeatState = {
   lastCanvasPostTime?: number | null;
   clawstrReplyHistory?: string[];
   clawstrReplyTargets?: { id: string; at: number }[];
+  clawstrReplySent?: { id: string; at: number }[];
+  clawstrReplyInFlight?: { id: string; at: number }[];
   lastDiscoveryTime?: number | null;
   discoveryRepliedIds?: string[];
   discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
@@ -242,6 +247,12 @@ function loadHeartbeatState(): void {
     }
     if (Array.isArray(state.clawstrReplyTargets)) {
       clawstrReplyTargets = state.clawstrReplyTargets.slice(-200);
+    }
+    if (Array.isArray(state.clawstrReplySent)) {
+      clawstrReplySent = state.clawstrReplySent.slice(-200);
+    }
+    if (Array.isArray(state.clawstrReplyInFlight)) {
+      clawstrReplyInFlight = state.clawstrReplyInFlight.slice(-200);
     }
     if (typeof state.lastDiscoveryTime === "number" || state.lastDiscoveryTime === null) {
       lastDiscoveryTime = state.lastDiscoveryTime ?? null;
@@ -309,6 +320,8 @@ function saveHeartbeatState(): void {
       clawstrRepliedIds,
       clawstrReplyHistory,
       clawstrReplyTargets,
+      clawstrReplySent,
+      clawstrReplyInFlight,
       topicHistory,
       lastCanvasPostTime,
       lastDiscoveryTime,
@@ -1555,9 +1568,37 @@ function markClawstrTarget(eventId: string): void {
   }
 }
 
+function markClawstrSent(eventId: string): void {
+  clawstrReplySent.push({ id: eventId, at: Date.now() });
+  if (clawstrReplySent.length > 200) {
+    clawstrReplySent = clawstrReplySent.slice(-200);
+  }
+}
+
+function markClawstrInFlight(eventId: string): void {
+  clawstrReplyInFlight.push({ id: eventId, at: Date.now() });
+  if (clawstrReplyInFlight.length > 200) {
+    clawstrReplyInFlight = clawstrReplyInFlight.slice(-200);
+  }
+}
+
+function clearClawstrInFlight(eventId: string): void {
+  clawstrReplyInFlight = clawstrReplyInFlight.filter((t) => t.id !== eventId);
+}
+
 function hasRecentClawstrTarget(eventId: string): boolean {
   const now = Date.now();
   return clawstrReplyTargets.some((t) => t.id === eventId && now - t.at < CLAWSTR_TARGET_DEDUP_MS);
+}
+
+function hasRecentClawstrSent(eventId: string): boolean {
+  const now = Date.now();
+  return clawstrReplySent.some((t) => t.id === eventId && now - t.at < CLAWSTR_TARGET_DEDUP_MS);
+}
+
+function hasInFlightClawstr(eventId: string): boolean {
+  const now = Date.now();
+  return clawstrReplyInFlight.some((t) => t.id === eventId && now - t.at < CLAWSTR_INFLIGHT_TTL_MS);
 }
 
 function normalizeReply(text: string): string {
@@ -1787,6 +1828,10 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
         markClawstrReplied(id);
         continue;
       }
+      if (hasRecentClawstrSent(id) || hasInFlightClawstr(id)) {
+        markClawstrReplied(id);
+        continue;
+      }
 
       const post = await getClawstrPost(id);
       const postLower = post.toLowerCase();
@@ -1794,9 +1839,15 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
         markClawstrReplied(id);
         continue;
       }
+      const recentReplies = clawstrReplyHistory.slice(-5).join("\n- ");
       const prompt = [
-        "Reply on Clawstr. Be brief, specific, and human. If there is nothing meaningful to add, respond with [SILENT].",
+        "Reply on Clawstr. Be brief, specific, and human.",
+        "Quote or reference one specific phrase from the post.",
+        "Avoid reusing any wording from recent replies.",
+        "If there is nothing meaningful to add, respond with [SILENT].",
         "Do not use markdown.",
+        "Recent replies to avoid repeating:",
+        recentReplies ? `- ${recentReplies}` : "(none)",
         "Post content:",
         post,
       ].join("\n");
@@ -1828,6 +1879,7 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
       // Pre-mark to avoid duplicate replies on restart
       markClawstrReplied(id);
       markClawstrTarget(id);
+      markClawstrInFlight(id);
       if (normalized) {
         clawstrReplyHistory.push(normalized);
         if (clawstrReplyHistory.length > CLAWSTR_REPLY_HISTORY_LIMIT) {
@@ -1837,6 +1889,8 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
       saveHeartbeatState();
 
       await replyClawstr(id, cleaned);
+      clearClawstrInFlight(id);
+      markClawstrSent(id);
       lastClawstrReplyTime = Date.now();
       saveHeartbeatState();
       audit("clawstr_reply", `Replied on Clawstr ${id.slice(0, 12)}...`, {
