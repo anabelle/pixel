@@ -57,6 +57,8 @@ const DISCOVERY_HISTORY_LIMIT = 300;
 const DISCOVERY_QUEUE_LIMIT = 12;
 const DISCOVERY_JITTER_MIN_MS = 2 * 60 * 1000;
 const DISCOVERY_JITTER_MAX_MS = 12 * 60 * 1000;
+const NOTIFICATION_CHECK_MS = 20 * 60 * 1000; // 20 minutes
+const NOTIFICATION_REPLY_MAX = 3;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -129,6 +131,7 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let engagementTimer: ReturnType<typeof setTimeout> | null = null;
 let clawstrTimer: ReturnType<typeof setTimeout> | null = null;
 let discoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let notificationTimer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
@@ -142,6 +145,7 @@ let lastCanvasPostTime: number | null = null;
 let lastDiscoveryTime: number | null = null;
 let discoveryRepliedIds: string[] = [];
 let discoveryQueue: { eventId: string; pubkey: string; content: string; scheduledAt: number }[] = [];
+let lastNotificationCheckTime: number | null = null;
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -158,6 +162,7 @@ type HeartbeatState = {
   lastDiscoveryTime?: number | null;
   discoveryRepliedIds?: string[];
   discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
+  lastNotificationCheckTime?: number | null;
 };
 
 function loadHeartbeatState(): void {
@@ -193,6 +198,9 @@ function loadHeartbeatState(): void {
     if (Array.isArray(state.discoveryQueue)) {
       discoveryQueue = state.discoveryQueue.slice(-DISCOVERY_QUEUE_LIMIT);
     }
+    if (typeof state.lastNotificationCheckTime === "number" || state.lastNotificationCheckTime === null) {
+      lastNotificationCheckTime = state.lastNotificationCheckTime ?? null;
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -221,6 +229,7 @@ function saveHeartbeatState(): void {
       lastDiscoveryTime,
       discoveryRepliedIds,
       discoveryQueue,
+      lastNotificationCheckTime,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -852,6 +861,91 @@ async function discoveryLoop(): Promise<void> {
   }
 }
 
+/** Nostr notifications loop — replies + reactions directed at us */
+async function notificationLoop(): Promise<void> {
+  if (!running) return;
+
+  const instance = getNostrInstance();
+  if (!instance) return;
+
+  try {
+    const { ndk, pubkey } = instance;
+    const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
+    const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+
+    const events = await fetchWithTimeout(ndk.fetchEvents({
+      kinds: [1, 7],
+      "#p": [pubkey],
+      since,
+      limit: 200,
+    }), 15_000);
+
+    if (!events) return;
+
+    const mentions = [...events].filter((e) => e.kind === 1 && e.pubkey !== pubkey);
+    const reactions = [...events].filter((e) => e.kind === 7 && e.pubkey !== pubkey);
+
+    lastNotificationCheckTime = Date.now();
+    audit("engagement_check", `Nostr notifications: ${mentions.length} replies, ${reactions.length} reactions`, {
+      replies: mentions.length,
+      reactions: reactions.length,
+    });
+    saveHeartbeatState();
+
+    let replied = 0;
+    for (const event of mentions) {
+      if (replied >= NOTIFICATION_REPLY_MAX) break;
+      if (hasRepliedTo(event.id)) continue;
+      if (!event.content || event.content.length < 2) {
+        markReplied(event.id);
+        continue;
+      }
+
+      const prompt = [
+        "Respond to this reply to Pixel. Be concise and human.",
+        "If there is nothing meaningful to add, respond with [SILENT].",
+        "Post:",
+        event.content,
+      ].join("\n");
+
+      const images = await fetchImages(extractImageUrls(event.content));
+      const response = await promptWithHistory(
+        { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+        prompt,
+        images.length > 0 ? images : undefined
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        markReplied(event.id);
+        continue;
+      }
+
+      const reply = new NDKEvent(ndk);
+      reply.kind = 1;
+      reply.content = response;
+      reply.tags = [
+        ["e", event.id, "", "reply"],
+        ["p", event.pubkey],
+        ["e", event.id, "", "root"],
+      ];
+
+      await reply.publish();
+      markReplied(event.id);
+      audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id });
+      replied++;
+      await new Promise((r) => setTimeout(r, 4_000));
+    }
+  } catch (err: any) {
+    console.error("[heartbeat/notifications] Loop error:", err.message);
+    audit("engagement_error", `Notification loop failed: ${err.message}`, { error: err.message });
+  }
+
+  if (running) {
+    notificationTimer = setTimeout(notificationLoop, NOTIFICATION_CHECK_MS);
+  }
+}
+
 // Periodically process discovery queue for jittered replies
 setInterval(() => {
   if (!running) return;
@@ -1111,6 +1205,7 @@ export function startHeartbeat(): void {
   console.log(`[heartbeat] Engagement check every ${ENGAGEMENT_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Clawstr check every ${CLAWSTR_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Discovery check every ${DISCOVERY_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Notifications check every ${NOTIFICATION_CHECK_MS / 60_000} minutes`);
 
   // Delay first beat to let Nostr connect and stabilize
   timer = setTimeout(beat, STARTUP_DELAY_MS);
@@ -1124,6 +1219,9 @@ export function startHeartbeat(): void {
 
   // Start Nostr discovery loop (trending engagement)
   discoveryTimer = setTimeout(discoveryLoop, STARTUP_DELAY_MS + 180_000);
+
+  // Start Nostr notifications loop (replies + reactions)
+  notificationTimer = setTimeout(notificationLoop, STARTUP_DELAY_MS + 120_000);
 }
 
 /** Stop the heartbeat service */
@@ -1145,6 +1243,10 @@ export function stopHeartbeat(): void {
     clearTimeout(discoveryTimer);
     discoveryTimer = null;
   }
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
+  }
   console.log("[heartbeat] Stopped");
 }
 
@@ -1159,6 +1261,7 @@ export function getHeartbeatStatus() {
     lastClawstrCheckTime: lastClawstrCheckTime ? new Date(lastClawstrCheckTime).toISOString() : null,
     lastClawstrCount,
     lastDiscoveryTime: lastDiscoveryTime ? new Date(lastDiscoveryTime).toISOString() : null,
+    lastNotificationCheckTime: lastNotificationCheckTime ? new Date(lastNotificationCheckTime).toISOString() : null,
     nextBeatIn: timer ? "scheduled" : "none",
     engagementActive: engagementTimer !== null,
   };
