@@ -90,6 +90,8 @@ export async function startTelegram(): Promise<void> {
     return;
   }
 
+  const botToken = token;
+
   const bot = new Bot(token);
   botInstance = bot; // Store for proactive messaging
 
@@ -166,6 +168,70 @@ export async function startTelegram(): Promise<void> {
     } catch (error: any) {
       console.error(`[telegram] Error for ${userId}:`, error.message);
       await ctx.reply("Something broke. I'll be back in a moment.").catch(() => {});
+    }
+  });
+
+  // Handle photo messages (vision)
+  bot.on("message:photo", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const photos = ctx.message.photo ?? [];
+    const photo = photos[photos.length - 1];
+    if (!photo) return;
+
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+    const caption = ctx.message.caption?.trim();
+    const baseText = caption ? `Image with caption: ${caption}` : "Image received.";
+    const formatted = isGroupChat ? `${senderName}: ${baseText}` : baseText;
+
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      const file = await bot.api.getFile(photo.file_id);
+      if (!file.file_path) {
+        await ctx.reply("I couldn't access that image.");
+        return;
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+      const res = await fetch(fileUrl);
+      if (!res.ok) {
+        await ctx.reply("I couldn't download that image.");
+        return;
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const base64 = buffer.toString("base64");
+      const lower = file.file_path.toLowerCase();
+      const mimeType = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram" },
+        formatted,
+        [{ type: "image", data: base64, mimeType }]
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await ctx.reply(response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk);
+        }
+      }
+    } catch (error: any) {
+      console.error(`[telegram] Image error for ${conversationId}:`, error.message);
+      await ctx.reply("Something broke while reading that image.").catch(() => {});
     }
   });
 

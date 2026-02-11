@@ -8,6 +8,7 @@
 
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel, complete } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
@@ -112,6 +113,23 @@ export function extractText(message: any): string {
   return String(content ?? "");
 }
 
+function stripImageBlocks(messages: any[]): any[] {
+  return messages.map((msg) => {
+    if (!msg || typeof msg !== "object") return msg;
+    if (!Array.isArray(msg.content)) return msg;
+
+    const filtered = msg.content.filter((block: any) => block?.type !== "image");
+    if (filtered.length === msg.content.length) return msg;
+
+    const nextContent = filtered.length > 0
+      ? filtered
+      : [{ type: "text", text: "[Image omitted]" }];
+
+    const { images, ...rest } = msg as any;
+    return { ...rest, content: nextContent };
+  });
+}
+
 export interface PixelAgentOptions {
   userId: string;
   platform: string;
@@ -130,7 +148,8 @@ export interface PixelAgentOptions {
  */
 export async function promptWithHistory(
   options: PixelAgentOptions,
-  message: string
+  message: string,
+  images?: ImageContent[]
 ): Promise<string> {
   const { userId, platform } = options;
   const systemPrompt = buildSystemPrompt(userId, platform);
@@ -194,7 +213,7 @@ export async function promptWithHistory(
   });
 
   // Prompt the agent
-  await agent.prompt(message);
+  await agent.prompt(message, images);
 
   // Extract response
   let responseText = responseChunks.join("\n");
@@ -238,7 +257,8 @@ export async function promptWithHistory(
 
   // Save updated context (all messages including the new exchange)
   if (agent.state?.messages) {
-    saveContext(userId, agent.state.messages as any[]);
+    const sanitized = stripImageBlocks(agent.state.messages as any[]);
+    saveContext(userId, sanitized);
   }
 
   // Append to log
