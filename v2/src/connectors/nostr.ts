@@ -14,6 +14,7 @@ import NDK, {
   NDKFilter,
 } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
+import { extractImageUrls, fetchImages } from "../services/vision.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
 
 // Throttle: don't reply to the same pubkey more than once per interval
@@ -162,9 +163,11 @@ export async function startNostr(): Promise<void> {
     console.log(`[nostr] Mention from ${event.pubkey.slice(0, 8)}...: ${content.slice(0, 80)}`);
 
     try {
+      const images = await fetchImages(extractImageUrls(content));
       const response = await promptWithHistory(
         { userId: `nostr-${event.pubkey}`, platform: "nostr" },
-        content
+        content,
+        images.length > 0 ? images : undefined
       );
 
       if (!response) {
@@ -225,9 +228,11 @@ export async function startNostr(): Promise<void> {
 
         console.log(`[nostr] DM from ${event.pubkey.slice(0, 8)}...: ${decrypted.slice(0, 80)}`);
 
+        const images = await fetchImages(extractImageUrls(decrypted));
         const response = await promptWithHistory(
           { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm" },
-          decrypted
+          decrypted,
+          images.length > 0 ? images : undefined
         );
 
         if (!response) return;

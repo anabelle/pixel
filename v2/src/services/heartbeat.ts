@@ -30,6 +30,7 @@ import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr } from "./clawstr.js";
+import { extractImageUrls, fetchImages } from "./vision.js";
 
 // ============================================================
 // Configuration
@@ -582,10 +583,12 @@ async function checkAndReplyToMentions(): Promise<void> {
       try {
         console.log(`[heartbeat/engage] Replying to ${event.pubkey.slice(0, 8)}...: "${event.content.slice(0, 60)}"`);
 
-        const response = await promptWithHistory(
-          { userId: `nostr-${event.pubkey}`, platform: "nostr" },
-          event.content
-        );
+    const images = await fetchImages(extractImageUrls(event.content));
+    const response = await promptWithHistory(
+      { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+      event.content,
+      images.length > 0 ? images : undefined
+    );
 
         if (!response) {
           markReplied(event.id);
@@ -786,9 +789,11 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
         post,
       ].join("\n");
 
+      const images = await fetchImages(extractImageUrls(post));
       const response = await promptWithHistory(
         { userId: `clawstr-${id}`, platform: "clawstr" },
-        prompt
+        prompt,
+        images.length > 0 ? images : undefined
       );
 
       if (!response || response.includes("[SILENT]")) {
