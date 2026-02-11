@@ -52,11 +52,23 @@ export function loadContext(userId: string): any[] {
     const raw = readFileSync(contextPath, "utf-8");
     const messages = JSON.parse(raw);
     if (!Array.isArray(messages)) return [];
-    return messages;
+    return messages.map((msg) => normalizeMessage(msg));
   } catch (err: any) {
     console.error(`[conversations] Failed to load context for ${userId}:`, err.message);
     return [];
   }
+}
+
+/** Normalize message shapes for agent-core compatibility */
+function normalizeMessage(message: any): any {
+  if (!message || typeof message !== "object") return message;
+  if (message.role === "assistant" && typeof message.content === "string") {
+    return {
+      ...message,
+      content: [{ type: "text", text: message.content }],
+    };
+  }
+  return message;
 }
 
 /**
@@ -223,7 +235,7 @@ export function saveCompactedContext(
   // Create a synthetic assistant message containing the conversation summary
   const summaryMessage = {
     role: "assistant",
-    content: `[Previous conversation summary]\n${summary}`,
+    content: [{ type: "text", text: `[Previous conversation summary]\n${summary}` }],
     metadata: { type: "compaction-summary", compactedAt: new Date().toISOString() },
   };
 
