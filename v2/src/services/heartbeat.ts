@@ -27,6 +27,7 @@ import { promptWithHistory } from "../agent.js";
 import { getRevenueStats } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { getClawstrNotifications } from "./clawstr.js";
 
 // ============================================================
@@ -43,6 +44,9 @@ const CLAWSTR_CHECK_LIMIT = 10;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
+
+// Heartbeat state persistence
+const HEARTBEAT_STATE_PATH = "/app/data/heartbeat.json";
 
 // Cached canvas stats (refreshed each heartbeat cycle)
 let cachedCanvasStats = { pixels: "9,058", sats: "80k+" };
@@ -103,7 +107,7 @@ type Mood = (typeof MOODS)[number];
 // State
 // ============================================================
 
-let lastPostTime = 0;
+let lastPostTime: number | null = null;
 let heartbeatCount = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let engagementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +117,51 @@ let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
 let lastClawstrCheckTime: number | null = null;
 let lastClawstrCount: number | null = null;
+
+type HeartbeatState = {
+  heartbeatCount?: number;
+  lastPostTime?: number | null;
+  lastTopic?: Topic | null;
+  lastMood?: Mood | null;
+  lastClawstrCheckTime?: number | null;
+  lastClawstrCount?: number | null;
+};
+
+function loadHeartbeatState(): void {
+  if (!existsSync(HEARTBEAT_STATE_PATH)) return;
+  try {
+    const raw = readFileSync(HEARTBEAT_STATE_PATH, "utf-8");
+    const state = JSON.parse(raw) as HeartbeatState;
+    if (typeof state.heartbeatCount === "number") heartbeatCount = state.heartbeatCount;
+    if (typeof state.lastPostTime === "number" || state.lastPostTime === null) lastPostTime = state.lastPostTime ?? null;
+    if (state.lastTopic) lastTopic = state.lastTopic;
+    if (state.lastMood) lastMood = state.lastMood;
+    if (typeof state.lastClawstrCheckTime === "number" || state.lastClawstrCheckTime === null) {
+      lastClawstrCheckTime = state.lastClawstrCheckTime ?? null;
+    }
+    if (typeof state.lastClawstrCount === "number" || state.lastClawstrCount === null) {
+      lastClawstrCount = state.lastClawstrCount ?? null;
+    }
+  } catch (err: any) {
+    console.error("[heartbeat] Failed to load state:", err.message);
+  }
+}
+
+function saveHeartbeatState(): void {
+  try {
+    const state: HeartbeatState = {
+      heartbeatCount,
+      lastPostTime,
+      lastTopic,
+      lastMood,
+      lastClawstrCheckTime,
+      lastClawstrCount,
+    };
+    writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
+  } catch (err: any) {
+    console.error("[heartbeat] Failed to save state:", err.message);
+  }
+}
 
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
@@ -515,13 +564,14 @@ async function checkAndReplyToMentions(): Promise<void> {
 async function beat(): Promise<void> {
   // Rate limit check
   const now = Date.now();
-  if (now - lastPostTime < MIN_POST_GAP_MS) {
+  if (lastPostTime && now - lastPostTime < MIN_POST_GAP_MS) {
     console.log("[heartbeat] Too soon since last post, skipping");
     scheduleNext();
     return;
   }
 
   heartbeatCount++;
+  saveHeartbeatState();
   console.log(`[heartbeat] Beat #${heartbeatCount} — generating post...`);
 
   // Refresh canvas stats before generating post
@@ -536,6 +586,7 @@ async function beat(): Promise<void> {
         lastPostTime = Date.now();
         console.log(`[heartbeat] Posted: "${content.slice(0, 80)}${content.length > 80 ? "..." : ""}"`);
         audit("heartbeat_post", content.slice(0, 120), { topic: lastTopic, mood: lastMood, beatNumber: heartbeatCount, contentLength: content.length });
+        saveHeartbeatState();
       }
     } else {
       // generatePost returned null — either [SILENT] (already audited) or generation failed
@@ -547,6 +598,7 @@ async function beat(): Promise<void> {
 
   // Schedule next beat FIRST — inner life must never block the next heartbeat
   scheduleNext();
+  saveHeartbeatState();
 
   // Run inner life cycle (reflection, learning, ideation, evolution)
   // Master timeout ensures this never hangs, even if NDK or LLM calls stall
@@ -604,6 +656,7 @@ async function clawstrLoop(): Promise<void> {
         count: null,
       });
     }
+    saveHeartbeatState();
   } catch (err: any) {
     console.error("[heartbeat/clawstr] Loop error:", err.message);
     audit("clawstr_error", `Clawstr loop failed: ${err.message}`, { error: err.message });
@@ -632,6 +685,7 @@ export function startHeartbeat(): void {
   }
 
   running = true;
+  loadHeartbeatState();
   console.log(`[heartbeat] Starting (first post in ~${Math.round(STARTUP_DELAY_MS / 60_000)} minutes)`);
   console.log(`[heartbeat] Topics: ${TOPICS.join(", ")}`);
   console.log(`[heartbeat] Engagement check every ${ENGAGEMENT_CHECK_MS / 60_000} minutes`);
