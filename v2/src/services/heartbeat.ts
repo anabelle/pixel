@@ -31,6 +31,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr } from "./clawstr.js";
 import { extractImageUrls, fetchImages } from "./vision.js";
+import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
 
 // ============================================================
 // Configuration
@@ -798,6 +799,14 @@ async function discoveryLoop(): Promise<void> {
 
     const all = [...events].filter((e) => e.pubkey !== pubkey && e.content && e.content.length > 40);
 
+    // Primal trending feeds (24h + most zapped 4h)
+    const [trending24h, mostZapped4h] = await Promise.all([
+      fetchPrimalTrending24h(),
+      fetchPrimalMostZapped4h(),
+    ]);
+
+    const primalEvents = [...trending24h, ...mostZapped4h];
+
     const tagCounts = new Map<string, number>();
     for (const event of all) {
       for (const tag of extractHashtags(event)) {
@@ -817,7 +826,19 @@ async function discoveryLoop(): Promise<void> {
       if (e.content.length > 800) return false;
       return true;
     });
-    enqueueDiscoveryCandidates(candidates, trendingTags);
+
+    const primalCandidates = primalEvents.filter((e) => {
+      if (hasRepliedTo(e.id)) return false;
+      if (discoveryRepliedIds.includes(e.id)) return false;
+      if (e.tags?.some((t: string[]) => t[0] === "e")) return false;
+      if (!e.content || e.content.length > 800) return false;
+      return true;
+    }).map((e) => ({
+      id: e.id,
+      pubkey: e.pubkey,
+      content: e.content,
+    }));
+    enqueueDiscoveryCandidates(candidates, trendingTags, primalCandidates);
     processDiscoveryQueue(trendingTags).catch((err) => {
       console.error("[heartbeat/discovery] Queue error:", err.message);
     });
@@ -837,7 +858,11 @@ setInterval(() => {
   processDiscoveryQueue([]).catch(() => {});
 }, 60_000);
 
-function enqueueDiscoveryCandidates(candidates: NDKEvent[], trendingTags: string[]): void {
+function enqueueDiscoveryCandidates(
+  candidates: NDKEvent[],
+  trendingTags: string[],
+  primalCandidates: { id: string; pubkey: string; content: string }[]
+): void {
   const now = Date.now();
   const existing = new Set(discoveryQueue.map((item) => item.eventId));
   let added = 0;
@@ -850,6 +875,17 @@ function enqueueDiscoveryCandidates(candidates: NDKEvent[], trendingTags: string
     const jitter = DISCOVERY_JITTER_MIN_MS + Math.floor(Math.random() * (DISCOVERY_JITTER_MAX_MS - DISCOVERY_JITTER_MIN_MS));
     const scheduledAt = now + jitter + added * 2_000;
 
+    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, scheduledAt });
+    added++;
+  }
+
+  for (const event of primalCandidates) {
+    if (added >= DISCOVERY_REPLY_MAX) break;
+    if (existing.has(event.id)) continue;
+    if (discoveryRepliedIds.includes(event.id)) continue;
+
+    const jitter = DISCOVERY_JITTER_MIN_MS + Math.floor(Math.random() * (DISCOVERY_JITTER_MAX_MS - DISCOVERY_JITTER_MIN_MS));
+    const scheduledAt = now + jitter + added * 2_000;
     discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, scheduledAt });
     added++;
   }
@@ -879,6 +915,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   const tagsHint = trendingTags.length > 0 ? `Trending topics: ${trendingTags.join(", ")}.` : "";
   const prompt = [
     "Engage a trending Nostr post with a brief, thoughtful reply. Add value, connect context, or ask a smart question.",
+    "If the post is about art, creativity, or visuals, lean into the creative angle.",
     "Be concise (max 2-3 sentences). No hashtags. No emojis.",
     tagsHint,
     "Post:",
