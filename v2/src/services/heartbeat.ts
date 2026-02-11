@@ -50,6 +50,7 @@ const CLAWSTR_MIN_REPLY_LENGTH = 12;
 const TOPIC_HISTORY_LIMIT = 6;
 const CANVAS_TOPIC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CLAWSTR_REPLY_HISTORY_LIMIT = 50;
+const CLAWSTR_TARGET_DEDUP_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DISCOVERY_CHECK_MS = 6 * 60 * 60 * 1000; // 6 hours
 const DISCOVERY_REPLY_MAX = 4;
 const DISCOVERY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -162,6 +163,7 @@ let lastClawstrCount: number | null = null;
 let lastClawstrReplyTime: number | null = null;
 let clawstrRepliedIds: string[] = [];
 let clawstrReplyHistory: string[] = [];
+let clawstrReplyTargets: { id: string; at: number }[] = [];
 let topicHistory: Topic[] = [];
 let lastCanvasPostTime: number | null = null;
 let lastDiscoveryTime: number | null = null;
@@ -191,6 +193,7 @@ type HeartbeatState = {
   topicHistory?: Topic[];
   lastCanvasPostTime?: number | null;
   clawstrReplyHistory?: string[];
+  clawstrReplyTargets?: { id: string; at: number }[];
   lastDiscoveryTime?: number | null;
   discoveryRepliedIds?: string[];
   discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
@@ -236,6 +239,9 @@ function loadHeartbeatState(): void {
     }
     if (Array.isArray(state.clawstrReplyHistory)) {
       clawstrReplyHistory = state.clawstrReplyHistory.slice(-CLAWSTR_REPLY_HISTORY_LIMIT);
+    }
+    if (Array.isArray(state.clawstrReplyTargets)) {
+      clawstrReplyTargets = state.clawstrReplyTargets.slice(-200);
     }
     if (typeof state.lastDiscoveryTime === "number" || state.lastDiscoveryTime === null) {
       lastDiscoveryTime = state.lastDiscoveryTime ?? null;
@@ -302,6 +308,7 @@ function saveHeartbeatState(): void {
       lastClawstrReplyTime,
       clawstrRepliedIds,
       clawstrReplyHistory,
+      clawstrReplyTargets,
       topicHistory,
       lastCanvasPostTime,
       lastDiscoveryTime,
@@ -1541,6 +1548,18 @@ function markClawstrReplied(eventId: string): void {
   }
 }
 
+function markClawstrTarget(eventId: string): void {
+  clawstrReplyTargets.push({ id: eventId, at: Date.now() });
+  if (clawstrReplyTargets.length > 200) {
+    clawstrReplyTargets = clawstrReplyTargets.slice(-200);
+  }
+}
+
+function hasRecentClawstrTarget(eventId: string): boolean {
+  const now = Date.now();
+  return clawstrReplyTargets.some((t) => t.id === eventId && now - t.at < CLAWSTR_TARGET_DEDUP_MS);
+}
+
 function normalizeReply(text: string): string {
   return text
     .toLowerCase()
@@ -1764,6 +1783,11 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
   for (const id of ids) {
     if (replied >= CLAWSTR_REPLY_MAX) break;
     try {
+      if (hasRecentClawstrTarget(id)) {
+        markClawstrReplied(id);
+        continue;
+      }
+
       const post = await getClawstrPost(id);
       const postLower = post.toLowerCase();
       if (postLower.includes("/c/clawnch") || postLower.includes("!clawnch")) {
@@ -1801,14 +1825,18 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
         continue;
       }
 
-      await replyClawstr(id, cleaned);
+      // Pre-mark to avoid duplicate replies on restart
       markClawstrReplied(id);
+      markClawstrTarget(id);
       if (normalized) {
         clawstrReplyHistory.push(normalized);
         if (clawstrReplyHistory.length > CLAWSTR_REPLY_HISTORY_LIMIT) {
           clawstrReplyHistory = clawstrReplyHistory.slice(-CLAWSTR_REPLY_HISTORY_LIMIT);
         }
       }
+      saveHeartbeatState();
+
+      await replyClawstr(id, cleaned);
       lastClawstrReplyTime = Date.now();
       saveHeartbeatState();
       audit("clawstr_reply", `Replied on Clawstr ${id.slice(0, 12)}...`, {
