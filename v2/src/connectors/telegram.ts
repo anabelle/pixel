@@ -142,9 +142,6 @@ export async function startTelegram(): Promise<void> {
       }
 
       if (response.includes("[SILENT]")) {
-        if (isGroupChat) {
-          appendToLog(conversationId, formatted, "[SILENT]", "telegram");
-        }
         return;
       }
 

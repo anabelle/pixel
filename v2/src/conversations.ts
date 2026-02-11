@@ -138,6 +138,22 @@ export function loadMemory(userId: string): string {
   }
 }
 
+/** Load group summary (for group chat IDs) */
+export function loadGroupSummary(userId: string): string {
+  const dir = ensureUserDir(userId);
+  const summaryPath = join(dir, "group.md");
+
+  if (!existsSync(summaryPath)) {
+    return "";
+  }
+
+  try {
+    return readFileSync(summaryPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Save user memory.
  */
@@ -149,6 +165,18 @@ export function saveMemory(userId: string, memory: string): void {
     writeFileSync(memoryPath, memory, "utf-8");
   } catch (err: any) {
     console.error(`[conversations] Failed to save memory for ${userId}:`, err.message);
+  }
+}
+
+/** Save group summary (for group chat IDs) */
+export function saveGroupSummary(userId: string, summary: string): void {
+  const dir = ensureUserDir(userId);
+  const summaryPath = join(dir, "group.md");
+
+  try {
+    writeFileSync(summaryPath, summary, "utf-8");
+  } catch (err: any) {
+    console.error(`[conversations] Failed to save group summary for ${userId}:`, err.message);
   }
 }
 

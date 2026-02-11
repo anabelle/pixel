@@ -10,7 +10,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel, complete } from "@mariozechner/pi-ai";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext } from "./conversations.js";
+import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
 import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
 import { pixelTools } from "./services/tools.js";
@@ -21,6 +21,8 @@ const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 // Track message count per user for periodic memory extraction
 const userMessageCounts = new Map<string, number>();
 const MEMORY_EXTRACT_INTERVAL = 5; // Extract memory every N messages
+const GROUP_SUMMARY_INTERVAL = 8; // Update group summary every N messages
+const groupMessageCounts = new Map<string, number>();
 
 /** Load Pixel's character document */
 function loadCharacter(): string {
@@ -48,6 +50,13 @@ function buildSystemPrompt(userId: string, platform: string): string {
 
   if (userMemory) {
     prompt += `\n\n## Memory about this user\n${userMemory}`;
+  }
+
+  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+    const groupSummary = loadGroupSummary(userId);
+    if (groupSummary) {
+      prompt += `\n\n## Group lore summary\n${groupSummary}`;
+    }
   }
 
   prompt += `\n\n## Current context
@@ -134,6 +143,32 @@ export async function promptWithHistory(
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
+    transformContext: async (messages: any[]) => {
+      if (platform !== "telegram" || !userId.startsWith("tg-group-")) return messages;
+      const summary = loadGroupSummary(userId);
+      if (!summary) return messages;
+
+      const loreMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: `[Group lore summary]\n${summary}` }],
+        metadata: { type: "group-lore" },
+      };
+
+      const recent = messages.slice(-5);
+      if (recent.some((m: any) => m?.metadata?.type === "group-lore")) {
+        return messages;
+      }
+
+      // Insert summary before the last user message if possible
+      const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf("user");
+      if (lastUserIndex >= 0) {
+        const copy = messages.slice();
+        copy.splice(lastUserIndex, 0, loreMessage);
+        return copy;
+      }
+
+      return [...messages, loreMessage];
+    },
   });
 
   // Load existing conversation context
@@ -230,6 +265,16 @@ export async function promptWithHistory(
     });
   }
 
+  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+    const groupCount = (groupMessageCounts.get(userId) ?? 0) + 1;
+    groupMessageCounts.set(userId, groupCount);
+    if (groupCount % GROUP_SUMMARY_INTERVAL === 0) {
+      updateGroupSummary(userId, agent.state?.messages as any[]).catch((err) => {
+        console.error(`[agent] Group summary update failed for ${userId}:`, err.message);
+      });
+    }
+  }
+
   return responseText || "";
 }
 
@@ -287,6 +332,62 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
     }
   } catch (err: any) {
     console.error(`[agent] Memory extraction LLM call failed:`, err.message);
+  }
+}
+
+/**
+ * Update group summary for Telegram group chats.
+ * Creates a short, rolling summary of group lore and recent context.
+ */
+async function updateGroupSummary(userId: string, messages: any[]): Promise<void> {
+  if (!messages || messages.length < 6) return;
+
+  const existingSummary = loadGroupSummary(userId);
+  const recent = messages.slice(-30)
+    .map((msg: any) => {
+      const role = msg.role === "user" ? "User" : "Pixel";
+      return `${role}: ${extractText(msg)}`;
+    })
+    .filter((line: string) => line.length > 4)
+    .join("\n");
+
+  if (!recent.trim()) return;
+
+  const summaryAgent = new Agent({
+    initialState: {
+      systemPrompt: `You summarize group chat lore. Output a concise bullet list (4-8 bullets). Focus on:
+- recurring topics
+- key people and their roles
+- decisions or plans
+- open questions
+
+Keep under 1200 characters. Be accurate. No speculation.
+
+${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
+      model: getPixelModel(),
+      thinkingLevel: "off",
+      tools: [],
+    },
+    getApiKey: async (provider: string) => resolveApiKey(provider),
+  });
+
+  let summaryText = "";
+  summaryAgent.subscribe((event: any) => {
+    if (event.type === "message_end" && event.message?.role === "assistant") {
+      const text = extractText(event.message);
+      if (text) summaryText = text;
+    }
+  });
+
+  try {
+    await summaryAgent.prompt(`Update the group summary using this recent context:\n\n${recent.slice(0, 2400)}`);
+    if (summaryText && summaryText.trim().length > 20) {
+      saveGroupSummary(userId, summaryText.trim());
+      console.log(`[agent] Group summary saved for ${userId} (${summaryText.length} chars)`);
+      audit("memory_extraction", `Group summary saved for ${userId} (${summaryText.length} chars)`, { userId, summaryLength: summaryText.length });
+    }
+  } catch (err: any) {
+    console.error(`[agent] Group summary LLM call failed:`, err.message);
   }
 }
 
