@@ -55,6 +55,15 @@ function buildSystemPrompt(userId: string, platform: string): string {
 - User ID: ${userId}
 - Date: ${new Date().toISOString().split("T")[0]}`;
 
+  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+    prompt += `\n\n## Group chat behavior
+- This is a group chat. You should listen, learn, and track the lore.
+- Use the conversation history already in context; do not say you can't access it.
+- If you need older history, use read_logs with source="conversations:${userId}" (you already have the id).
+- If you choose not to reply, output exactly: [SILENT].
+- Reply when useful, insightful, or asked; be concise and avoid spamming.`;
+  }
+
   return prompt;
 }
 
