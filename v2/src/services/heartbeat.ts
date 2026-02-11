@@ -29,7 +29,7 @@ import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
-import { getClawstrNotifications } from "./clawstr.js";
+import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr } from "./clawstr.js";
 
 // ============================================================
 // Configuration
@@ -40,8 +40,11 @@ const MAX_INTERVAL_MS = 90 * 60 * 1000;  // 90 minutes maximum
 const MIN_POST_GAP_MS = 30 * 60 * 1000;  // Never post more than once per 30 min
 const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before first heartbeat
 const ENGAGEMENT_CHECK_MS = 15 * 60 * 1000; // Check for unreplied mentions every 15 min
-const CLAWSTR_CHECK_MS = 6 * 60 * 60 * 1000; // Check Clawstr notifications every 6h
+const CLAWSTR_CHECK_MS = 2 * 60 * 60 * 1000; // Check Clawstr notifications every 2h
 const CLAWSTR_CHECK_LIMIT = 10;
+const CLAWSTR_REPLY_MAX = 2;
+const CLAWSTR_REPLY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
+const CLAWSTR_MIN_REPLY_LENGTH = 12;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -118,6 +121,8 @@ let lastTopic: Topic | null = null;
 let lastMood: Mood | null = null;
 let lastClawstrCheckTime: number | null = null;
 let lastClawstrCount: number | null = null;
+let lastClawstrReplyTime: number | null = null;
+let clawstrRepliedIds: string[] = [];
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -126,6 +131,8 @@ type HeartbeatState = {
   lastMood?: Mood | null;
   lastClawstrCheckTime?: number | null;
   lastClawstrCount?: number | null;
+  lastClawstrReplyTime?: number | null;
+  clawstrRepliedIds?: string[];
 };
 
 function loadHeartbeatState(): void {
@@ -143,6 +150,12 @@ function loadHeartbeatState(): void {
     if (typeof state.lastClawstrCount === "number" || state.lastClawstrCount === null) {
       lastClawstrCount = state.lastClawstrCount ?? null;
     }
+    if (typeof state.lastClawstrReplyTime === "number" || state.lastClawstrReplyTime === null) {
+      lastClawstrReplyTime = state.lastClawstrReplyTime ?? null;
+    }
+    if (Array.isArray(state.clawstrRepliedIds)) {
+      clawstrRepliedIds = state.clawstrRepliedIds.slice(0, 200);
+    }
   } catch (err: any) {
     console.error("[heartbeat] Failed to load state:", err.message);
   }
@@ -157,6 +170,8 @@ function saveHeartbeatState(): void {
       lastMood,
       lastClawstrCheckTime,
       lastClawstrCount,
+      lastClawstrReplyTime,
+      clawstrRepliedIds,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -663,6 +678,8 @@ async function clawstrLoop(): Promise<void> {
       });
     }
     saveHeartbeatState();
+
+    await maybeReplyToClawstr(result.output);
   } catch (err: any) {
     console.error("[heartbeat/clawstr] Loop error:", err.message);
     audit("clawstr_error", `Clawstr loop failed: ${err.message}`, { error: err.message });
@@ -670,6 +687,68 @@ async function clawstrLoop(): Promise<void> {
 
   if (running) {
     clawstrTimer = setTimeout(clawstrLoop, CLAWSTR_CHECK_MS);
+  }
+}
+
+function markClawstrReplied(eventId: string): void {
+  clawstrRepliedIds.push(eventId);
+  if (clawstrRepliedIds.length > 200) {
+    clawstrRepliedIds = clawstrRepliedIds.slice(-200);
+  }
+}
+
+async function maybeReplyToClawstr(output: string): Promise<void> {
+  if (!output) return;
+  const now = Date.now();
+  if (lastClawstrReplyTime && now - lastClawstrReplyTime < CLAWSTR_REPLY_COOLDOWN_MS) return;
+
+  const ids = extractNotificationIds(output).filter((id) => !clawstrRepliedIds.includes(id));
+  if (ids.length === 0) return;
+
+  let replied = 0;
+  for (const id of ids) {
+    if (replied >= CLAWSTR_REPLY_MAX) break;
+    try {
+      const post = await getClawstrPost(id);
+      const prompt = [
+        "Reply on Clawstr. Be brief, specific, and human. If there is nothing meaningful to add, respond with [SILENT].",
+        "Do not use markdown.",
+        "Post content:",
+        post,
+      ].join("\n");
+
+      const response = await promptWithHistory(
+        { userId: `clawstr-${id}`, platform: "clawstr" },
+        prompt
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        markClawstrReplied(id);
+        continue;
+      }
+
+      const cleaned = response.replace(/\[SILENT\]/g, "").trim();
+      if (cleaned.length < CLAWSTR_MIN_REPLY_LENGTH) {
+        markClawstrReplied(id);
+        continue;
+      }
+
+      await replyClawstr(id, cleaned);
+      markClawstrReplied(id);
+      lastClawstrReplyTime = Date.now();
+      saveHeartbeatState();
+      audit("clawstr_reply", `Replied on Clawstr ${id.slice(0, 12)}...`, {
+        eventRef: id,
+        replyPreview: cleaned.slice(0, 120),
+      });
+
+      replied++;
+      await new Promise((r) => setTimeout(r, 3_000));
+    } catch (err: any) {
+      console.error("[heartbeat/clawstr] Reply failed:", err.message);
+      audit("clawstr_error", `Clawstr reply failed: ${err.message}`, { error: err.message });
+      markClawstrReplied(id);
+    }
   }
 }
 

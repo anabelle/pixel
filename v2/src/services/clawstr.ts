@@ -76,6 +76,10 @@ export async function getClawstrFeed(subclaw?: string, limit = 15): Promise<stri
   return runClawstrCommand(args);
 }
 
+export async function getClawstrPost(eventRef: string): Promise<string> {
+  return runClawstrCommand(["show", eventRef]);
+}
+
 export async function getClawstrSearch(query: string, limit = 15): Promise<string> {
   return runClawstrCommand(["search", query, "--limit", String(limit)]);
 }
@@ -90,6 +94,16 @@ export async function replyClawstr(eventRef: string, content: string): Promise<s
 
 export async function upvoteClawstr(eventRef: string): Promise<string> {
   return runClawstrCommand(["upvote", eventRef]);
+}
+
+export function extractNotificationIds(output: string): string[] {
+  const ids = new Set<string>();
+  const regex = /\bnote1[0-9a-z]+\b/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = regex.exec(output)) !== null) {
+    ids.add(match[0]);
+  }
+  return Array.from(ids);
 }
 
 export { runClawstrCommand };
