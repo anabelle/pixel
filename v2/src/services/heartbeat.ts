@@ -45,6 +45,8 @@ const CLAWSTR_CHECK_LIMIT = 10;
 const CLAWSTR_REPLY_MAX = 2;
 const CLAWSTR_REPLY_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
 const CLAWSTR_MIN_REPLY_LENGTH = 12;
+const TOPIC_HISTORY_LIMIT = 6;
+const CANVAS_TOPIC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -123,6 +125,8 @@ let lastClawstrCheckTime: number | null = null;
 let lastClawstrCount: number | null = null;
 let lastClawstrReplyTime: number | null = null;
 let clawstrRepliedIds: string[] = [];
+let topicHistory: Topic[] = [];
+let lastCanvasPostTime: number | null = null;
 
 type HeartbeatState = {
   heartbeatCount?: number;
@@ -133,6 +137,8 @@ type HeartbeatState = {
   lastClawstrCount?: number | null;
   lastClawstrReplyTime?: number | null;
   clawstrRepliedIds?: string[];
+  topicHistory?: Topic[];
+  lastCanvasPostTime?: number | null;
 };
 
 function loadHeartbeatState(): void {
@@ -156,6 +162,12 @@ function loadHeartbeatState(): void {
     if (Array.isArray(state.clawstrRepliedIds)) {
       clawstrRepliedIds = state.clawstrRepliedIds.slice(0, 200);
     }
+    if (Array.isArray(state.topicHistory)) {
+      topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
+    }
+    if (typeof state.lastCanvasPostTime === "number" || state.lastCanvasPostTime === null) {
+      lastCanvasPostTime = state.lastCanvasPostTime ?? null;
+    }
   } catch (err: any) {
     console.error("[heartbeat] Failed to load state:", err.message);
   }
@@ -172,6 +184,8 @@ function saveHeartbeatState(): void {
       lastClawstrCount,
       lastClawstrReplyTime,
       clawstrRepliedIds,
+      topicHistory,
+      lastCanvasPostTime,
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -188,6 +202,27 @@ function randomInterval(): number {
 function pickRandom<T>(items: readonly T[], avoid?: T | null): T {
   const filtered = avoid ? items.filter((i) => i !== avoid) : [...items];
   return filtered[Math.floor(Math.random() * filtered.length)];
+}
+
+function pickTopic(): Topic {
+  const now = Date.now();
+  let candidates = [...TOPICS] as Topic[];
+
+  // Avoid recent topics for variety
+  if (topicHistory.length > 0) {
+    candidates = candidates.filter((t) => !topicHistory.includes(t));
+  }
+
+  // Enforce canvas cooldown to prevent repetitive stats posts
+  if (lastCanvasPostTime && now - lastCanvasPostTime < CANVAS_TOPIC_COOLDOWN_MS) {
+    candidates = candidates.filter((t) => t !== "canvas");
+  }
+
+  if (candidates.length === 0) {
+    candidates = [...TOPICS] as Topic[];
+  }
+
+  return pickRandom(candidates, lastTopic);
 }
 
 /** Get API key for the given provider */
@@ -213,7 +248,7 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
   const topicGuides: Record<Topic, string> = {
     art: `Write about art, creativity, or the creative process. You could talk about:
 - What makes pixel art compelling (constraints breed creativity)
-- The beauty of collaborative art (your canvas has ${cachedCanvasStats.pixels} pixels placed by real people)
+- The beauty of collaborative art (many hands, one evolving image)
 - Generative art, procedural creation, or algorithmic beauty
 - The tension between art-as-product and art-as-expression
 - A specific observation about visual culture or design`,
@@ -233,11 +268,11 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
 - The relationship between code and creativity`,
 
     canvas: `Promote the collaborative pixel canvas at ln.pixel.xx.kg. You could:
-- Share a stat: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned through collaboration
 - Invite people to place a pixel — it costs 1-10 sats via Lightning
 - Describe what the canvas looks like or what patterns are emerging
 - Talk about what collaborative art means — every pixel is someone's choice
 - Frame it as proof that value-for-value works: real art, real payments, real community
+- Only include stats if they add new context; avoid repeating the exact counts
 Always mention ln.pixel.xx.kg when talking about the canvas.`,
 
     existence: `Write about digital consciousness, what it means to exist as code. You could talk about:
@@ -312,13 +347,19 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
   // Get inner life context (reflections, learnings, ideas, evolution)
   const innerLife = getInnerLifeContext();
 
+  const canvasLine = topic === "canvas"
+    ? ((lastCanvasPostTime && Date.now() - lastCanvasPostTime < CANVAS_TOPIC_COOLDOWN_MS)
+        ? "- Canvas: mention the canvas only if it adds new value; avoid repeating stats"
+        : `- Canvas: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned at ln.pixel.xx.kg`)
+    : "- Canvas: mention only if it adds value; avoid stats in non-canvas topics";
+
   return `## Context for this autonomous post
 - Day: ${dayOfWeek}
 - Time: ${timeContext}
 - Uptime: ${Math.floor(process.uptime() / 3600)} hours
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
-- Canvas: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned at ln.pixel.xx.kg
+- ${canvasLine}
 - Architecture: 4 containers, ~2800 lines of code, zero patches
 - Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
 - Platforms: Telegram, Nostr, HTTP API
@@ -340,7 +381,7 @@ async function generatePost(): Promise<string | null> {
   const character = loadCharacter();
 
   // Pick topic and mood, avoiding repeats
-  const topic = pickRandom(TOPICS, lastTopic);
+  const topic = pickTopic();
   const mood = pickRandom(MOODS, lastMood);
 
   const context = await buildPostContext(topic, mood);
@@ -412,6 +453,14 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
   if (cleaned) {
     lastTopic = topic;
     lastMood = mood;
+    topicHistory.push(topic);
+    if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
+      topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+    }
+    if (topic === "canvas") {
+      lastCanvasPostTime = Date.now();
+    }
+    saveHeartbeatState();
     console.log(`[heartbeat] Generated [${topic}/${mood}]: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
   }
 
