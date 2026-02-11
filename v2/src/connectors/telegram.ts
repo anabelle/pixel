@@ -10,7 +10,7 @@
 
 import { Bot } from "grammy";
 import { promptWithHistory } from "../agent.js";
-import { appendToLog } from "../conversations.js";
+import { appendToLog, loadContext, saveContext } from "../conversations.js";
 
 // ============================================================
 // Module-level bot instance for proactive messaging
@@ -158,6 +158,50 @@ export async function startTelegram(): Promise<void> {
       console.error(`[telegram] Error for ${userId}:`, error.message);
       await ctx.reply("Something broke. I'll be back in a moment.").catch(() => {});
     }
+  });
+
+  // Handle message reactions (emoji reactions)
+  bot.on("message_reaction", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    if (!isGroupChat || !ctx.from) return;
+
+    const conversationId = `tg-group-${ctx.chat.id}`;
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+
+    const reaction = ctx.update.message_reaction;
+    const emojis = (reaction?.new_reaction ?? [])
+      .map((r: any) => r.emoji ?? r?.custom_emoji_id)
+      .filter(Boolean)
+      .join(" ");
+
+    const note = `Reaction: ${senderName} reacted ${emojis || "(unknown)"} to message ${reaction?.message_id ?? "?"}`;
+    const messages = loadContext(conversationId);
+    messages.push({ role: "user", content: note, metadata: { platform: "telegram", chatId: ctx.chat.id, from: senderName, type: "reaction" } });
+    saveContext(conversationId, messages);
+    appendToLog(conversationId, note, "", "telegram");
+  });
+
+  // Handle reaction count updates (group totals)
+  bot.on("message_reaction_count", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    if (!isGroupChat) return;
+
+    const conversationId = `tg-group-${ctx.chat.id}`;
+    const reaction = ctx.update.message_reaction_count;
+    const counts = (reaction?.reactions ?? [])
+      .map((r: any) => `${r.emoji ?? r?.custom_emoji_id}:${r.total_count ?? 0}`)
+      .filter(Boolean)
+      .join(" ");
+
+    const note = `Reactions update: message ${reaction?.message_id ?? "?"} now has ${counts || "(no reactions)"}`;
+    const messages = loadContext(conversationId);
+    messages.push({ role: "user", content: note, metadata: { platform: "telegram", chatId: ctx.chat.id, type: "reaction_count" } });
+    saveContext(conversationId, messages);
+    appendToLog(conversationId, note, "", "telegram");
   });
 
   // Error handler
