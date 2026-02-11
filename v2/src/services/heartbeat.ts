@@ -1549,6 +1549,18 @@ function normalizeReply(text: string): string {
     .trim();
 }
 
+function computeEngagementMultiplier(weeklySats: number): number {
+  if (weeklySats <= 0) return 1.6;
+  if (weeklySats < REVENUE_GOAL_WEEKLY_SATS * 0.5) return 1.5;
+  if (weeklySats < REVENUE_GOAL_WEEKLY_SATS) return 1.25;
+  if (weeklySats >= REVENUE_GOAL_WEEKLY_SATS * 2) return 0.9;
+  return 1.0;
+}
+
+function scaled(maxBase: number, cap: number): number {
+  return Math.min(cap, Math.max(1, Math.round(maxBase * engagementMultiplier)));
+}
+
 function markDiscoveryReplied(eventId: string): void {
   discoveryRepliedIds.push(eventId);
   if (discoveryRepliedIds.length > DISCOVERY_HISTORY_LIMIT) {
