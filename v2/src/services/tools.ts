@@ -175,12 +175,16 @@ export const bashTool: AgentTool<typeof bashSchema> = {
       if (!output.trim()) output = "(no output)";
 
       // Truncate very long output
+      const originalLength = output.length;
+      let truncated = false;
       if (output.length > 50_000) {
-        output = output.slice(0, 50_000) + `\n\n[... truncated, total ${output.length} chars]`;
+        output = output.slice(0, 50_000) + `\n\n[... truncated, total ${originalLength} chars]`;
+        truncated = true;
       }
 
       if (exitCode !== 0) {
-        auditToolUse("bash", { command, timeout }, { error: output.slice(0, 800), exitCode });
+        const preview = output.split("\n").slice(0, 6).join("\n");
+        auditToolUse("bash", { command, timeout }, { error: preview, exitCode, outputLength: originalLength, truncated });
         throw new Error(`${output}\n\nExit code: ${exitCode}`);
       }
 
@@ -188,7 +192,8 @@ export const bashTool: AgentTool<typeof bashSchema> = {
         content: [{ type: "text", text: output }],
         details: { exitCode },
       };
-      auditToolUse("bash", { command, timeout }, { exitCode, output: output.slice(0, 800) });
+      const preview = output.split("\n").slice(0, 6).join("\n");
+      auditToolUse("bash", { command, timeout }, { exitCode, outputPreview: preview, outputLength: originalLength, truncated });
       return result;
     } catch (err) {
       clearTimeout(timer);
