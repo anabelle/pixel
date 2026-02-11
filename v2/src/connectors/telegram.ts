@@ -19,6 +19,12 @@ import { appendToLog, loadContext, saveContext } from "../conversations.js";
 let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
+const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
+const GROUP_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const GROUP_PING_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
+const GROUP_PING_CHECK_MS = 10 * 60 * 1000; // 10 minutes
+const REACTION_REPLY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
+const groupReactionReply = new Map<number, { lastReply: number | null; messageIds: Set<number> }>();
 
 /** Owner's Telegram chat ID — receives proactive notifications */
 const OWNER_CHAT_ID = process.env.OWNER_TELEGRAM_ID ?? "";
@@ -124,6 +130,9 @@ export async function startTelegram(): Promise<void> {
       ? `@${ctx.from.username}`
       : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
     const formatted = isGroupChat ? `${senderName}: ${text}` : text;
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
 
     try {
       // Show typing indicator
@@ -167,6 +176,7 @@ export async function startTelegram(): Promise<void> {
     if (!isGroupChat || !ctx.from) return;
 
     const conversationId = `tg-group-${ctx.chat.id}`;
+    groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     const senderName = ctx.from.username
       ? `@${ctx.from.username}`
       : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
@@ -191,17 +201,57 @@ export async function startTelegram(): Promise<void> {
     if (!isGroupChat) return;
 
     const conversationId = `tg-group-${ctx.chat.id}`;
+    groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     const reaction = ctx.update.message_reaction_count;
     const counts = (reaction?.reactions ?? [])
       .map((r: any) => `${r.emoji ?? r?.custom_emoji_id}:${r.total_count ?? 0}`)
       .filter(Boolean)
       .join(" ");
 
-    const note = `Reactions update: message ${reaction?.message_id ?? "?"} now has ${counts || "(no reactions)"}`;
+    const messageId = reaction?.message_id;
+    const note = `Reactions update: message ${messageId ?? "?"} now has ${counts || "(no reactions)"}`;
     const messages = loadContext(conversationId);
     messages.push({ role: "user", content: note, metadata: { platform: "telegram", chatId: ctx.chat.id, type: "reaction_count" } });
     saveContext(conversationId, messages);
     appendToLog(conversationId, note, "", "telegram");
+
+    if (!messageId || !counts) return;
+    const total = (reaction?.reactions ?? []).reduce((sum: number, r: any) => sum + (r.total_count ?? 0), 0);
+    if (total <= 0) return;
+
+    const entry = groupReactionReply.get(ctx.chat.id) ?? { lastReply: null, messageIds: new Set<number>() };
+    if (entry.messageIds.has(messageId)) return;
+    if (entry.lastReply && Date.now() - entry.lastReply < REACTION_REPLY_COOLDOWN_MS) return;
+
+    try {
+      const prompt = `A message in this group just got ${total} reactions (${counts}). Decide if it's worth responding.
+If yes, respond with a short, upbeat acknowledgment or insight (max 2 sentences).
+If not worth responding, output [SILENT].`;
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram" },
+        prompt
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await botInstance?.api.sendMessage(ctx.chat.id, response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await botInstance?.api.sendMessage(ctx.chat.id, chunk);
+        }
+      }
+
+      entry.lastReply = Date.now();
+      entry.messageIds.add(messageId);
+      groupReactionReply.set(ctx.chat.id, entry);
+      appendToLog(conversationId, `[Reaction reply for message ${messageId}]`, response, "telegram");
+    } catch (err: any) {
+      console.error("[telegram] Reaction reply failed:", err.message);
+    }
   });
 
   // Error handler
@@ -222,6 +272,50 @@ export async function startTelegram(): Promise<void> {
   });
 
   console.log("[telegram] Starting bot...");
+
+  // Proactive group pings when idle
+  setInterval(async () => {
+    if (!botInstance) return;
+    const now = Date.now();
+    for (const [chatId, info] of groupActivity.entries()) {
+      const idle = now - info.lastActivity;
+      const sincePing = info.lastPing ? now - info.lastPing : Number.POSITIVE_INFINITY;
+      if (idle < GROUP_IDLE_MS) continue;
+      if (sincePing < GROUP_PING_COOLDOWN_MS) continue;
+
+      const conversationId = `tg-group-${chatId}`;
+      const idleHours = Math.round(idle / 3_600_000);
+      const prompt = `The group has been quiet for about ${idleHours} hours. Send a brief, engaging spark relevant to recent group lore. If nothing useful, respond with [SILENT].`;
+
+      try {
+        const response = await promptWithHistory(
+          { userId: conversationId, platform: "telegram" },
+          prompt
+        );
+
+        if (!response || response.includes("[SILENT]")) {
+          info.lastPing = now;
+          groupActivity.set(chatId, info);
+          continue;
+        }
+
+        if (response.length <= 4096) {
+          await botInstance.api.sendMessage(chatId, response);
+        } else {
+          const chunks = splitMessage(response, 4096);
+          for (const chunk of chunks) {
+            await botInstance.api.sendMessage(chatId, chunk);
+          }
+        }
+
+        appendToLog(conversationId, `[Proactive ping after ${idleHours}h idle]`, response, "telegram");
+        info.lastPing = now;
+        groupActivity.set(chatId, info);
+      } catch (err: any) {
+        console.error("[telegram] Proactive ping failed:", err.message);
+      }
+    }
+  }, GROUP_PING_CHECK_MS);
 }
 
 /** Split a long message into chunks at line boundaries */
