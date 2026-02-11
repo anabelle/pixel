@@ -23,6 +23,7 @@ import { l402 } from "./services/l402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus } from "./services/digest.js";
+import { startJobs, enqueueJob, getRecentJobs } from "./services/jobs.js";
 
 // ============================================================
 // Configuration
@@ -200,6 +201,26 @@ app.get("/api/wallet", async (c) => {
 app.get("/api/revenue", async (c) => {
   const stats = await getRevenueStats();
   return c.json(stats);
+});
+
+/** Job queue */
+app.post("/api/job", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const prompt = typeof body?.prompt === "string" ? body.prompt : "";
+  const toolsAllowed = Array.isArray(body?.toolsAllowed) ? body.toolsAllowed : undefined;
+
+  if (!prompt.trim()) {
+    return c.json({ error: "prompt is required" }, 400);
+  }
+
+  const job = enqueueJob(prompt, toolsAllowed);
+  return c.json({ job });
+});
+
+app.get("/api/jobs", (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "10", 10);
+  const jobs = getRecentJobs(Math.min(limit, 50));
+  return c.json({ jobs });
 });
 
 /** Recent audit entries */
@@ -401,6 +422,9 @@ async function boot() {
 
   // Start digest/notification service
   startDigest();
+
+  // Start job runner
+  startJobs();
 
   try {
     await startWhatsApp();
