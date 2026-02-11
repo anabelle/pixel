@@ -255,8 +255,10 @@ export const checkHealthTool: AgentTool<typeof healthSchema> = {
 // ─── READ LOGS ────────────────────────────────────────────────
 
 const logsSchema = Type.Object({
-  source: Type.String({ description: "Log source: 'self' (own stdout), 'conversations' (list user conversations), 'revenue' (revenue stats)" }),
+  source: Type.String({ description: "Log source: 'self' (own stdout), 'conversations' (list user conversations), 'revenue' (revenue stats), or a specific conversation id" }),
   lines: Type.Optional(Type.Number({ description: "Number of recent lines to show (default: 50)" })),
+  conversationId: Type.Optional(Type.String({ description: "Conversation ID (e.g. tg-group--4839030836)" })),
+  includeContext: Type.Optional(Type.Boolean({ description: "Include current context.json if available (default: false)" })),
 });
 
 export const readLogsTool: AgentTool<typeof logsSchema> = {
@@ -264,12 +266,41 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
   label: "Read Logs",
   description: "Read Pixel's own logs, conversation history, or revenue data.",
   parameters: logsSchema,
-  execute: async (_id, { source, lines }) => {
+  execute: async (_id, { source, lines, conversationId, includeContext }) => {
     const count = lines ?? 50;
+
+    const convDir = "/app/conversations";
+    const resolvedConversationId = source.startsWith("conversations:")
+      ? source.slice("conversations:".length)
+      : conversationId;
+
+    if (resolvedConversationId) {
+      const safeId = resolvedConversationId.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
+      const logFile = join(convDir, safeId, "log.jsonl");
+      if (!existsSync(logFile)) {
+        return { content: [{ type: "text", text: `No log for ${safeId}` }], details: undefined };
+      }
+
+      const raw = readFileSync(logFile, "utf-8");
+      const linesAll = raw.split("\n").filter(Boolean);
+      const tail = linesAll.slice(-Math.min(count, 200));
+      let output = `Conversation ${safeId} (${linesAll.length} entries)\n` + tail.join("\n");
+
+      if (includeContext) {
+        const contextFile = join(convDir, safeId, "context.json");
+        if (existsSync(contextFile)) {
+          try {
+            const ctxRaw = readFileSync(contextFile, "utf-8");
+            output += `\n\n[context.json]\n${ctxRaw}`;
+          } catch {}
+        }
+      }
+
+      return { content: [{ type: "text", text: output }], details: { count: tail.length } };
+    }
 
     switch (source) {
       case "conversations": {
-        const convDir = "/app/conversations";
         if (!existsSync(convDir)) return { content: [{ type: "text", text: "No conversations directory" }], details: undefined };
         const users = readdirSync(convDir).filter(f => {
           const p = join(convDir, f);
