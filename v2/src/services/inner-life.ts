@@ -329,6 +329,25 @@ async function updateIdeaGarden(reflections: string, learnings: string, ideas: s
 
   const updated = renderGarden(rebuilt);
   writeLivingDoc(IDEA_GARDEN_PATH, updated);
+  autoHarvestProjects(rebuilt);
+}
+
+function autoHarvestProjects(garden: Garden): void {
+  if (garden.Ready.length === 0) return;
+  const existing = readLivingDoc("projects.md");
+  const lines = existing.split("\n");
+  const titles = new Set(lines.map((l) => l.toLowerCase()));
+
+  const additions: string[] = [];
+  for (const seed of garden.Ready.slice(0, 2)) {
+    const titleLine = `- ${seed.title}`;
+    if (titles.has(titleLine.toLowerCase())) continue;
+    additions.push(`${titleLine}\n  - why: ${seed.origin}\n  - next: define a concrete first step`);
+  }
+
+  if (additions.length === 0) return;
+  const updated = `${existing.trim()}\n\n## Auto-harvested\n${additions.join("\n")}`.trim() + "\n";
+  writeLivingDoc("projects.md", updated);
 }
 
 /** Get API key for the given provider */
@@ -764,6 +783,7 @@ Write in first person, lowercase, present tense.`
 async function updateProjectQueue(reflections: string, learnings: string, ideas: string): Promise<void> {
   const existing = readLivingDoc("projects.md");
   const gardenSummary = summarizeIdeaGarden();
+  const autoProjects = deriveProjectsFromGarden();
   const response = await llmCall(
     "You maintain Pixel's autonomous project queue. Keep it short and actionable. Output plain markdown.",
     `Update the project queue.
@@ -778,6 +798,9 @@ ${existing || "(empty)"}
 
 Idea garden (ready/sprouting):
 ${gardenSummary}
+
+Auto-harvest projects:
+${autoProjects}
 
 Recent context:
 Reflections:
@@ -861,6 +884,19 @@ function summarizeIdeaGarden(): string {
     return lines.length ? lines.join("\n") : "(empty)";
   } catch {
     return "(empty)";
+  }
+}
+
+function deriveProjectsFromGarden(): string {
+  try {
+    ensureIdeaGarden();
+    const raw = readLivingDoc(IDEA_GARDEN_PATH);
+    const garden = parseGarden(raw);
+    const ready = garden.Ready.sort((a, b) => b.waterings - a.waterings).slice(0, 3);
+    if (ready.length === 0) return "(none)";
+    return ready.map((s) => `- ${s.title}: ${s.origin}`).join("\n");
+  } catch {
+    return "(none)";
   }
 }
 
