@@ -40,6 +40,7 @@ const PORT = parseInt(process.env.PORT ?? "4000", 10);
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5433/pixel_v2";
 const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const SKILLS_DIR = process.env.SKILLS_DIR ?? "./skills";
+const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
 
 // Dashboard privacy: public metrics by default, sensitive details behind NIP-07+NIP-98 owner auth
 const DASHBOARD_OWNER_NPUB =
@@ -325,6 +326,43 @@ app.get("/api/audit/summary", (c) => {
   }
   const last = entries.length ? entries[entries.length - 1] : null;
   return c.json({ count: entries.length, byType, lastByType, lastTs: last?.ts ?? null });
+});
+
+/** Conversation log for a user (JSONL) */
+app.get("/api/conversations/:userId", requireOwnerNostrAuth, (c) => {
+  const userId = c.req.param("userId");
+  const limitRaw = parseInt(c.req.query("limit") ?? "50", 10);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 50, 1), 200);
+  const safeId = userId.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
+  const logPath = join(CONVERSATIONS_DIR, safeId, "log.jsonl");
+
+  if (!existsSync(logPath)) {
+    return c.json({ messages: [], count: 0, userId: safeId });
+  }
+
+  try {
+    const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
+    const parsed = lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { ts: string; platform?: string; user?: string; assistant?: string };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { ts: string; platform?: string; user?: string; assistant?: string } => !!entry);
+    const slice = parsed.slice(-limit).reverse();
+    const messages = slice.map((entry) => ({
+      ts: entry.ts,
+      platform: entry.platform ?? "",
+      user: entry.user ?? "",
+      assistant: entry.assistant ?? "",
+    }));
+
+    return c.json({ messages, count: messages.length, userId: safeId });
+  } catch {
+    return c.json({ messages: [], count: 0, userId: safeId });
+  }
 });
 
 // ============================================================
