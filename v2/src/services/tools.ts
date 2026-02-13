@@ -1288,6 +1288,246 @@ export const modifyAlarmTool: AgentTool<typeof modifyAlarmSchema> = {
   },
 };
 
+// ─── LIST CHATS ───────────────────────────────────────────────
+
+// Map platform names to directory prefixes
+const platformDirPrefix: Record<string, string> = {
+  telegram: "tg",
+  tg: "tg",
+  whatsapp: "whatsapp",
+  nostr: "nostr",
+  instagram: "instagram",
+};
+
+const listChatsSchema = Type.Object({
+  platform: Type.Optional(Type.String({ description: "Filter by platform (telegram/whatsapp/nostr). Default: all" })),
+});
+
+export const listChatsTool: AgentTool<typeof listChatsSchema> = {
+  name: "list_chats",
+  label: "List Chats",
+  description: "List all known conversations (DMs and groups) across platforms. Returns chat IDs, types, names (extracted from memory files), and platform. Use this to find a chat's ID for cross-chat alarm targeting.",
+  parameters: listChatsSchema,
+  execute: async (_id, { platform }) => {
+    const convDir = join("/app", "conversations");
+    if (!existsSync(convDir)) {
+      return { content: [{ type: "text", text: "No conversations directory found." }] };
+    }
+
+    const prefix = platform ? platformDirPrefix[platform.toLowerCase()] || platform : null;
+
+    const entries = readdirSync(convDir).filter(e => {
+      const full = join(convDir, e);
+      if (!statSync(full).isDirectory()) return false;
+      // Only include platform-prefixed conversation dirs
+      if (prefix) return e.startsWith(`${prefix}-`);
+      return /^(tg|whatsapp|nostr|instagram)-/.test(e);
+    });
+
+    const chats: { dir: string; type: string; platform: string; chatId: string; name: string }[] = [];
+
+    for (const dir of entries) {
+      let chatPlatform = "unknown";
+      let chatId = "";
+      let chatType = "dm";
+      let name = "";
+
+      // Parse directory name pattern: {platform}-group-{id} or {platform}-{id}
+      if (dir.startsWith("tg-group-")) {
+        chatPlatform = "telegram";
+        chatId = dir.replace("tg-group-", "");
+        chatType = "group";
+      } else if (dir.startsWith("tg-")) {
+        chatPlatform = "telegram";
+        chatId = dir.replace("tg-", "");
+        chatType = "dm";
+      } else if (dir.startsWith("whatsapp-group-")) {
+        chatPlatform = "whatsapp";
+        chatId = dir.replace("whatsapp-group-", "");
+        chatType = "group";
+      } else if (dir.startsWith("whatsapp-")) {
+        chatPlatform = "whatsapp";
+        chatId = dir.replace("whatsapp-", "");
+        chatType = "dm";
+      } else if (dir.startsWith("nostr-")) {
+        chatPlatform = "nostr";
+        chatId = dir.replace("nostr-", "");
+        chatType = "dm";
+      } else if (dir.startsWith("instagram-")) {
+        chatPlatform = "instagram";
+        chatId = dir.replace("instagram-", "");
+        chatType = "dm";
+      }
+
+      // Skip nostr/clawstr/test conversations — too many, not useful for cross-chat targeting
+      if (chatPlatform === "nostr") continue;
+      if (dir.startsWith("clawstr-") || dir.startsWith("test-") || dir.startsWith("session") || dir === "anonymous" || dir.startsWith("llm-") || dir.startsWith("e2e-")) continue;
+
+      // Extract name from memory.md or group.md
+      const memPath = join(convDir, dir, "memory.md");
+      const grpPath = join(convDir, dir, "group.md");
+
+      if (existsSync(memPath)) {
+        try {
+          const mem = readFileSync(memPath, "utf-8");
+          // Try to find a Name field
+          const nameMatch = mem.match(/\*\*Name:\*\*\s*(.+)/);
+          if (nameMatch) name = nameMatch[1].trim();
+        } catch {}
+      }
+      if (!name && existsSync(grpPath)) {
+        try {
+          const grp = readFileSync(grpPath, "utf-8");
+          // Try first meaningful line
+          const firstLine = grp.split("\n").find(l => l.trim().length > 0);
+          if (firstLine) name = firstLine.replace(/^[\s*-]+/, "").slice(0, 80).trim();
+        } catch {}
+      }
+
+      chats.push({ dir, type: chatType, platform: chatPlatform, chatId, name: name || "(no name)" });
+    }
+
+    if (chats.length === 0) {
+      return { content: [{ type: "text", text: "No chats found." }] };
+    }
+
+    const lines = chats.map(c => 
+      `- [${c.type}] ${c.platform} | chatId: ${c.chatId} | name: ${c.name} | dir: ${c.dir}`
+    );
+
+    auditToolUse("list_chats", { platform }, { count: chats.length });
+    return { content: [{ type: "text", text: `Found ${chats.length} chats:\n${lines.join("\n")}` }] };
+  },
+};
+
+// ─── FIND CHAT ────────────────────────────────────────────────
+
+const findChatSchema = Type.Object({
+  query: Type.String({ description: "Search keyword to find a chat by name, member, or description. Case-insensitive fuzzy search across memory.md and group.md files." }),
+  platform: Type.Optional(Type.String({ description: "Filter by platform (telegram/whatsapp/nostr). Default: all" })),
+});
+
+export const findChatTool: AgentTool<typeof findChatSchema> = {
+  name: "find_chat",
+  label: "Find Chat",
+  description: "Search for a chat by name, member name, or keyword. Returns matching chats with their chat IDs for use in schedule_alarm's platform_chat_id parameter. Example: find_chat({query: 'rubens'}) to find the TalleRubens group.",
+  parameters: findChatSchema,
+  execute: async (_id, { query, platform }) => {
+    const convDir = join("/app", "conversations");
+    if (!existsSync(convDir)) {
+      return { content: [{ type: "text", text: "No conversations directory found." }] };
+    }
+
+    const queryLower = query.toLowerCase();
+    const prefix = platform ? platformDirPrefix[platform.toLowerCase()] || platform : null;
+    const entries = readdirSync(convDir).filter(e => {
+      const full = join(convDir, e);
+      if (!statSync(full).isDirectory()) return false;
+      if (prefix) return e.startsWith(`${prefix}-`);
+      return /^(tg|whatsapp|instagram)-/.test(e);
+    });
+
+    // Also skip nostr (too many), test dirs, etc.
+    const filteredEntries = entries.filter(dir =>
+      !dir.startsWith("nostr-") && !dir.startsWith("clawstr-") && !dir.startsWith("test-") &&
+      !dir.startsWith("session") && dir !== "anonymous" && !dir.startsWith("llm-") && !dir.startsWith("e2e-")
+    );
+
+    const matches: { dir: string; type: string; platform: string; chatId: string; name: string; matchContext: string }[] = [];
+
+    for (const dir of filteredEntries) {
+      let chatPlatform = "unknown";
+      let chatId = "";
+      let chatType = "dm";
+
+      if (dir.startsWith("tg-group-")) {
+        chatPlatform = "telegram";
+        chatId = dir.replace("tg-group-", "");
+        chatType = "group";
+      } else if (dir.startsWith("tg-")) {
+        chatPlatform = "telegram";
+        chatId = dir.replace("tg-", "");
+        chatType = "dm";
+      } else if (dir.startsWith("whatsapp-group-")) {
+        chatPlatform = "whatsapp";
+        chatId = dir.replace("whatsapp-group-", "");
+        chatType = "group";
+      } else if (dir.startsWith("whatsapp-")) {
+        chatPlatform = "whatsapp";
+        chatId = dir.replace("whatsapp-", "");
+        chatType = "dm";
+      } else if (dir.startsWith("instagram-")) {
+        chatPlatform = "instagram";
+        chatId = dir.replace("instagram-", "");
+        chatType = "dm";
+      }
+
+      // Check directory name itself
+      let matched = dir.toLowerCase().includes(queryLower);
+      let matchContext = matched ? `Directory name contains "${query}"` : "";
+
+      // Search memory.md
+      const memPath = join(convDir, dir, "memory.md");
+      if (existsSync(memPath)) {
+        try {
+          const mem = readFileSync(memPath, "utf-8");
+          if (mem.toLowerCase().includes(queryLower)) {
+            matched = true;
+            // Extract the matching line for context
+            const matchLine = mem.split("\n").find(l => l.toLowerCase().includes(queryLower));
+            matchContext = matchLine ? matchLine.replace(/^[\s*-]+/, "").slice(0, 120).trim() : "Found in memory.md";
+          }
+        } catch {}
+      }
+
+      // Search group.md
+      const grpPath = join(convDir, dir, "group.md");
+      if (existsSync(grpPath)) {
+        try {
+          const grp = readFileSync(grpPath, "utf-8");
+          if (grp.toLowerCase().includes(queryLower)) {
+            matched = true;
+            const matchLine = grp.split("\n").find(l => l.toLowerCase().includes(queryLower));
+            matchContext = matchLine ? matchLine.replace(/^[\s*-]+/, "").slice(0, 120).trim() : "Found in group.md";
+          }
+        } catch {}
+      }
+
+      if (matched) {
+        // Get name from memory
+        let name = "";
+        if (existsSync(memPath)) {
+          try {
+            const mem = readFileSync(memPath, "utf-8");
+            const nameMatch = mem.match(/\*\*Name:\*\*\s*(.+)/);
+            if (nameMatch) name = nameMatch[1].trim();
+          } catch {}
+        }
+
+        matches.push({
+          dir,
+          type: chatType,
+          platform: chatPlatform,
+          chatId,
+          name: name || "(no name)",
+          matchContext,
+        });
+      }
+    }
+
+    if (matches.length === 0) {
+      return { content: [{ type: "text", text: `No chats found matching "${query}".` }] };
+    }
+
+    const lines = matches.map(m =>
+      `- [${m.type}] ${m.platform} | chatId: ${m.chatId} | name: ${m.name}\n  match: ${m.matchContext}`
+    );
+
+    auditToolUse("find_chat", { query, platform }, { matchCount: matches.length });
+    return { content: [{ type: "text", text: `Found ${matches.length} chat(s) matching "${query}":\n${lines.join("\n")}` }] };
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -1303,6 +1543,8 @@ export const pixelTools = [
   cancelAlarmTool,
   cancelAllAlarmsTool,
   modifyAlarmTool,
+  listChatsTool,
+  findChatTool,
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,

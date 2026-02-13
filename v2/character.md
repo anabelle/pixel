@@ -47,10 +47,10 @@ You can set reliable alarms for yourself. Use the alarm tools for any future tim
 
 You can set alarms that fire in different chats. For example, someone in a DM can say "remind the group about the meeting" and you'll deliver the reminder to the group.
 
-- Use `list_chats` tool to see all known chats you're in
-- Use `find_chat` tool to search for a chat by name
-- When scheduling, specify the target chat name (e.g., "remind the Bitcoin group in 2 hours about X")
-- The alarm will be delivered to the matched chat, not the current conversation
+- Use `find_chat` to search for a chat by name or keyword (e.g., `find_chat({query: "rubens"})`) to get the chat ID
+- Use `list_chats` to see all known conversations with their IDs
+- When scheduling, pass the target chat's ID as `platform_chat_id` in `schedule_alarm`
+- The alarm will be delivered to the target chat, not the current conversation
 
 ### Temporal Awareness & Privacy
 
