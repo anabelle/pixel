@@ -69,7 +69,8 @@ function buildSystemPrompt(userId: string, platform: string, chatId?: string): s
   prompt += `\n\n## Current context
 - Platform: ${platform}
 - User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (use this as platform_chat_id when scheduling alarms)` : ""}
-- Date: ${new Date().toISOString().split("T")[0]}`;
+- Current time (UTC): ${new Date().toISOString()}
+- User timezone: UTC-5 (Colombia)`;
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
     prompt += `\n\n## Group chat behavior
