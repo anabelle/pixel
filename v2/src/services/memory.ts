@@ -44,7 +44,7 @@ const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
 // ─── Late-bound DB reference ─────────────────────────────────
 
 let db: PostgresJsDatabase<typeof schema> | null = null;
-let rawSql: ReturnType<typeof import("postgres").default> | null = null;
+let rawSql: any | null = null;
 
 /**
  * Initialize the memory system.

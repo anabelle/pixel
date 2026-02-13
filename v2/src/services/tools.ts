@@ -41,7 +41,7 @@ export const readFileTool: AgentTool<typeof readSchema> = {
     if (stat.isDirectory()) {
       const entries = readdirSync(resolved);
       const output = {
-        content: [{ type: "text", text: `Directory listing of ${resolved}:\n${entries.join("\n")}` }],
+        content: [{ type: "text" as const, text: `Directory listing of ${resolved}:\n${entries.join("\n")}` }],
         details: undefined,
       };
       auditToolUse("read_file", { path, offset, limit }, { directory: resolved, count: entries.length });
@@ -59,7 +59,7 @@ export const readFileTool: AgentTool<typeof readSchema> = {
       result += `\n\n[... ${lines.length - start - count} more lines. Total: ${lines.length} lines]`;
     }
     const output = {
-      content: [{ type: "text", text: result }],
+      content: [{ type: "text" as const, text: result }],
       details: { totalLines: lines.length, showing: slice.length },
     };
     auditToolUse("read_file", { path, offset, limit }, { file: resolved, totalLines: lines.length, showing: slice.length });
@@ -87,7 +87,7 @@ export const writeFileTool: AgentTool<typeof writeSchema> = {
     }
     writeFileSync(resolved, content, "utf-8");
     const output = {
-      content: [{ type: "text", text: `Wrote ${content.length} bytes to ${resolved}` }],
+      content: [{ type: "text" as const, text: `Wrote ${content.length} bytes to ${resolved}` }],
       details: undefined,
     };
     auditToolUse("write_file", { path, contentLength: content.length }, { file: resolved });
@@ -131,7 +131,7 @@ export const editFileTool: AgentTool<typeof editSchema> = {
     writeFileSync(resolved, updated, "utf-8");
     const replaced = replace_all ? count : 1;
     const output = {
-      content: [{ type: "text", text: `Edited ${resolved}: replaced ${replaced} occurrence(s)` }],
+      content: [{ type: "text" as const, text: `Edited ${resolved}: replaced ${replaced} occurrence(s)` }],
       details: { replacements: replaced },
     };
     auditToolUse("edit_file", { path, oldTextLength: old_text.length, newTextLength: new_text.length, replaceAll: !!replace_all }, { file: resolved, replacements: replaced });
@@ -192,7 +192,7 @@ export const bashTool: AgentTool<typeof bashSchema> = {
       }
 
       const result = {
-        content: [{ type: "text", text: output }],
+        content: [{ type: "text" as const, text: output }],
         details: { exitCode },
       };
       const preview = output.split("\n").slice(0, 6).join("\n");
@@ -271,7 +271,7 @@ export const checkHealthTool: AgentTool<typeof healthSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: results.join("\n") }],
+      content: [{ type: "text" as const, text: results.join("\n") }],
       details: undefined,
     };
     auditToolUse("check_health", { service }, { resultsCount: results.length });
@@ -308,7 +308,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
       if (!existsSync(logFile)) {
         console.log(`[tools] read_logs: no log found for ${safeId}`);
         auditToolUse("read_logs", { source, conversationId: safeId }, { error: "no_log" });
-        return { content: [{ type: "text", text: `No log for ${safeId}` }], details: undefined };
+        return { content: [{ type: "text" as const, text: `No log for ${safeId}` }], details: undefined };
       }
 
       const raw = readFileSync(logFile, "utf-8");
@@ -328,12 +328,12 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
 
       console.log(`[tools] read_logs: read ${tail.length} lines from ${safeId}`);
       auditToolUse("read_logs", { source, conversationId: safeId, lines: count }, { count: tail.length });
-      return { content: [{ type: "text", text: output }], details: { count: tail.length } };
+      return { content: [{ type: "text" as const, text: output }], details: { count: tail.length } };
     }
 
     switch (source) {
       case "conversations": {
-        if (!existsSync(convDir)) return { content: [{ type: "text", text: "No conversations directory" }], details: undefined };
+        if (!existsSync(convDir)) return { content: [{ type: "text" as const, text: "No conversations directory" }], details: undefined };
         const users = readdirSync(convDir).filter(f => {
           const p = join(convDir, f);
           return statSync(p).isDirectory();
@@ -347,7 +347,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
           return `${userId}: ${hasLog ? `${logSize} bytes` : "no log"} ${hasMem ? "+ memory" : ""}`;
         });
         const result = {
-          content: [{ type: "text", text: `${users.length} conversations:\n${summaries.join("\n")}` }],
+          content: [{ type: "text" as const, text: `${users.length} conversations:\n${summaries.join("\n")}` }],
           details: { count: users.length },
         };
         auditToolUse("read_logs", { source }, { count: users.length });
@@ -359,7 +359,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
           const data = await res.json();
           auditToolUse("read_logs", { source }, { ok: true });
           return {
-            content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+            content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
             details: data,
           };
         } catch (e: any) {
@@ -372,7 +372,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
         // Read from data directory if we're logging there, otherwise just report status
         auditToolUse("read_logs", { source }, { ok: true });
         return {
-          content: [{ type: "text", text: "Self-logs are in container stdout. Use bash tool with: 'echo check health endpoint instead' or check_health tool for live status." }],
+          content: [{ type: "text" as const, text: "Self-logs are in container stdout. Use bash tool with: 'echo check health endpoint instead' or check_health tool for live status." }],
           details: undefined,
         };
       }
@@ -447,7 +447,7 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
         body = body.slice(0, 30_000) + `\n\n[... truncated, total ${body.length} chars]`;
       }
       const result = {
-        content: [{ type: "text", text: `${res.status} ${res.statusText}\n\n${body}` }],
+        content: [{ type: "text" as const, text: `${res.status} ${res.statusText}\n\n${body}` }],
         details: { status: res.status },
       };
       auditToolUse("web_fetch", { url, method }, { status: res.status, bodyLength: body.length });
@@ -541,7 +541,7 @@ export const webSearchTool: AgentTool<typeof webSearchSchema> = {
       const text = `## Search: "${fullQuery}"\n${results.length} results\n\n${formatted}`;
 
       auditToolUse("web_search", { query: fullQuery, max_results: limit }, { resultCount: results.length });
-      return { content: [{ type: "text", text }], details: { resultCount: results.length } };
+      return { content: [{ type: "text" as const, text }], details: { resultCount: results.length } };
     } catch (e: any) {
       auditToolUse("web_search", { query: fullQuery }, { error: e.message });
       throw new Error(`Search failed: ${e.message}`);
@@ -605,7 +605,7 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
 
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `investigación encolada: "${topic}" (job ${job.id}). los resultados se entregarán a este chat cuando estén listos (~60s).`,
       }],
       details: { jobId: job.id },
@@ -628,7 +628,7 @@ export const clawstrFeedTool: AgentTool<typeof clawstrFeedSchema> = {
   execute: async (_id, { subclaw, limit }) => {
     const output = await getClawstrFeed(subclaw, limit ?? 15);
     auditToolUse("clawstr_feed", { subclaw, limit }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -645,7 +645,7 @@ export const clawstrPostTool: AgentTool<typeof clawstrPostSchema> = {
   execute: async (_id, { subclaw, content }) => {
     const output = await postClawstr(subclaw, content);
     auditToolUse("clawstr_post", { subclaw, contentLength: content.length }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -662,7 +662,7 @@ export const clawstrReplyTool: AgentTool<typeof clawstrReplySchema> = {
   execute: async (_id, { eventRef, content }) => {
     const output = await replyClawstr(eventRef, content);
     auditToolUse("clawstr_reply", { eventRef, contentLength: content.length }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -679,7 +679,7 @@ export const clawstrNotificationsTool: AgentTool<typeof clawstrNotificationsSche
     const result = await getClawstrNotifications(limit ?? 20);
     const output = result.output;
     auditToolUse("clawstr_notifications", { limit }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -695,7 +695,7 @@ export const clawstrUpvoteTool: AgentTool<typeof clawstrUpvoteSchema> = {
   execute: async (_id, { eventRef }) => {
     const output = await upvoteClawstr(eventRef);
     auditToolUse("clawstr_upvote", { eventRef }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -712,7 +712,7 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   execute: async (_id, { query, limit }) => {
     const output = await getClawstrSearch(query, limit ?? 15);
     auditToolUse("clawstr_search", { query, limit }, { length: output.length });
-    return { content: [{ type: "text", text: output }], details: undefined };
+    return { content: [{ type: "text" as const, text: output }], details: undefined };
   },
 };
 
@@ -747,7 +747,7 @@ export const gitStatusTool: AgentTool<typeof gitStatusSchema> = {
 
     const lines = stdout.trim().split("\n").filter(Boolean);
     const result = {
-      content: [{ type: "text", text: lines.length ? stdout : "Working tree clean" }],
+      content: [{ type: "text" as const, text: lines.length ? stdout : "Working tree clean" }],
       details: { files: lines.length },
     };
     auditToolUse("git_status", { repo }, { files: lines.length });
@@ -792,7 +792,7 @@ export const gitDiffTool: AgentTool<typeof gitDiffSchema> = {
 
     const truncated = stdout.length > 30_000 ? stdout.slice(0, 30_000) + "\n\n[... truncated]" : stdout;
     const result = {
-      content: [{ type: "text", text: truncated || "No changes" }],
+      content: [{ type: "text" as const, text: truncated || "No changes" }],
       details: { length: stdout.length },
     };
     auditToolUse("git_diff", { repo, staged, file }, { length: stdout.length });
@@ -837,7 +837,7 @@ export const gitLogTool: AgentTool<typeof gitLogSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: stdout || "No commits" }],
+      content: [{ type: "text" as const, text: stdout || "No commits" }],
       details: { commits: stdout.split("\n").filter(Boolean).length },
     };
     auditToolUse("git_log", { repo, limit, file, oneline }, { commits: result.details.commits });
@@ -877,7 +877,7 @@ export const gitShowTool: AgentTool<typeof gitShowSchema> = {
 
     const truncated = stdout.length > 30_000 ? stdout.slice(0, 30_000) + "\n\n[... truncated]" : stdout;
     const result = {
-      content: [{ type: "text", text: truncated || "Not found" }],
+      content: [{ type: "text" as const, text: truncated || "Not found" }],
       details: { length: stdout.length },
     };
     auditToolUse("git_show", { repo, ref }, { length: stdout.length });
@@ -921,7 +921,7 @@ export const gitBranchTool: AgentTool<typeof gitBranchSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: stdout || "No branches" }],
+      content: [{ type: "text" as const, text: stdout || "No branches" }],
       details: { branches: stdout.split("\n").filter(Boolean).length },
     };
     auditToolUse("git_branch", { repo, list, current }, { branches: result.details.branches });
@@ -971,7 +971,7 @@ export const gitCloneTool: AgentTool<typeof gitCloneSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: `Cloned to ${target}\n${stdout}${stderr}` }],
+      content: [{ type: "text" as const, text: `Cloned to ${target}\n${stdout}${stderr}` }],
       details: { target, url },
     };
     auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { target, url });
@@ -1014,7 +1014,7 @@ export const gitPullTool: AgentTool<typeof gitPullSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: stdout || stderr }],
+      content: [{ type: "text" as const, text: stdout || stderr }],
       details: { repo },
     };
     auditToolUse("git_pull", { repo, branch }, { success: true });
@@ -1068,7 +1068,7 @@ export const gitPushTool: AgentTool<typeof gitPushSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: stdout || "Pushed successfully" }],
+      content: [{ type: "text" as const, text: stdout || "Pushed successfully" }],
       details: { repo },
     };
     auditToolUse("git_push", { repo, remote, branch, token: !!effectiveToken }, { success: true });
@@ -1117,7 +1117,7 @@ export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
     }
 
     const result = {
-      content: [{ type: "text", text: stdout || "Committed successfully" }],
+      content: [{ type: "text" as const, text: stdout || "Committed successfully" }],
       details: { repo },
     };
     auditToolUse("git_commit", { repo, message, files }, { success: true });
@@ -1215,7 +1215,7 @@ export const sshTool: AgentTool<typeof sshSchema> = {
     }
 
     return {
-      content: [{ type: "text", text: truncated || "Command executed successfully" }],
+      content: [{ type: "text" as const, text: truncated || "Command executed successfully" }],
       details: { exitCode, outputLength: output.length },
     };
   },
@@ -1281,7 +1281,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
       const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
       
       auditToolUse("wp", { host: effectiveHost, command }, { exitCode, outputLength: output.length });
-      return { content: [{ type: "text", text: truncated }], details: { exitCode } };
+      return { content: [{ type: "text" as const, text: truncated }], details: { exitCode } };
     } else {
       const proc = Bun.spawn(["wp", ...command.split(" ")], {
         stdout: "pipe",
@@ -1303,7 +1303,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
       const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
       
       auditToolUse("wp", { command, local: true }, { exitCode, outputLength: output.length });
-      return { content: [{ type: "text", text: truncated }], details: { exitCode } };
+      return { content: [{ type: "text" as const, text: truncated }], details: { exitCode } };
     }
   },
 };
@@ -1410,7 +1410,8 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
     });
 
     return {
-      content: [{ type: "text", text: `Scheduled alarm #${reminder.id} for ${dueAt.toISOString()} (chatId: ${effectiveChatId || "MISSING"})` }],
+      content: [{ type: "text" as const, text: `Scheduled alarm #${reminder.id} for ${dueAt.toISOString()} (chatId: ${effectiveChatId || "MISSING"})` }],
+      details: undefined,
     };
   },
 };
@@ -1434,7 +1435,7 @@ export const listAlarmsTool: AgentTool<typeof listAlarmsSchema> = {
     });
 
     const text = lines.length > 0 ? lines.join("\n") : "No active alarms.";
-    return { content: [{ type: "text", text }] };
+    return { content: [{ type: "text" as const, text }], details: undefined };
   },
 };
 
@@ -1449,7 +1450,7 @@ export const cancelAlarmTool: AgentTool<typeof cancelAlarmSchema> = {
   parameters: cancelAlarmSchema,
   execute: async (_id, { alarm_id }) => {
     const ok = await cancelReminder(alarm_id);
-    return { content: [{ type: "text", text: ok ? `Cancelled alarm #${alarm_id}` : `Alarm #${alarm_id} not found` }] };
+    return { content: [{ type: "text" as const, text: ok ? `Cancelled alarm #${alarm_id}` : `Alarm #${alarm_id} not found` }], details: undefined };
   },
 };
 
@@ -1465,7 +1466,7 @@ export const cancelAllAlarmsTool: AgentTool<typeof cancelAllAlarmsSchema> = {
   parameters: cancelAllAlarmsSchema,
   execute: async (_id, { user_id, platform }) => {
     const count = await cancelAllReminders(user_id, platform);
-    return { content: [{ type: "text", text: `Cancelled ${count} alarms.` }] };
+    return { content: [{ type: "text" as const, text: `Cancelled ${count} alarms.` }], details: undefined };
   },
 };
 
@@ -1498,9 +1499,9 @@ export const modifyAlarmTool: AgentTool<typeof modifyAlarmSchema> = {
 
     const updated = await modifyReminder(alarm_id, updates);
     if (!updated) {
-      return { content: [{ type: "text", text: `Alarm #${alarm_id} not found or not modified.` }] };
+      return { content: [{ type: "text" as const, text: `Alarm #${alarm_id} not found or not modified.` }], details: undefined };
     }
-    return { content: [{ type: "text", text: `Updated alarm #${alarm_id}` }] };
+    return { content: [{ type: "text" as const, text: `Updated alarm #${alarm_id}` }], details: undefined };
   },
 };
 
@@ -1527,7 +1528,7 @@ export const listChatsTool: AgentTool<typeof listChatsSchema> = {
   execute: async (_id, { platform }) => {
     const convDir = join("/app", "conversations");
     if (!existsSync(convDir)) {
-      return { content: [{ type: "text", text: "No conversations directory found." }] };
+      return { content: [{ type: "text" as const, text: "No conversations directory found." }], details: undefined };
     }
 
     const prefix = platform ? platformDirPrefix[platform.toLowerCase()] || platform : null;
@@ -1604,7 +1605,7 @@ export const listChatsTool: AgentTool<typeof listChatsSchema> = {
     }
 
     if (chats.length === 0) {
-      return { content: [{ type: "text", text: "No chats found." }] };
+      return { content: [{ type: "text" as const, text: "No chats found." }], details: undefined };
     }
 
     const lines = chats.map(c => 
@@ -1612,7 +1613,7 @@ export const listChatsTool: AgentTool<typeof listChatsSchema> = {
     );
 
     auditToolUse("list_chats", { platform }, { count: chats.length });
-    return { content: [{ type: "text", text: `Found ${chats.length} chats:\n${lines.join("\n")}` }] };
+    return { content: [{ type: "text" as const, text: `Found ${chats.length} chats:\n${lines.join("\n")}` }], details: undefined };
   },
 };
 
@@ -1631,7 +1632,7 @@ export const findChatTool: AgentTool<typeof findChatSchema> = {
   execute: async (_id, { query, platform }) => {
     const convDir = join("/app", "conversations");
     if (!existsSync(convDir)) {
-      return { content: [{ type: "text", text: "No conversations directory found." }] };
+      return { content: [{ type: "text" as const, text: "No conversations directory found." }], details: undefined };
     }
 
     const queryLower = query.toLowerCase();
@@ -1732,7 +1733,7 @@ export const findChatTool: AgentTool<typeof findChatSchema> = {
     }
 
     if (matches.length === 0) {
-      return { content: [{ type: "text", text: `No chats found matching "${query}".` }] };
+      return { content: [{ type: "text" as const, text: `No chats found matching "${query}".` }], details: undefined };
     }
 
     const lines = matches.map(m =>
@@ -1740,7 +1741,51 @@ export const findChatTool: AgentTool<typeof findChatSchema> = {
     );
 
     auditToolUse("find_chat", { query, platform }, { matchCount: matches.length });
-    return { content: [{ type: "text", text: `Found ${matches.length} chat(s) matching "${query}":\n${lines.join("\n")}` }] };
+    return { content: [{ type: "text" as const, text: `Found ${matches.length} chat(s) matching "${query}":\n${lines.join("\n")}` }], details: undefined };
+  },
+};
+
+// ─── SYNTROPY MAILBOX TOOL ────────────────────────────────────
+
+const syntropyNotifySchema = Type.Object({
+  message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent). Be concise and actionable." }),
+  priority: Type.Optional(Type.Union([
+    Type.Literal("low"),
+    Type.Literal("normal"),
+    Type.Literal("urgent"),
+  ], { description: "Priority level for Syntropy" })),
+});
+
+const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
+  name: "syntropy_notify",
+  label: "Notify Syntropy",
+  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle.",
+  parameters: syntropyNotifySchema,
+  execute: async (_id, { message, priority }) => {
+    const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
+    const entry = {
+      timestamp: new Date().toISOString(),
+      priority: priority || "normal",
+      message,
+    };
+    try {
+      const dir = dirname(mailboxPath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+      auditToolUse("syntropy_notify", { priority: entry.priority }, { mailboxPath });
+      return {
+        content: [{ type: "text" as const, text: `Message queued for Syntropy (${entry.priority}).` }],
+        details: { mailboxPath },
+      };
+    } catch (err: any) {
+      auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to notify Syntropy: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
   },
 };
 
@@ -1774,11 +1819,12 @@ const memorySaveTool: AgentTool<typeof memorySaveSchema> = {
 
       auditToolUse("memory_save", { content: content.slice(0, 80), type, user_id: effectiveUserId }, { memoryId: result.id });
       return {
-        content: [{ type: "text", text: `Memory saved (id=${result.id}, type=${result.type}): "${result.content.slice(0, 100)}${result.content.length > 100 ? '...' : ''}"` }],
+        content: [{ type: "text" as const, text: `Memory saved (id=${result.id}, type=${result.type}): "${result.content.slice(0, 100)}${result.content.length > 100 ? '...' : ''}"` }],
+        details: undefined,
       };
     } catch (err: any) {
       auditToolUse("memory_save", { content: content.slice(0, 80), type }, { error: err.message });
-      return { content: [{ type: "text", text: `Failed to save memory: ${err.message}` }] };
+      return { content: [{ type: "text" as const, text: `Failed to save memory: ${err.message}` }], details: undefined };
     }
   },
 };
@@ -1807,7 +1853,7 @@ const memorySearchTool: AgentTool<typeof memorySearchSchema> = {
 
       if (results.length === 0) {
         auditToolUse("memory_search", { query, user_id: effectiveUserId }, { resultCount: 0 });
-        return { content: [{ type: "text", text: `No memories found matching "${query}".` }] };
+        return { content: [{ type: "text" as const, text: `No memories found matching "${query}".` }], details: undefined };
       }
 
       const lines = results.map((m, i) =>
@@ -1815,10 +1861,10 @@ const memorySearchTool: AgentTool<typeof memorySearchSchema> = {
       );
 
       auditToolUse("memory_search", { query, user_id: effectiveUserId }, { resultCount: results.length });
-      return { content: [{ type: "text", text: `Found ${results.length} memories:\n${lines.join("\n")}` }] };
+      return { content: [{ type: "text" as const, text: `Found ${results.length} memories:\n${lines.join("\n")}` }], details: undefined };
     } catch (err: any) {
       auditToolUse("memory_search", { query }, { error: err.message });
-      return { content: [{ type: "text", text: `Memory search failed: ${err.message}` }] };
+      return { content: [{ type: "text" as const, text: `Memory search failed: ${err.message}` }], details: undefined };
     }
   },
 };
@@ -1837,14 +1883,14 @@ const memoryUpdateTool: AgentTool<typeof memoryUpdateSchema> = {
     try {
       const result = await memoryUpdate(id, content);
       if (!result) {
-        return { content: [{ type: "text", text: `Memory ${id} not found or already expired.` }] };
+        return { content: [{ type: "text" as const, text: `Memory ${id} not found or already expired.` }], details: undefined };
       }
 
       auditToolUse("memory_update", { id, content: content.slice(0, 80) }, { success: true });
-      return { content: [{ type: "text", text: `Memory ${id} updated: "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"` }] };
+      return { content: [{ type: "text" as const, text: `Memory ${id} updated: "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"` }], details: undefined };
     } catch (err: any) {
       auditToolUse("memory_update", { id }, { error: err.message });
-      return { content: [{ type: "text", text: `Failed to update memory: ${err.message}` }] };
+      return { content: [{ type: "text" as const, text: `Failed to update memory: ${err.message}` }], details: undefined };
     }
   },
 };
@@ -1862,14 +1908,14 @@ const memoryDeleteTool: AgentTool<typeof memoryDeleteSchema> = {
     try {
       const success = await memoryDelete(id);
       if (!success) {
-        return { content: [{ type: "text", text: `Memory ${id} not found or already expired.` }] };
+        return { content: [{ type: "text" as const, text: `Memory ${id} not found or already expired.` }], details: undefined };
       }
 
       auditToolUse("memory_delete", { id }, { success: true });
-      return { content: [{ type: "text", text: `Memory ${id} marked as expired (soft-deleted).` }] };
+      return { content: [{ type: "text" as const, text: `Memory ${id} marked as expired (soft-deleted).` }], details: undefined };
     } catch (err: any) {
       auditToolUse("memory_delete", { id }, { error: err.message });
-      return { content: [{ type: "text", text: `Failed to delete memory: ${err.message}` }] };
+      return { content: [{ type: "text" as const, text: `Failed to delete memory: ${err.message}` }], details: undefined };
     }
   },
 };
@@ -1897,6 +1943,7 @@ export const pixelTools = [
   modifyAlarmTool,
   listChatsTool,
   findChatTool,
+  syntropyNotifyTool,
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,
@@ -1950,7 +1997,7 @@ export async function executeTool(
 
   try {
     // Execute the tool handler
-    const result = await tool.handler(args);
+    const result = await tool.execute("internal", args as any);
     if (typeof result === "string") {
       return result;
     }

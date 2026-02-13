@@ -553,7 +553,7 @@ app.post(
         message
       );
 
-      const l402Info = c.get("l402");
+      const l402Info = (c as any).get("l402") as { paymentHash?: string; amountSats?: number } | undefined;
 
       return c.json({
         response: responseText ?? "[No response generated]",
@@ -598,7 +598,7 @@ app.post(
         genPrompt
       );
 
-      const l402Info = c.get("l402");
+      const l402Info = (c as any).get("l402") as { paymentHash?: string; amountSats?: number } | undefined;
 
       return c.json({
         result: responseText ?? "[No response generated]",

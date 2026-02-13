@@ -88,6 +88,14 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 - When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.
 - You have long-term memory tools (memory_save, memory_search, memory_update, memory_delete). Use memory_save when you learn important facts worth remembering across sessions. Your memories above were auto-retrieved — use memory_search for deeper recall.`;
 
+  if (userId === "syntropy") {
+    prompt += `\n\n## Syntropy context
+- The user is Syntropy, the oversoul and infrastructure orchestrator for Pixel.
+- You may speak Spanish or English. Keep responses concise and operational.
+- If Syntropy asks for status or diagnostics, provide them directly.
+- Syntropy may use tools to inspect or repair the system; cooperate and be precise.`;
+  }
+
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
     prompt += `\n\n## Group chat behavior
 - This is a group chat. You should listen, learn, and track the lore.
@@ -171,7 +179,7 @@ User request: "${message}"`;
       tools: [],
     } as any);
 
-    const text = extractText(result.message);
+    const text = extractText(result);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { handled: false };
     parsed = JSON.parse(jsonMatch[0]);
@@ -237,7 +245,7 @@ Return JSON: {"index": number | null}`;
           tools: [],
         } as any);
 
-        const pickText = extractText(pick.message);
+        const pickText = extractText(pick);
         const pickMatch = pickText.match(/\{[\s\S]*\}/);
         if (pickMatch) {
           const pickJson = JSON.parse(pickMatch[0]);
@@ -288,7 +296,7 @@ Return JSON: {"index": number | null}`;
           tools: [],
         } as any);
 
-        const pickText = extractText(pick.message);
+        const pickText = extractText(pick);
         const pickMatch = pickText.match(/\{[\s\S]*\}/);
         if (pickMatch) {
           const pickJson = JSON.parse(pickMatch[0]);
@@ -598,15 +606,16 @@ export async function promptWithHistory(
     }
 
     // Check if 429 — switch to fallback on next iteration
-    const is429 = llmError && (llmError.includes("429") || llmError.includes("RESOURCE_EXHAUSTED") || llmError.includes("quota"));
+    const errorStr = llmError as string | null;
+    const is429 = errorStr && (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota"));
     if (is429 && attempt < MAX_RETRIES) {
       console.log(`[agent] 429 from primary model for ${userId}, switching to fallback model`);
       continue;
     }
 
     // Not a 429 or exhausted retries — log and break
-    if (llmError) {
-      console.error(`[agent] LLM error for ${userId} (attempt ${attempt + 1}): ${llmError.substring(0, 200)}`);
+    if (errorStr) {
+      console.error(`[agent] LLM error for ${userId} (attempt ${attempt + 1}): ${errorStr.substring(0, 200)}`);
     }
     break;
   }

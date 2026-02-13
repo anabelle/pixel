@@ -1803,7 +1803,7 @@ async function publishReaction(ndk: NDK, event: NDKEvent): Promise<void> {
 async function publishRepost(ndk: NDK, event: NDKEvent): Promise<void> {
   const repost = new NDKEvent(ndk);
   repost.kind = 6;
-  const raw = (event as any).rawEvent ? (event as any).rawEvent() : (event as any).rawEvent ?? event.rawEvent ?? event.event ?? null;
+  const raw = (event as any).rawEvent ? (event as any).rawEvent() : (event as any).rawEvent ?? event.rawEvent ?? (event as any).event ?? null;
   repost.content = raw ? JSON.stringify(raw) : "";
   repost.tags = [
     ["e", event.id],

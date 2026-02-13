@@ -211,7 +211,7 @@ export async function getWalletInfo(): Promise<{
       "",
     minSats: Math.ceil((ln.lnurlpData?.min ?? 1000) / 1000),
     maxSats: Math.floor((ln.lnurlpData?.max ?? 1_000_000_000) / 1000),
-    description: ln.lnurlpData?.metadata ?? "",
+    description: typeof ln.lnurlpData?.metadata === "string" ? ln.lnurlpData.metadata : JSON.stringify(ln.lnurlpData?.metadata ?? ""),
     active: true,
   };
 }

@@ -64,7 +64,17 @@ export type AuditType =
   // Errors
   | "error"
   // Notifications
-  | "notification_sent";
+  | "notification_sent"
+  // Reminders
+  | "reminder"
+  // Memory
+  | "memory"
+  // Cost monitoring
+  | "cost_alert"
+  // Clawstr
+  | "clawstr_notifications"
+  | "clawstr_reply"
+  | "clawstr_error";
 
 export interface AuditEntry {
   ts: string;         // ISO timestamp

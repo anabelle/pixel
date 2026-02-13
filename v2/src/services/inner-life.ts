@@ -559,7 +559,7 @@ async function phaseReflect(): Promise<void> {
   let userContext = "";
   try {
     const stats = await getUserStats();
-    userContext = `Users: ${stats.total} total, ${stats.active} active`;
+    userContext = `Users: ${stats.totalUsers} total, ${stats.activeUsers} active`;
   } catch {}
 
   const response = await llmCall(
