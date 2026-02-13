@@ -125,11 +125,11 @@ export async function modifyReminder(
   if (!db) throw new Error("Reminders service not initialized");
 
   const setClause: Record<string, unknown> = {};
-  if (updates.dueAt) setClause.due_at = updates.dueAt;
-  if (updates.rawMessage) setClause.raw_message = updates.rawMessage;
-  if (updates.repeatPattern !== undefined) setClause.repeat_pattern = updates.repeatPattern;
-  if (updates.repeatCount !== undefined) setClause.repeat_count = updates.repeatCount;
-  if (updates.firesRemaining !== undefined) setClause.fires_remaining = updates.firesRemaining;
+  if (updates.dueAt) setClause.dueAt = updates.dueAt;
+  if (updates.rawMessage) setClause.rawMessage = updates.rawMessage;
+  if (updates.repeatPattern !== undefined) setClause.repeatPattern = updates.repeatPattern;
+  if (updates.repeatCount !== undefined) setClause.repeatCount = updates.repeatCount;
+  if (updates.firesRemaining !== undefined) setClause.firesRemaining = updates.firesRemaining;
 
   if (Object.keys(setClause).length === 0) return null;
 
