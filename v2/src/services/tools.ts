@@ -15,6 +15,8 @@ import { join, dirname } from "path";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
+import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
+import { parse as parseHTML } from "node-html-parser";
 
 // ─── READ FILE ────────────────────────────────────────────────
 
@@ -378,11 +380,35 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
   },
 };
 
+// ─── HTML EXTRACTION HELPER ───────────────────────────────────
+
+function extractReadableText(html: string): { text: string; links: { href: string; text: string }[] } {
+  const root = parseHTML(html);
+  root.querySelectorAll("script, style, nav, noscript, iframe, svg, [role='navigation'], [role='banner']")
+    .forEach(el => el.remove());
+
+  const body = root.querySelector("body") || root;
+  const text = body.textContent
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const links = root.querySelectorAll("a[href]")
+    .map(el => ({
+      href: el.getAttribute("href") ?? "",
+      text: el.textContent.trim(),
+    }))
+    .filter(l => l.href && l.text && !l.href.startsWith("#") && !l.href.startsWith("javascript:"));
+
+  return { text, links };
+}
+
 // ─── WEB FETCH ────────────────────────────────────────────────
 
 const webFetchSchema = Type.Object({
   url: Type.String({ description: "URL to fetch" }),
   method: Type.Optional(Type.String({ description: "HTTP method (default: GET)" })),
+  extract_text: Type.Optional(Type.Boolean({ description: "Extract readable text from HTML, removing scripts/nav/etc. Default true for HTML." })),
 });
 
 export const webFetchTool: AgentTool<typeof webFetchSchema> = {
@@ -390,7 +416,7 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
   label: "Fetch URL",
   description: "Fetch a URL and return the response. For web research, checking APIs, reading documentation.",
   parameters: webFetchSchema,
-  execute: async (_id, { url, method }) => {
+  execute: async (_id, { url, method, extract_text }) => {
     try {
       const res = await fetch(url, {
         method: method ?? "GET",
@@ -404,6 +430,17 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
         body = JSON.stringify(json, null, 2);
       } else {
         body = await res.text();
+      }
+      // Extract readable text from HTML (default: true for HTML content)
+      if (contentType.includes("html") && extract_text !== false) {
+        const extracted = extractReadableText(body);
+        const topLinks = extracted.links.slice(0, 25)
+          .map(l => `- [${l.text.slice(0, 80)}](${l.href})`)
+          .join("\n");
+        body = extracted.text;
+        if (topLinks) {
+          body += "\n\n## Links found:\n" + topLinks;
+        }
       }
       // Truncate large responses
       if (body.length > 30_000) {
@@ -419,6 +456,160 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
       auditToolUse("web_fetch", { url, method }, { error: e.message });
       throw new Error(`Fetch failed: ${e.message}`);
     }
+  },
+};
+
+// ─── WEB SEARCH ───────────────────────────────────────────────
+
+const webSearchSchema = Type.Object({
+  query: Type.String({ description: "Search query" }),
+  max_results: Type.Optional(Type.Number({ description: "Max results to return (default 8, max 20)" })),
+  time_range: Type.Optional(Type.String({ description: "Time filter: d (day), w (week), m (month), y (year)" })),
+  site: Type.Optional(Type.String({ description: "Restrict to a specific domain, e.g. 'unal.edu.co'" })),
+});
+
+// Rate limiter for DDG to avoid getting blocked on rapid-fire searches
+let _lastSearchTime = 0;
+const SEARCH_MIN_INTERVAL_MS = 2500; // minimum 2.5s between searches
+
+export const webSearchTool: AgentTool<typeof webSearchSchema> = {
+  name: "web_search",
+  label: "Search the Web",
+  description: "Search the web using DuckDuckGo. Returns titles, URLs, and snippets. Use this to find information, discover URLs, and research topics. For site-specific search, use the 'site' parameter (e.g. site: 'unal.edu.co').",
+  parameters: webSearchSchema,
+  execute: async (_id, { query, max_results, time_range, site }) => {
+    const limit = Math.min(max_results ?? 8, 20);
+    const fullQuery = site ? `site:${site} ${query}` : query;
+
+    // Rate-limit to prevent DDG from blocking rapid-fire searches
+    const now = Date.now();
+    const elapsed = now - _lastSearchTime;
+    if (elapsed < SEARCH_MIN_INTERVAL_MS) {
+      await new Promise((r) => setTimeout(r, SEARCH_MIN_INTERVAL_MS - elapsed));
+    }
+    _lastSearchTime = Date.now();
+
+    const params = new URLSearchParams({ q: fullQuery });
+    if (time_range) params.set("df", time_range);
+
+    try {
+      // Use curl instead of fetch — Bun's TLS fingerprint gets blocked by DDG (returns 202 lite page)
+      const curlProc = Bun.spawn(["curl", "-s", "-X", "POST",
+        "-H", "Content-Type: application/x-www-form-urlencoded",
+        "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "-d", params.toString(),
+        "--max-time", "15",
+        "https://html.duckduckgo.com/html/",
+      ], { stdout: "pipe", stderr: "pipe" });
+      const html = await new Response(curlProc.stdout).text();
+      await curlProc.exited;
+      const root = parseHTML(html);
+      const resultNodes = root.querySelectorAll(".result.web-result");
+
+      const results: { title: string; url: string; snippet: string }[] = [];
+      for (const node of resultNodes) {
+        if (results.length >= limit) break;
+
+        const titleEl = node.querySelector("h2.result__title a.result__a");
+        const snippetEl = node.querySelector("a.result__snippet");
+
+        if (!titleEl) continue;
+
+        // Extract actual URL from DDG redirect wrapper
+        const rawHref = titleEl.getAttribute("href") ?? "";
+        let url = "";
+        try {
+          const uddgMatch = rawHref.match(/[?&]uddg=([^&]+)/);
+          url = uddgMatch ? decodeURIComponent(uddgMatch[1]) : rawHref;
+        } catch {
+          url = rawHref;
+        }
+        if (url.startsWith("//")) url = "https:" + url;
+
+        const title = titleEl.textContent.trim();
+        const snippet = snippetEl?.textContent.trim() ?? "";
+
+        if (title && url) {
+          results.push({ title, url, snippet });
+        }
+      }
+
+      const formatted = results.length > 0
+        ? results.map((r, i) => `### [${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`).join("\n\n")
+        : "No results found.";
+
+      const text = `## Search: "${fullQuery}"\n${results.length} results\n\n${formatted}`;
+
+      auditToolUse("web_search", { query: fullQuery, max_results: limit }, { resultCount: results.length });
+      return { content: [{ type: "text", text }], details: { resultCount: results.length } };
+    } catch (e: any) {
+      auditToolUse("web_search", { query: fullQuery }, { error: e.message });
+      throw new Error(`Search failed: ${e.message}`);
+    }
+  },
+};
+
+// ─── RESEARCH TASK ────────────────────────────────────────────
+
+const researchTaskSchema = Type.Object({
+  topic: Type.String({ description: "What to research" }),
+  instructions: Type.String({ description: "Specific instructions, criteria, or questions to answer" }),
+});
+
+export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
+  name: "research_task",
+  label: "Background Research",
+  description: "Enqueue a background research task. Results will be delivered to the current chat when complete (~60 seconds). Use this for research that requires visiting multiple websites, comparing information, or takes more than a few tool calls in the current conversation.",
+  parameters: researchTaskSchema,
+  execute: async (_id, { topic, instructions }) => {
+    const ctx = getToolContext();
+    if (!ctx.userId || !ctx.platform) {
+      throw new Error("No tool context available — cannot determine callback chat");
+    }
+
+    const { enqueueJob } = await import("./jobs.js");
+
+    const prompt = [
+      `## Research Task: ${topic}`,
+      ``,
+      `### Instructions`,
+      instructions,
+      ``,
+      `### Process`,
+      `1. Use web_search to find relevant sources (try multiple queries if needed)`,
+      `2. Use web_fetch to read the most promising results (at least 3-5 sources)`,
+      `3. Extract key facts, URLs, dates, and actionable information`,
+      `4. Synthesize findings into a clear, structured report`,
+      `5. Include all source URLs for verification`,
+      ``,
+      `### Output Format`,
+      `Write a concise report (500-1500 words) with:`,
+      `- Summary of findings`,
+      `- Key details organized by category`,
+      `- Source URLs`,
+      `- Recommended next steps`,
+    ].join("\n");
+
+    const job = enqueueJob(
+      prompt,
+      ["web_search", "web_fetch", "read_file", "write_file"],
+      {
+        platform: ctx.platform,
+        chatId: ctx.chatId ?? "",
+        userId: ctx.userId,
+        label: topic,
+      }
+    );
+
+    auditToolUse("research_task", { topic, instructions }, { jobId: job.id });
+
+    return {
+      content: [{
+        type: "text",
+        text: `investigación encolada: "${topic}" (job ${job.id}). los resultados se entregarán a este chat cuando estén listos (~60s).`,
+      }],
+      details: { jobId: job.id },
+    };
   },
 };
 
@@ -937,12 +1128,30 @@ export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
 // ─── SSH EXECUTE ───────────────────────────────────────────────
 
 const sshSchema = Type.Object({
-  host: Type.String({ description: "SSH host (IP or hostname). Falls back to TALLERUBENS_SSH_HOST env var if not provided." }),
+  host: Type.Optional(Type.String({ description: "SSH host (IP or hostname). Falls back to TALLERUBENS_SSH_HOST env var if not provided." })),
   user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
   port: Type.Optional(Type.Number({ description: "SSH port (default: 22)" })),
   command: Type.String({ description: "Command to execute on remote server" }),
-  key: Type.Optional(Type.String({ description: "Private SSH key content (falls back to TALLERUBENS_SSH_KEY env var)" })),
+  key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded key. Falls back to TALLERUBENS_SSH_KEY env var." })),
 });
+
+function decodeSshKey(maybeKey: string): string {
+  const trimmed = maybeKey.trim();
+  if (trimmed.includes("BEGIN OPENSSH PRIVATE KEY") || trimmed.includes("BEGIN RSA PRIVATE KEY") || trimmed.includes("BEGIN EC PRIVATE KEY")) {
+    return trimmed;
+  }
+
+  // Try base64 -> text. If it looks like a key, use it.
+  try {
+    const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
+    if (decoded.includes("BEGIN OPENSSH PRIVATE KEY") || decoded.includes("BEGIN RSA PRIVATE KEY") || decoded.includes("BEGIN EC PRIVATE KEY")) {
+      return decoded;
+    }
+  } catch {}
+
+  // Last resort: assume caller already passed raw key content without header detection.
+  return trimmed;
+}
 
 export const sshTool: AgentTool<typeof sshSchema> = {
   name: "ssh",
@@ -968,7 +1177,7 @@ export const sshTool: AgentTool<typeof sshSchema> = {
     ];
     
     if (effectiveKey) {
-      const keyContent = Buffer.from(effectiveKey, "base64").toString("utf-8");
+      const keyContent = decodeSshKey(effectiveKey);
       const keyFile = `/tmp/ssh_key_${Date.now()}`;
       await Bun.write(keyFile, keyContent);
       await chmodSync(keyFile, 0o600);
@@ -1019,6 +1228,7 @@ const wpCliSchema = Type.Object({
   host: Type.Optional(Type.String({ description: "SSH host for remote execution. Falls back to TALLERUBENS_SSH_HOST." })),
   user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
   path: Type.Optional(Type.String({ description: "WordPress installation path. Falls back to TALLERUBENS_WP_PATH." })),
+  key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded key. Falls back to TALLERUBENS_SSH_KEY env var." })),
 });
 
 export const wpCliTool: AgentTool<typeof wpCliSchema> = {
@@ -1026,10 +1236,11 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
   label: "WP-CLI",
   description: "Run WordPress commands via WP-CLI. Use for managing WordPress sites like tallerubens.com. Uses TALLERUBENS_SSH_* env vars as fallback.",
   parameters: wpCliSchema,
-  execute: async (_id, { command, host, user, path }) => {
+  execute: async (_id, { command, host, user, path, key }) => {
     const effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
     const effectivePath = path ?? process.env.TALLERUBENS_WP_PATH;
     const effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
+    const effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
     
     let fullCommand = "wp " + command;
     
@@ -1041,7 +1252,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
       const sshArgs = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "PreferredAuthentications=publickey", "-o", "IdentitiesOnly=yes"];
       const target = `${effectiveUser}@${effectiveHost}`;
       
-      const keyContent = process.env.TALLERUBENS_SSH_KEY ? Buffer.from(process.env.TALLERUBENS_SSH_KEY, "base64").toString("utf-8") : null;
+      const keyContent = effectiveKey ? decodeSshKey(effectiveKey) : null;
       let finalArgs = [...sshArgs];
       if (keyContent) {
         const keyFile = `/tmp/ssh_key_wp_${Date.now()}`;
@@ -1111,6 +1322,11 @@ export function setToolContext(ctx: { userId?: string; platform?: string; chatId
 /** Clear tool context after prompt completes */
 export function clearToolContext(): void {
   _toolContext = {};
+}
+
+/** Get current tool context (used by research_task to determine callback chat) */
+function getToolContext(): { userId?: string; platform?: string; chatId?: string } {
+  return _toolContext;
 }
 
 /**
@@ -1528,6 +1744,136 @@ export const findChatTool: AgentTool<typeof findChatSchema> = {
   },
 };
 
+// ─── LONG-TERM MEMORY TOOLS ──────────────────────────────────
+
+const memorySaveSchema = Type.Object({
+  content: Type.String({ description: "The fact, knowledge, or observation to remember. Be specific and concise." }),
+  type: Type.Optional(Type.String({ description: "Memory type: 'fact' (concrete knowledge), 'episode' (interaction summary), 'identity' (self-knowledge), 'procedural' (skill/pattern). Default: 'fact'" })),
+  user_id: Type.Optional(Type.String({ description: "User ID this memory relates to (omit for global/self memories)" })),
+  platform: Type.Optional(Type.String({ description: "Platform where this was learned (omit for cross-platform)" })),
+});
+
+const memorySaveTool: AgentTool<typeof memorySaveSchema> = {
+  name: "memory_save",
+  label: "Save Memory",
+  description: "Save an important fact, observation, or learning to long-term memory. Use this when you learn something worth remembering across conversations — user preferences, important facts, self-insights, or procedural knowledge. The memory system automatically deduplicates and merges with existing similar memories.",
+  parameters: memorySaveSchema,
+  execute: async (_id, { content, type, user_id, platform }) => {
+    try {
+      // Use tool context for user_id/platform if not explicitly provided
+      const effectiveUserId = user_id || _toolContext.userId;
+      const effectivePlatform = platform || _toolContext.platform;
+
+      const result = await memorySave({
+        content,
+        type: (type as any) || "fact",
+        userId: effectiveUserId,
+        platform: effectivePlatform,
+        source: "agent",
+      });
+
+      auditToolUse("memory_save", { content: content.slice(0, 80), type, user_id: effectiveUserId }, { memoryId: result.id });
+      return {
+        content: [{ type: "text", text: `Memory saved (id=${result.id}, type=${result.type}): "${result.content.slice(0, 100)}${result.content.length > 100 ? '...' : ''}"` }],
+      };
+    } catch (err: any) {
+      auditToolUse("memory_save", { content: content.slice(0, 80), type }, { error: err.message });
+      return { content: [{ type: "text", text: `Failed to save memory: ${err.message}` }] };
+    }
+  },
+};
+
+const memorySearchSchema = Type.Object({
+  query: Type.String({ description: "Natural language search query — what are you looking for?" }),
+  user_id: Type.Optional(Type.String({ description: "Filter to memories about a specific user" })),
+  type: Type.Optional(Type.String({ description: "Filter by memory type: 'fact', 'episode', 'identity', 'procedural'" })),
+  limit: Type.Optional(Type.Number({ description: "Max results to return (default: 10)" })),
+});
+
+const memorySearchTool: AgentTool<typeof memorySearchSchema> = {
+  name: "memory_search",
+  label: "Search Memory",
+  description: "Search your long-term memory for relevant facts, past interactions, or knowledge. Uses semantic similarity — describe what you're looking for in natural language. Results are ranked by relevance and recency.",
+  parameters: memorySearchSchema,
+  execute: async (_id, { query, user_id, type, limit }) => {
+    try {
+      const effectiveUserId = user_id || _toolContext.userId;
+
+      const results = await memorySearch(query, {
+        userId: effectiveUserId,
+        type,
+        topK: limit || 10,
+      });
+
+      if (results.length === 0) {
+        auditToolUse("memory_search", { query, user_id: effectiveUserId }, { resultCount: 0 });
+        return { content: [{ type: "text", text: `No memories found matching "${query}".` }] };
+      }
+
+      const lines = results.map((m, i) =>
+        `${i + 1}. [id=${m.id}] (${m.type}, ${(m.similarity! * 100).toFixed(0)}% match) ${m.content}${m.userId ? ` [user: ${m.userId}]` : ''}`
+      );
+
+      auditToolUse("memory_search", { query, user_id: effectiveUserId }, { resultCount: results.length });
+      return { content: [{ type: "text", text: `Found ${results.length} memories:\n${lines.join("\n")}` }] };
+    } catch (err: any) {
+      auditToolUse("memory_search", { query }, { error: err.message });
+      return { content: [{ type: "text", text: `Memory search failed: ${err.message}` }] };
+    }
+  },
+};
+
+const memoryUpdateSchema = Type.Object({
+  id: Type.Number({ description: "Memory ID to update" }),
+  content: Type.String({ description: "New content for this memory" }),
+});
+
+const memoryUpdateTool: AgentTool<typeof memoryUpdateSchema> = {
+  name: "memory_update",
+  label: "Update Memory",
+  description: "Update an existing memory with new content. Use when a fact has changed or needs correction. The memory's embedding is regenerated automatically.",
+  parameters: memoryUpdateSchema,
+  execute: async (_id, { id, content }) => {
+    try {
+      const result = await memoryUpdate(id, content);
+      if (!result) {
+        return { content: [{ type: "text", text: `Memory ${id} not found or already expired.` }] };
+      }
+
+      auditToolUse("memory_update", { id, content: content.slice(0, 80) }, { success: true });
+      return { content: [{ type: "text", text: `Memory ${id} updated: "${content.slice(0, 100)}${content.length > 100 ? '...' : ''}"` }] };
+    } catch (err: any) {
+      auditToolUse("memory_update", { id }, { error: err.message });
+      return { content: [{ type: "text", text: `Failed to update memory: ${err.message}` }] };
+    }
+  },
+};
+
+const memoryDeleteSchema = Type.Object({
+  id: Type.Number({ description: "Memory ID to delete (soft delete — marks as expired)" }),
+});
+
+const memoryDeleteTool: AgentTool<typeof memoryDeleteSchema> = {
+  name: "memory_delete",
+  label: "Delete Memory",
+  description: "Soft-delete a memory by marking it as expired. Use when information is no longer true or relevant. The memory remains in the database for audit purposes but won't appear in searches.",
+  parameters: memoryDeleteSchema,
+  execute: async (_id, { id }) => {
+    try {
+      const success = await memoryDelete(id);
+      if (!success) {
+        return { content: [{ type: "text", text: `Memory ${id} not found or already expired.` }] };
+      }
+
+      auditToolUse("memory_delete", { id }, { success: true });
+      return { content: [{ type: "text", text: `Memory ${id} marked as expired (soft-deleted).` }] };
+    } catch (err: any) {
+      auditToolUse("memory_delete", { id }, { error: err.message });
+      return { content: [{ type: "text", text: `Failed to delete memory: ${err.message}` }] };
+    }
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -1538,6 +1884,12 @@ export const pixelTools = [
   checkHealthTool,
   readLogsTool,
   webFetchTool,
+  webSearchTool,
+  researchTaskTool,
+  memorySaveTool,
+  memorySearchTool,
+  memoryUpdateTool,
+  memoryDeleteTool,
   scheduleAlarmTool,
   listAlarmsTool,
   cancelAlarmTool,
@@ -1573,6 +1925,12 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   check_health: checkHealthTool,
   read_logs: readLogsTool,
   web_fetch: webFetchTool,
+  web_search: webSearchTool,
+  research_task: researchTaskTool,
+  memory_save: memorySaveTool,
+  memory_search: memorySearchTool,
+  memory_update: memoryUpdateTool,
+  memory_delete: memoryDeleteTool,
 };
 
 /**

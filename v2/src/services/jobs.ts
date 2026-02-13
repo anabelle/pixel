@@ -3,6 +3,9 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getSimpleModel, extractText } from "../agent.js";
 import { pixelTools } from "./tools.js";
 import { audit } from "./audit.js";
+import { sendTelegramMessage } from "../connectors/telegram.js";
+import { sendWhatsAppMessage } from "../connectors/whatsapp.js";
+import { sendNostrDm } from "../connectors/nostr.js";
 
 type JobStatus = "pending" | "running" | "completed" | "failed";
 
@@ -16,7 +19,19 @@ export type JobEntry = {
   toolsAllowed?: string[];
   output?: string;
   error?: string;
+  // Callback fields for delivering results to users
+  callbackPlatform?: string;
+  callbackChatId?: string;
+  callbackUserId?: string;
+  callbackLabel?: string;
 };
+
+export interface JobCallback {
+  platform: string;
+  chatId: string;
+  userId: string;
+  label?: string;
+}
 
 const JOBS_PATH = "/app/data/jobs.json";
 const JOB_LOG_PATH = "/app/data/jobs.jsonl";
@@ -80,7 +95,7 @@ function allowedTools(names?: string[]) {
   return pixelTools.filter((t) => wanted.has(t.name));
 }
 
-export function enqueueJob(prompt: string, toolsAllowed?: string[]): JobEntry {
+export function enqueueJob(prompt: string, toolsAllowed?: string[], callback?: JobCallback): JobEntry {
   const jobs = loadJobs();
   const entry: JobEntry = {
     id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -88,6 +103,12 @@ export function enqueueJob(prompt: string, toolsAllowed?: string[]): JobEntry {
     status: "pending",
     createdAt: Date.now(),
     toolsAllowed,
+    ...(callback && {
+      callbackPlatform: callback.platform,
+      callbackChatId: callback.chatId,
+      callbackUserId: callback.userId,
+      callbackLabel: callback.label,
+    }),
   };
   jobs.push(entry);
   saveJobs(jobs);
@@ -110,6 +131,39 @@ export function getRecentJobs(limit = 10): JobEntry[] {
     return parsed.slice(-limit);
   } catch {
     return [];
+  }
+}
+
+async function deliverJobResult(job: JobEntry): Promise<void> {
+  if (!job.callbackPlatform || !job.callbackChatId) return;
+
+  const label = job.callbackLabel ?? "investigación";
+  const output = job.status === "completed"
+    ? (job.output ?? "(sin resultados)")
+    : `error en la investigación: ${job.error ?? "desconocido"}`;
+  // Truncate for chat delivery (Telegram max ~4096 chars)
+  const truncated = output.length > 3500
+    ? output.slice(0, 3500) + "\n\n[... resultado truncado, completo guardado en jobs-report.md]"
+    : output;
+
+  const message = `resultados de ${label}:\n\n${truncated}`;
+
+  try {
+    switch (job.callbackPlatform) {
+      case "telegram":
+        await sendTelegramMessage(job.callbackChatId, message);
+        break;
+      case "whatsapp":
+        await sendWhatsAppMessage(job.callbackChatId, message);
+        break;
+      case "nostr":
+      case "nostr-dm":
+        await sendNostrDm(job.callbackChatId, message);
+        break;
+    }
+    audit("tool_use", `Job result delivered to ${job.callbackPlatform}:${job.callbackChatId}`, { id: job.id });
+  } catch (err: any) {
+    audit("tool_use", `Failed to deliver job result: ${err.message}`, { id: job.id });
   }
 }
 
@@ -167,6 +221,10 @@ async function runNextJob(): Promise<void> {
     audit("tool_use", `Job failed: ${next.id}`, { id: next.id, error: err.message });
   } finally {
     running = false;
+    // Deliver result to originating chat if callback was set
+    await deliverJobResult(next).catch((err) =>
+      console.error("[jobs] deliverJobResult error:", err.message)
+    );
   }
 }
 
