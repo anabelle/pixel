@@ -41,29 +41,16 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     version,
     auth: state,
     browser: Browsers.ubuntu("Pixel"),
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     markOnlineOnConnect: false, // Don't show as "online" (saves battery + notifications work)
     generateHighQualityLinkPreview: false,
   });
 
-  // Request pairing code if not registered yet
-  if (!state.creds.registered) {
-    // Clean phone number: remove +, (), -, spaces
-    const cleanNumber = phoneNumber.replace(/[\+\(\)\-\s]/g, "");
-    try {
-      const code = await sock.requestPairingCode(cleanNumber);
-      console.log(`[whatsapp] ========================================`);
-      console.log(`[whatsapp] PAIRING CODE: ${code}`);
-      console.log(`[whatsapp] Enter this code in WhatsApp > Linked Devices > Link a Device`);
-      console.log(`[whatsapp] ========================================`);
-    } catch (err: any) {
-      console.error("[whatsapp] Failed to request pairing code:", err.message);
-      return;
-    }
-  }
+  // Track if we've already requested pairing code to avoid duplicates
+  let pairingCodeRequested = false;
 
   // Connection updates
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (connection === "close") {
@@ -84,8 +71,13 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       console.log("[whatsapp] Connected successfully");
     }
 
-    if (qr) {
-      console.log("[whatsapp] QR code received (use pairing code instead)");
+    // When we get a QR code, print instructions
+    if (qr && !state.creds.registered) {
+      console.log(`[whatsapp] ========================================`);
+      console.log(`[whatsapp] QR CODE READY - Scan with WhatsApp`);
+      console.log(`[whatsapp] Go to: Settings > Linked Devices > Link a Device`);
+      console.log(`[whatsapp] The QR code should appear above (terminal QR)`);
+      console.log(`[whatsapp] ========================================`);
     }
   });
 
@@ -125,7 +117,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         await sock!.sendPresenceUpdate("composing", jid);
 
         const response = await promptWithHistory(
-          { userId, platform: "whatsapp" },
+          { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
           text
         );
 
@@ -152,6 +144,32 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
   });
 
   console.log("[whatsapp] Starting...");
+}
+
+/**
+ * Send a proactive message to a specific WhatsApp user.
+ * Used by reminder service and other proactive notifications.
+ *
+ * @param phoneNumber - Full phone number with country code (e.g., +573001234567)
+ * @param text - Message text to send
+ */
+export async function sendWhatsAppMessage(
+  phoneNumber: string,
+  text: string
+): Promise<boolean> {
+  if (!sock) {
+    console.log("[whatsapp] No sock available for sending message");
+    return false;
+  }
+
+  try {
+    const jid = `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { text });
+    return true;
+  } catch (err: any) {
+    console.error(`[whatsapp] Failed to send message to ${phoneNumber}:`, err.message);
+    return false;
+  }
 }
 
 /** Extract text content from various WhatsApp message types */

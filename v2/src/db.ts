@@ -74,3 +74,39 @@ export const conversationLog = pgTable("conversation_log", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** User scheduled reminders */
+export const reminders = pgTable("reminders", {
+  id: serial("id").primaryKey(),
+  /** Platform-specific user ID (phone, telegram ID, nostr pubkey, etc.) */
+  userId: text("user_id").notNull(),
+  /** Platform: 'telegram', 'whatsapp', 'nostr', 'http' */
+  platform: text("platform").notNull(),
+  /** Where to deliver (chat ID, pubkey, etc.) */
+  platformChatId: text("platform_chat_id"),
+  /** Raw user message that created the alarm */
+  rawMessage: text("raw_message").notNull(),
+  /** When to fire (timezone-aware) */
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  /** Repeat string decided by Pixel (nullable) */
+  repeatPattern: text("repeat_pattern"),
+  /** Total repeat count (null = infinite) */
+  repeatCount: integer("repeat_count"),
+  /** Remaining repeats (null = infinite) */
+  firesRemaining: integer("fires_remaining"),
+  /** Last time this reminder fired (for grace period dedup) */
+  lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+  /** 'active', 'cancelled', 'fired' */
+  status: text("status").default("active").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Cross-platform identity links */
+export const userLinks = pgTable("user_links", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  platform: text("platform").notNull(),
+  linkedUserId: text("linked_user_id"),
+  linkedPlatform: text("linked_platform"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

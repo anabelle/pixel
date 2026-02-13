@@ -24,6 +24,8 @@ import { getInnerLifeStatus } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus } from "./services/digest.js";
 import { startJobs, enqueueJob, getRecentJobs } from "./services/jobs.js";
+import { costMonitor } from "./services/cost-monitor.js";
+import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 
 // ============================================================
 // Configuration
@@ -203,6 +205,12 @@ app.get("/api/revenue", async (c) => {
   return c.json(stats);
 });
 
+/** Cost monitoring — track AI model usage and savings */
+app.get("/api/costs", (c) => {
+  const report = costMonitor.getReport();
+  return c.json(report);
+});
+
 /** Job queue */
 app.post("/api/job", async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -363,6 +371,33 @@ async function boot() {
         active BOOLEAN DEFAULT TRUE NOT NULL
       )
     `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS reminders (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        platform_chat_id TEXT,
+        raw_message TEXT NOT NULL,
+        due_at TIMESTAMPTZ NOT NULL,
+        repeat_pattern TEXT,
+        repeat_count INTEGER,
+        fires_remaining INTEGER,
+        last_fired_at TIMESTAMPTZ,
+        status TEXT DEFAULT 'active' NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE status = 'active'`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_links (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        linked_user_id TEXT,
+        linked_platform TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+      )
+    `;
     console.log("[db] Tables verified");
 
     // Initialize revenue tracking
@@ -370,6 +405,9 @@ async function boot() {
 
     // Initialize user tracking
     initUsers(db);
+
+    // Initialize reminder service
+    initReminders(db);
 
     // Create unique index for user upsert (idempotent)
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS users_platform_id_platform_idx ON users (platform_id, platform)`;
@@ -425,6 +463,9 @@ async function boot() {
 
   // Start job runner
   startJobs();
+
+  // Start reminder scheduler
+  startReminders();
 
   try {
     await startWhatsApp();

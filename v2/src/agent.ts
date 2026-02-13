@@ -16,6 +16,8 @@ import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
 import { pixelTools } from "./services/tools.js";
 import { audit } from "./services/audit.js";
+import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
+import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./services/reminders.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -57,6 +59,9 @@ function buildSystemPrompt(userId: string, platform: string): string {
     const groupSummary = loadGroupSummary(userId);
     if (groupSummary) {
       prompt += `\n\n## Group lore summary\n${groupSummary}`;
+      console.log(`[agent] Loaded group summary for ${userId} (${groupSummary.length} chars)`);
+    } else {
+      console.log(`[agent] No group summary found for ${userId}`);
     }
   }
 
@@ -77,11 +82,255 @@ function buildSystemPrompt(userId: string, platform: string): string {
   return prompt;
 }
 
-/** Get the AI model based on environment config */
+/** Get the AI model based on environment config (intelligent tier for conversations) */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
   return getModel(provider as any, modelId);
+}
+
+/** Get the simple AI model (free tier for background tasks) */
+function getSimpleModel() {
+  const provider = process.env.AI_PROVIDER ?? "google";
+  // Use gemini-2.0-flash for simple tasks (free tier)
+  return getModel(provider as any, "gemini-2.0-flash");
+}
+
+/**
+ * Detect and handle scheduling intent from user message.
+      .trim();
+    if (!msg) msg = "reminder";
+    
+    return { dueAt: due, message: msg, repeatPattern: null };
+  }
+  
+  return null;
+}
+
+/**
+ * Detect and handle scheduling intent from user message.
+ * Returns { handled: true } if a reminder was scheduled, modified, or cancelled.
+ * Returns { handled: false } to continue normal conversation.
+ */
+async function handleSchedulingIntent(
+  userId: string,
+  platform: string,
+  message: string,
+  chatId?: string
+): Promise<{ handled: boolean; response?: string }> {
+  const model = getPixelModel();
+  const now = new Date();
+
+  const intentPrompt = `You are Pixel. Decide if the user is asking to schedule, list, cancel, or modify reminders.
+
+Return ONLY valid JSON with these fields:
+{
+  "action": "schedule" | "list" | "cancel" | "modify" | "none" | "clarify",
+  "due_at": "YYYY-MM-DDTHH:MM:00" | null,
+  "repeat_pattern": string | null,
+  "repeat_count": number | null,
+  "selection": "all" | number | string | null,
+  "response": string
+}
+
+Rules:
+- If user is not asking about reminders/scheduling, action must be "none".
+- If user asked to cancel or modify but you cannot identify which reminder, action must be "clarify".
+- If user asked to schedule but time is missing or ambiguous, action must be "clarify" and due_at must be null.
+- repeat_pattern is any string Pixel wants to preserve (e.g., "full moon", "every weekday", "cron:0 9 * * 1-5").
+- repeat_count is optional (null = infinite).
+- selection can be a number (1-based list), "all", or a short description to match a reminder.
+- response must be a short reply in the user's language.
+
+Current time: ${now.toISOString()}
+User request: "${message}"`;
+
+  let parsed: any = null;
+  try {
+    const result = await complete(model as any, {
+      messages: [{ role: "user", content: intentPrompt }],
+      tools: [],
+    } as any);
+
+    const text = extractText(result.message);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { handled: false };
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch (err: any) {
+    console.error("[agent] Scheduling intent parse error:", err.message);
+    return { handled: false };
+  }
+
+  if (!parsed || parsed.action === "none") {
+    return { handled: false };
+  }
+
+  if (parsed.action === "clarify") {
+    return { handled: true, response: parsed.response || "When should I remind you?" };
+  }
+
+  if (parsed.action === "list") {
+    const userReminders = await listReminders(userId, platform);
+    if (userReminders.length === 0) {
+      return { handled: true, response: parsed.response || "No active reminders yet." };
+    }
+
+    const list = userReminders.map((r, i) => {
+      const due = new Date(r.dueAt).toISOString();
+      const recur = r.repeatPattern ? ` (${r.repeatPattern})` : "";
+      return `${i + 1}. ${due}${recur} — ${r.rawMessage}`;
+    }).join("\n");
+
+    return { handled: true, response: `${parsed.response || "Here are your reminders:"}\n${list}` };
+  }
+
+  if (parsed.action === "cancel") {
+    const userReminders = await listReminders(userId, platform);
+    if (userReminders.length === 0) {
+      return { handled: true, response: parsed.response || "No active reminders to cancel." };
+    }
+
+    if (parsed.selection === "all") {
+      const count = await cancelAllReminders(userId, platform);
+      return { handled: true, response: parsed.response || `Cleared ${count} reminders.` };
+    }
+
+    let targetId: number | null = null;
+    if (typeof parsed.selection === "number") {
+      const idx = parsed.selection - 1;
+      if (idx >= 0 && idx < userReminders.length) {
+        targetId = userReminders[idx].id;
+      }
+    }
+
+    if (!targetId && typeof parsed.selection === "string") {
+      const matchPrompt = `Pick the best matching reminder for this request.
+
+User request: "${message}"
+Reminders:
+${userReminders.map((r, i) => `${i + 1}. ${r.rawMessage} (due ${new Date(r.dueAt).toISOString()})`).join("\n")}
+
+Return JSON: {"index": number | null}`;
+
+      try {
+        const pick = await complete(model as any, {
+          messages: [{ role: "user", content: matchPrompt }],
+          tools: [],
+        } as any);
+
+        const pickText = extractText(pick.message);
+        const pickMatch = pickText.match(/\{[\s\S]*\}/);
+        if (pickMatch) {
+          const pickJson = JSON.parse(pickMatch[0]);
+          if (typeof pickJson.index === "number") {
+            const idx = pickJson.index - 1;
+            if (idx >= 0 && idx < userReminders.length) {
+              targetId = userReminders[idx].id;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!targetId) {
+      return { handled: true, response: parsed.response || "Which reminder should I cancel?" };
+    }
+
+    await cancelReminder(targetId);
+    return { handled: true, response: parsed.response || "Cancelled." };
+  }
+
+  if (parsed.action === "modify") {
+    const userReminders = await listReminders(userId, platform);
+    if (userReminders.length === 0) {
+      return { handled: true, response: parsed.response || "No active reminders to modify." };
+    }
+
+    let targetId: number | null = null;
+    if (typeof parsed.selection === "number") {
+      const idx = parsed.selection - 1;
+      if (idx >= 0 && idx < userReminders.length) {
+        targetId = userReminders[idx].id;
+      }
+    }
+
+    if (!targetId && typeof parsed.selection === "string") {
+      const matchPrompt = `Pick the best matching reminder for this request.
+
+User request: "${message}"
+Reminders:
+${userReminders.map((r, i) => `${i + 1}. ${r.rawMessage} (due ${new Date(r.dueAt).toISOString()})`).join("\n")}
+
+Return JSON: {"index": number | null}`;
+
+      try {
+        const pick = await complete(model as any, {
+          messages: [{ role: "user", content: matchPrompt }],
+          tools: [],
+        } as any);
+
+        const pickText = extractText(pick.message);
+        const pickMatch = pickText.match(/\{[\s\S]*\}/);
+        if (pickMatch) {
+          const pickJson = JSON.parse(pickMatch[0]);
+          if (typeof pickJson.index === "number") {
+            const idx = pickJson.index - 1;
+            if (idx >= 0 && idx < userReminders.length) {
+              targetId = userReminders[idx].id;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (!targetId) {
+      return { handled: true, response: parsed.response || "Which reminder should I modify?" };
+    }
+
+    if (!parsed.due_at) {
+      return { handled: true, response: parsed.response || "When should I move it to?" };
+    }
+
+    const dueAt = new Date(parsed.due_at);
+    if (isNaN(dueAt.getTime())) {
+      return { handled: true, response: parsed.response || "I could not parse the new time." };
+    }
+
+    await modifyReminder(targetId, {
+      dueAt,
+      repeatPattern: parsed.repeat_pattern ?? null,
+      repeatCount: parsed.repeat_count ?? null,
+      firesRemaining: parsed.repeat_count ?? null,
+    });
+
+    return { handled: true, response: parsed.response || "Updated." };
+  }
+
+  if (parsed.action === "schedule") {
+    if (!parsed.due_at) {
+      return { handled: true, response: parsed.response || "When should I remind you?" };
+    }
+
+    const dueAt = new Date(parsed.due_at);
+    if (isNaN(dueAt.getTime())) {
+      return { handled: true, response: parsed.response || "I could not parse the time." };
+    }
+
+    await storeReminder({
+      userId,
+      platform,
+      platformChatId: chatId,
+      rawMessage: message,
+      dueAt,
+      repeatPattern: parsed.repeat_pattern ?? null,
+      repeatCount: parsed.repeat_count ?? null,
+      firesRemaining: parsed.repeat_count ?? null,
+    });
+
+    return { handled: true, response: parsed.response || "Reminder set." };
+  }
+
+  return { handled: false };
 }
 
 /** Get API key for the given provider (called by pi-agent-core per LLM call) */
@@ -130,9 +379,35 @@ function stripImageBlocks(messages: any[]): any[] {
   });
 }
 
+/** Strip tool execution metadata that shouldn't be persisted */
+function sanitizeMessagesForContext(messages: any[]): any[] {
+  return messages.map((msg) => {
+    if (!msg || typeof msg !== "object") return msg;
+    
+    // Remove thoughtSignature from tool calls (can be 84KB+ of encrypted data)
+    if (msg.content && Array.isArray(msg.content)) {
+      const sanitizedContent = msg.content.map((block: any) => {
+        if (block?.type === "toolCall" && block?.thoughtSignature) {
+          const { thoughtSignature, ...rest } = block;
+          return rest;
+        }
+        return block;
+      });
+      
+      if (JSON.stringify(sanitizedContent) !== JSON.stringify(msg.content)) {
+        return { ...msg, content: sanitizedContent };
+      }
+    }
+    
+    return msg;
+  });
+}
+
 export interface PixelAgentOptions {
   userId: string;
   platform: string;
+  /** Platform-specific chat/room ID for delivering reminders */
+  chatId?: string | number;
 }
 
 /**
@@ -152,6 +427,26 @@ export async function promptWithHistory(
   images?: ImageContent[]
 ): Promise<string> {
   const { userId, platform } = options;
+  
+  // Extract chat ID for platforms that have it (for delivering reminders)
+  let chatId: string | undefined;
+  if (platform === "telegram" && options.chatId) {
+    chatId = options.chatId.toString();
+  } else if (platform === "whatsapp" && options.chatId) {
+    chatId = options.chatId.toString();
+  } else if (platform === "nostr" && userId.startsWith("nostr-")) {
+    chatId = userId.replace("nostr-dm-", "").replace("nostr-", "");
+  }
+  
+  // Check for scheduling intent FIRST, before normal conversation
+  const schedulingResult = await handleSchedulingIntent(userId, platform, message, chatId);
+  if (schedulingResult.handled) {
+    // Also track this interaction in the conversation log
+    appendToLog(userId, message, schedulingResult.response || "", platform);
+    trackUser(userId, platform).catch(() => {});
+    return schedulingResult.response || "Done.";
+  }
+  
   const systemPrompt = buildSystemPrompt(userId, platform);
 
   const agent = new Agent({
@@ -257,13 +552,20 @@ export async function promptWithHistory(
 
   // Save updated context (all messages including the new exchange)
   if (agent.state?.messages) {
-    const sanitized = stripImageBlocks(agent.state.messages as any[]);
+    const noImages = stripImageBlocks(agent.state.messages as any[]);
+    const sanitized = sanitizeMessagesForContext(noImages);
     saveContext(userId, sanitized);
   }
 
   // Append to log
   if (responseText) {
     appendToLog(userId, message, responseText, platform);
+    
+    // Track cost for user conversations (intelligent model)
+    const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
+    const inputTokens = estimateTokens(message) + estimateTokens(systemPrompt);
+    const outputTokens = estimateTokens(responseText);
+    costMonitor.recordUsage(modelId, inputTokens, outputTokens, 'conversation');
   }
 
   // Track user in PostgreSQL (non-blocking)
@@ -328,7 +630,7 @@ async function extractAndSaveMemory(userId: string, messages: any[]): Promise<vo
 ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMemory}` : "No existing memory — create fresh."}
 
 Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`,
-      model: getPixelModel(),
+      model: getSimpleModel(), // Use free tier for background tasks
       thinkingLevel: "off",
       tools: [],
     },
@@ -344,11 +646,17 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
   });
 
   try {
-    await memoryAgent.prompt(`Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 2000)}`);
+    const promptText = `Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 2000)}`;
+    await memoryAgent.prompt(promptText);
     if (memoryText && memoryText.trim().length > 10) {
       saveMemory(userId, memoryText.trim());
       console.log(`[agent] Memory saved for ${userId} (${memoryText.length} chars)`);
       audit("memory_extraction", `Memory saved for ${userId} (${memoryText.length} chars)`, { userId, memoryLength: memoryText.length });
+      
+      // Track cost for background task (free tier)
+      const inputTokens = estimateTokens(promptText) + 500; // System prompt estimate
+      const outputTokens = estimateTokens(memoryText);
+      costMonitor.recordUsage('gemini-2.0-flash', inputTokens, outputTokens, 'memory');
     }
   } catch (err: any) {
     console.error(`[agent] Memory extraction LLM call failed:`, err.message);
@@ -384,7 +692,7 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 Keep under 1200 characters. Be accurate. No speculation.
 
 ${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
-      model: getPixelModel(),
+      model: getSimpleModel(), // Use free tier for background tasks
       thinkingLevel: "off",
       tools: [],
     },
@@ -451,7 +759,7 @@ async function compactContext(userId: string, platform: string): Promise<void> {
 - The general tone and relationship
 
 Be concise. This summary will be used as context for future conversations.`,
-      model: getPixelModel(),
+      model: getSimpleModel(), // Use free tier for background tasks
       thinkingLevel: "off",
       tools: [],
     },

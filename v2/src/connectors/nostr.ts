@@ -51,6 +51,37 @@ export function markReplied(eventId: string): void {
   }
 }
 
+/**
+ * Send a proactive DM to a Nostr user.
+ * Used by reminder service and other proactive notifications.
+ *
+ * @param pubkey - The recipient's Nostr pubkey (hex)
+ * @param content - Message content to send
+ */
+export async function sendNostrDm(
+  pubkey: string,
+  content: string
+): Promise<boolean> {
+  if (!sharedNdk) {
+    console.log("[nostr] No NDK instance available for sending DM");
+    return false;
+  }
+
+  try {
+    const event = new NDKEvent(sharedNdk, {
+      kind: 4, // NIP-04 encrypted DM
+      content,
+      tags: [["p", pubkey]],
+    });
+
+    await event.publish();
+    return true;
+  } catch (err: any) {
+    console.error(`[nostr] Failed to send DM to ${pubkey.slice(0, 8)}...:`, err.message);
+    return false;
+  }
+}
+
 /** Convert nsec to hex private key */
 function nsecToHex(nsec: string): string {
   // If already hex, return as-is
@@ -165,7 +196,7 @@ export async function startNostr(): Promise<void> {
     try {
       const images = await fetchImages(extractImageUrls(content));
       const response = await promptWithHistory(
-        { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+        { userId: `nostr-${event.pubkey}`, platform: "nostr", chatId: event.pubkey },
         content,
         images.length > 0 ? images : undefined
       );
@@ -230,7 +261,7 @@ export async function startNostr(): Promise<void> {
 
         const images = await fetchImages(extractImageUrls(decrypted));
         const response = await promptWithHistory(
-          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm" },
+          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm", chatId: event.pubkey },
           decrypted,
           images.length > 0 ? images : undefined
         );

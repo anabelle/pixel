@@ -11,6 +11,8 @@
 import { Bot } from "grammy";
 import { promptWithHistory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
+import { readFileSync, existsSync, readdirSync } from "fs";
+import { join } from "path";
 
 // ============================================================
 // Module-level bot instance for proactive messaging
@@ -32,6 +34,61 @@ const CHAT_BATCH_MAX_CHARS = 1600;
 
 /** Owner's Telegram chat ID — receives proactive notifications */
 const OWNER_CHAT_ID = process.env.OWNER_TELEGRAM_ID ?? "";
+
+/** Data directory for conversations */
+const DATA_DIR = process.env.DATA_DIR || "/app/conversations";
+
+/**
+ * Initialize groupActivity Map from existing log.jsonl files.
+ * This ensures 24h ping works correctly after container restarts.
+ */
+function initializeGroupActivityFromLogs(): void {
+  const conversationsDir = DATA_DIR;
+  if (!existsSync(conversationsDir)) {
+    console.log("[telegram] No conversations directory found, skipping group activity restore");
+    return;
+  }
+
+  try {
+    const entries = readdirSync(conversationsDir, { withFileTypes: true });
+    let restoredCount = 0;
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith("tg-group-")) continue;
+
+      const logPath = join(conversationsDir, entry.name, "log.jsonl");
+      if (!existsSync(logPath)) continue;
+
+      try {
+        const content = readFileSync(logPath, "utf-8");
+        const lines = content.trim().split("\n").filter(Boolean);
+        if (lines.length === 0) continue;
+
+        const lastEntry = JSON.parse(lines[lines.length - 1]);
+        if (!lastEntry.ts) continue;
+
+        // Extract chat ID from directory name (tg-group-{id})
+        const chatId = parseInt(entry.name.replace("tg-group-", ""), 10);
+        if (isNaN(chatId)) continue;
+
+        const lastActivity = new Date(lastEntry.ts).getTime();
+        const idleHours = Math.round((Date.now() - lastActivity) / 3_600_000);
+
+        // Restore to groupActivity Map
+        groupActivity.set(chatId, { lastActivity, lastPing: null });
+        restoredCount++;
+
+        console.log(`[telegram] Restored group ${chatId}: last activity ${idleHours}h ago (${lastEntry.ts})`);
+      } catch (err: any) {
+        console.error(`[telegram] Failed to restore activity for ${entry.name}:`, err.message);
+      }
+    }
+
+    console.log(`[telegram] Restored ${restoredCount} group(s) from logs`);
+  } catch (err: any) {
+    console.error("[telegram] Failed to initialize group activity from logs:", err.message);
+  }
+}
 
 /**
  * Send a proactive message to a specific Telegram chat.
@@ -186,7 +243,7 @@ export async function startTelegram(): Promise<void> {
       const mimeType = lower.endsWith(".png") ? "image/png" : "image/jpeg";
 
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram" },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id },
         formatted,
         [{ type: "image", data: base64, mimeType }]
       );
@@ -268,7 +325,7 @@ export async function startTelegram(): Promise<void> {
 If yes, respond with a short, upbeat acknowledgment or insight (max 2 sentences).
 If not worth responding, output [SILENT].`;
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram" },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id },
         prompt
       );
 
@@ -313,6 +370,9 @@ If not worth responding, output [SILENT].`;
 
   console.log("[telegram] Starting bot...");
 
+  // Restore group activity from logs so 24h ping works after restarts
+  initializeGroupActivityFromLogs();
+
   // Proactive group pings when idle
   setInterval(async () => {
     if (!botInstance) return;
@@ -327,9 +387,11 @@ If not worth responding, output [SILENT].`;
       const idleHours = Math.round(idle / 3_600_000);
       const prompt = `The group has been quiet for about ${idleHours} hours. Send a brief, engaging spark relevant to recent group lore. If nothing useful, respond with [SILENT].`;
 
+      console.log(`[telegram] Pinging group ${chatId} (idle ${idleHours}h, conversationId: ${conversationId})`);
+
       try {
         const response = await promptWithHistory(
-          { userId: conversationId, platform: "telegram" },
+          { userId: conversationId, platform: "telegram", chatId: chatId },
           prompt
         );
 

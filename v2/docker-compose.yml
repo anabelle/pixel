@@ -30,6 +30,7 @@ services:
       - ./skills:/app/skills
       - ./tools:/app/tools
       - ./data:/app/data
+      - ./external:/app/external
       - /home/pixel/pixel/data/clawstr:/app/data/.clawstr
       - ./data/whatsapp-auth:/app/data/whatsapp-auth
       - /var/run/docker.sock:/var/run/docker.sock

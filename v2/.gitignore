@@ -5,6 +5,10 @@ data/caddy_data/
 data/caddy_config/
 data/sandbox/
 conversations/
+external/
 *.log
 .env
 bun.lock
+data/
+whatsapp-qr.txt
+skills/

@@ -10,10 +10,11 @@
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, chmodSync } from "fs";
 import { join, dirname } from "path";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
 import { auditToolUse } from "./audit.js";
+import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 
 // ─── READ FILE ────────────────────────────────────────────────
 
@@ -301,7 +302,9 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
     if (resolvedConversationId) {
       const safeId = resolvedConversationId.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
       const logFile = join(convDir, safeId, "log.jsonl");
+      console.log(`[tools] read_logs: reading conversation ${safeId} (${logFile})`);
       if (!existsSync(logFile)) {
+        console.log(`[tools] read_logs: no log found for ${safeId}`);
         auditToolUse("read_logs", { source, conversationId: safeId }, { error: "no_log" });
         return { content: [{ type: "text", text: `No log for ${safeId}` }], details: undefined };
       }
@@ -321,6 +324,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
         }
       }
 
+      console.log(`[tools] read_logs: read ${tail.length} lines from ${safeId}`);
       auditToolUse("read_logs", { source, conversationId: safeId, lines: count }, { count: tail.length });
       return { content: [{ type: "text", text: output }], details: { count: tail.length } };
     }
@@ -521,6 +525,707 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   },
 };
 
+// ─── GIT STATUS ───────────────────────────────────────────────
+
+const gitStatusSchema = Type.Object({
+  repo: Type.Optional(Type.String({ description: "Repository path (relative to /app or absolute). Default: /app" })),
+});
+
+export const gitStatusTool: AgentTool<typeof gitStatusSchema> = {
+  name: "git_status",
+  label: "Git Status",
+  description: "Show the working tree status. Displays staged, unstaged, and untracked files.",
+  parameters: gitStatusSchema,
+  execute: async (_id, { repo }) => {
+    const cwd = repo?.startsWith("/") ? repo : join("/app", repo ?? "");
+    const proc = Bun.spawn(["git", "status", "--porcelain"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+
+    if (stderr && !stdout) {
+      auditToolUse("git_status", { repo }, { error: stderr });
+      throw new Error(`Git error: ${stderr}`);
+    }
+
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    const result = {
+      content: [{ type: "text", text: lines.length ? stdout : "Working tree clean" }],
+      details: { files: lines.length },
+    };
+    auditToolUse("git_status", { repo }, { files: lines.length });
+    return result;
+  },
+};
+
+// ─── GIT DIFF ─────────────────────────────────────────────────
+
+const gitDiffSchema = Type.Object({
+  repo: Type.Optional(Type.String({ description: "Repository path (relative to /app or absolute)" })),
+  staged: Type.Optional(Type.Boolean({ description: "Show staged changes only (--cached)" })),
+  file: Type.Optional(Type.String({ description: "Diff specific file" })),
+});
+
+export const gitDiffTool: AgentTool<typeof gitDiffSchema> = {
+  name: "git_diff",
+  label: "Git Diff",
+  description: "Show changes between commits, working tree, or staged files. Use for reviewing code changes.",
+  parameters: gitDiffSchema,
+  execute: async (_id, { repo, staged, file }) => {
+    const cwd = repo?.startsWith("/") ? repo : join("/app", repo ?? "");
+    const args = ["diff", "--color=never"];
+    if (staged) args.push("--cached");
+    if (file) args.push("--", file);
+
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+
+    if (stderr && !stdout) {
+      auditToolUse("git_diff", { repo, staged, file }, { error: stderr });
+      throw new Error(`Git error: ${stderr}`);
+    }
+
+    const truncated = stdout.length > 30_000 ? stdout.slice(0, 30_000) + "\n\n[... truncated]" : stdout;
+    const result = {
+      content: [{ type: "text", text: truncated || "No changes" }],
+      details: { length: stdout.length },
+    };
+    auditToolUse("git_diff", { repo, staged, file }, { length: stdout.length });
+    return result;
+  },
+};
+
+// ─── GIT LOG ──────────────────────────────────────────────────
+
+const gitLogSchema = Type.Object({
+  repo: Type.Optional(Type.String({ description: "Repository path" })),
+  limit: Type.Optional(Type.Number({ description: "Number of commits to show (default: 10)" })),
+  file: Type.Optional(Type.String({ description: "Show commits affecting specific file" })),
+  oneline: Type.Optional(Type.Boolean({ description: "One-line format (default: true)" })),
+});
+
+export const gitLogTool: AgentTool<typeof gitLogSchema> = {
+  name: "git_log",
+  label: "Git Log",
+  description: "Show commit history. Use to understand code evolution or find specific changes.",
+  parameters: gitLogSchema,
+  execute: async (_id, { repo, limit, file, oneline }) => {
+    const cwd = repo?.startsWith("/") ? repo : join("/app", repo ?? "");
+    const args = ["log", `--max-count=${limit ?? 10}`];
+    if (oneline !== false) args.push("--oneline");
+    if (file) args.push("--", file);
+
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+
+    if (stderr && !stdout) {
+      auditToolUse("git_log", { repo, limit, file, oneline }, { error: stderr });
+      throw new Error(`Git error: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: stdout || "No commits" }],
+      details: { commits: stdout.split("\n").filter(Boolean).length },
+    };
+    auditToolUse("git_log", { repo, limit, file, oneline }, { commits: result.details.commits });
+    return result;
+  },
+};
+
+// ─── GIT SHOW ────────────────────────────────────────────────
+
+const gitShowSchema = Type.Object({
+  repo: Type.Optional(Type.String({ description: "Repository path" })),
+  ref: Type.Optional(Type.String({ description: "Commit, tag, or branch (default: HEAD)" })),
+});
+
+export const gitShowTool: AgentTool<typeof gitShowSchema> = {
+  name: "git_show",
+  label: "Git Show",
+  description: "Show details of a specific commit (diff, message, author, date).",
+  parameters: gitShowSchema,
+  execute: async (_id, { repo, ref }) => {
+    const cwd = repo?.startsWith("/") ? repo : join("/app", repo ?? "");
+    const proc = Bun.spawn(["git", "show", "--color=never", ref ?? "HEAD"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+
+    if (stderr && !stdout) {
+      auditToolUse("git_show", { repo, ref }, { error: stderr });
+      throw new Error(`Git error: ${stderr}`);
+    }
+
+    const truncated = stdout.length > 30_000 ? stdout.slice(0, 30_000) + "\n\n[... truncated]" : stdout;
+    const result = {
+      content: [{ type: "text", text: truncated || "Not found" }],
+      details: { length: stdout.length },
+    };
+    auditToolUse("git_show", { repo, ref }, { length: stdout.length });
+    return result;
+  },
+};
+
+// ─── GIT BRANCH ───────────────────────────────────────────────
+
+const gitBranchSchema = Type.Object({
+  repo: Type.Optional(Type.String({ description: "Repository path" })),
+  list: Type.Optional(Type.Boolean({ description: "List branches (default: true)" })),
+  current: Type.Optional(Type.Boolean({ description: "Show current branch name only" })),
+});
+
+export const gitBranchTool: AgentTool<typeof gitBranchSchema> = {
+  name: "git_branch",
+  label: "Git Branch",
+  description: "List, create, or delete branches. Use to see available branches or current context.",
+  parameters: gitBranchSchema,
+  execute: async (_id, { repo, list, current }) => {
+    const cwd = repo?.startsWith("/") ? repo : join("/app", repo ?? "");
+    const args = ["branch"];
+    if (current) args.push("--show-current");
+    else if (list !== false) args.push("-a");
+
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    await proc.exited;
+
+    if (stderr && !stdout) {
+      auditToolUse("git_branch", { repo, list, current }, { error: stderr });
+      throw new Error(`Git error: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: stdout || "No branches" }],
+      details: { branches: stdout.split("\n").filter(Boolean).length },
+    };
+    auditToolUse("git_branch", { repo, list, current }, { branches: result.details.branches });
+    return result;
+  },
+};
+
+// ─── GIT CLONE ───────────────────────────────────────────────
+
+const gitCloneSchema = Type.Object({
+  url: Type.String({ description: "GitHub URL to clone (e.g., https://github.com/user/repo or git@github.com:user/repo.git)" }),
+  targetDir: Type.Optional(Type.String({ description: "Target directory (default: repo name in /app)" })),
+  token: Type.Optional(Type.String({ description: "GitHub personal access token (if needed for private repos)" })),
+});
+
+export const gitCloneTool: AgentTool<typeof gitCloneSchema> = {
+  name: "git_clone",
+  label: "Git Clone",
+  description: "Clone a git repository. Supports HTTPS with token for private repos. Uses GITHUB_TOKEN env var if no token provided.",
+  parameters: gitCloneSchema,
+  execute: async (_id, { url, targetDir, token }) => {
+    let cloneUrl = url;
+    const effectiveToken = token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+    
+    if (effectiveToken) {
+      cloneUrl = url.replace("https://github.com/", `https://${effectiveToken}@github.com/`);
+    }
+
+    const repoName = url.split("/").pop()?.replace(".git", "") ?? "repo";
+    const target = targetDir ?? join("/app/external", repoName);
+
+    const proc = Bun.spawn(["git", "clone", "--progress", cloneUrl, target], {
+      cwd: "/app",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { error: stderr, exitCode });
+      throw new Error(`Git clone failed: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: `Cloned to ${target}\n${stdout}${stderr}` }],
+      details: { target, url },
+    };
+    auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { target, url });
+    return result;
+  },
+};
+
+// ─── GIT PULL ───────────────────────────────────────────────
+
+const gitPullSchema = Type.Object({
+  repo: Type.String({ description: "Repository path" }),
+  branch: Type.Optional(Type.String({ description: "Branch to pull (default: current)" })),
+});
+
+export const gitPullTool: AgentTool<typeof gitPullSchema> = {
+  name: "git_pull",
+  label: "Git Pull",
+  description: "Fetch and merge changes from remote repository.",
+  parameters: gitPullSchema,
+  execute: async (_id, { repo, branch }) => {
+    const cwd = repo.startsWith("/") ? repo : join("/app", repo);
+    const args = ["pull"];
+    if (branch) args.push("origin", branch);
+
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      auditToolUse("git_pull", { repo, branch }, { error: stderr, exitCode });
+      throw new Error(`Git pull failed: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: stdout || stderr }],
+      details: { repo },
+    };
+    auditToolUse("git_pull", { repo, branch }, { success: true });
+    return result;
+  },
+};
+
+// ─── GIT PUSH ───────────────────────────────────────────────
+
+const gitPushSchema = Type.Object({
+  repo: Type.String({ description: "Repository path" }),
+  remote: Type.Optional(Type.String({ description: "Remote name (default: origin)" })),
+  branch: Type.Optional(Type.String({ description: "Branch to push (default: current)" })),
+  token: Type.Optional(Type.String({ description: "GitHub token if not configured in remote" })),
+});
+
+export const gitPushTool: AgentTool<typeof gitPushSchema> = {
+  name: "git_push",
+  label: "Git Push",
+  description: "Push commits to remote repository. Supports token for authentication. Uses GITHUB_TOKEN env var if no token provided.",
+  parameters: gitPushSchema,
+  execute: async (_id, { repo, remote, branch, token }) => {
+    const cwd = repo.startsWith("/") ? repo : join("/app", repo);
+    const args = ["push"];
+    if (remote) args.push(remote);
+    if (branch) args.push(branch);
+
+    const effectiveToken = token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+    const env: Record<string, string> = {};
+    if (effectiveToken) {
+      env.GIT_ASKPASS = "/bin/echo";
+      env.GITHUB_TOKEN = effectiveToken;
+    }
+
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, ...env },
+    });
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      auditToolUse("git_push", { repo, remote, branch, token: !!effectiveToken }, { error: stderr, exitCode });
+      throw new Error(`Git push failed: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: stdout || "Pushed successfully" }],
+      details: { repo },
+    };
+    auditToolUse("git_push", { repo, remote, branch, token: !!effectiveToken }, { success: true });
+    return result;
+  },
+};
+
+// ─── GIT ADD & COMMIT ────────────────────────────────────────
+
+const gitCommitSchema = Type.Object({
+  repo: Type.String({ description: "Repository path" }),
+  message: Type.String({ description: "Commit message" }),
+  files: Type.Optional(Type.String({ description: "Files to stage (default: -A for all)" })),
+});
+
+export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
+  name: "git_commit",
+  label: "Git Commit",
+  description: "Stage and commit changes. Use to create a snapshot of changes.",
+  parameters: gitCommitSchema,
+  execute: async (_id, { repo, message, files }) => {
+    const cwd = repo.startsWith("/") ? repo : join("/app", repo);
+
+    const stageProc = Bun.spawn(["git", "add", files ?? "-A"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await stageProc.exited;
+
+    const proc = Bun.spawn(["git", "commit", "-m", message], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      auditToolUse("git_commit", { repo, message, files }, { error: stderr, exitCode });
+      throw new Error(`Git commit failed: ${stderr}`);
+    }
+
+    const result = {
+      content: [{ type: "text", text: stdout || "Committed successfully" }],
+      details: { repo },
+    };
+    auditToolUse("git_commit", { repo, message, files }, { success: true });
+    return result;
+  },
+};
+
+// ─── SSH EXECUTE ───────────────────────────────────────────────
+
+const sshSchema = Type.Object({
+  host: Type.String({ description: "SSH host (IP or hostname). Falls back to TALLERUBENS_SSH_HOST env var if not provided." }),
+  user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
+  port: Type.Optional(Type.Number({ description: "SSH port (default: 22)" })),
+  command: Type.String({ description: "Command to execute on remote server" }),
+  key: Type.Optional(Type.String({ description: "Private SSH key content (falls back to TALLERUBENS_SSH_KEY env var)" })),
+});
+
+export const sshTool: AgentTool<typeof sshSchema> = {
+  name: "ssh",
+  label: "SSH Execute",
+  description: "Execute commands on a remote server via SSH. Use for managing external servers like tallerubens. Uses TALLERUBENS_SSH_* env vars as fallback.",
+  parameters: sshSchema,
+  execute: async (_id, { host, user, port, command, key }) => {
+    const effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
+    const effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
+    const effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
+    const sshPort = port ?? 22;
+    
+    if (!effectiveHost) {
+      throw new Error("SSH host required. Provide 'host' parameter or set TALLERUBENS_SSH_HOST env var.");
+    }
+    
+    const args = [
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      "-o", "PreferredAuthentications=publickey",
+      "-o", "IdentitiesOnly=yes",
+      "-p", sshPort.toString(),
+    ];
+    
+    if (effectiveKey) {
+      const keyContent = Buffer.from(effectiveKey, "base64").toString("utf-8");
+      const keyFile = `/tmp/ssh_key_${Date.now()}`;
+      await Bun.write(keyFile, keyContent);
+      await chmodSync(keyFile, 0o600);
+      args.push("-i", keyFile);
+    }
+
+    const target = `${effectiveUser}@${effectiveHost}`;
+    
+    const proc = Bun.spawn(["ssh", ...args, target, command], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const exitCode = await proc.exited;
+
+    if (effectiveKey) {
+      const keyIdx = args.indexOf("-i");
+      if (keyIdx !== -1) {
+        const keyFile = args[keyIdx + 1];
+        await Bun.write(keyFile, "");
+      }
+    }
+
+    const output = stdout + (stderr ? `\n[stderr]: ${stderr}` : "");
+    const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
+
+    auditToolUse("ssh", { host: effectiveHost, user: effectiveUser, port: sshPort, hasKey: !!effectiveKey }, { exitCode, outputLength: output.length });
+
+    if (exitCode !== 0) {
+      throw new Error(`SSH failed (exit ${exitCode}): ${stderr || stdout}`);
+    }
+
+    return {
+      content: [{ type: "text", text: truncated || "Command executed successfully" }],
+      details: { exitCode, outputLength: output.length },
+    };
+  },
+};
+
+// ─── WP-CLI ───────────────────────────────────────────────────
+
+const wpCliSchema = Type.Object({
+  command: Type.String({ description: "WP-CLI command to run (e.g., 'plugin list', 'post list --limit=10')" }),
+  host: Type.Optional(Type.String({ description: "SSH host for remote execution. Falls back to TALLERUBENS_SSH_HOST." })),
+  user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
+  path: Type.Optional(Type.String({ description: "WordPress installation path. Falls back to TALLERUBENS_WP_PATH." })),
+});
+
+export const wpCliTool: AgentTool<typeof wpCliSchema> = {
+  name: "wp",
+  label: "WP-CLI",
+  description: "Run WordPress commands via WP-CLI. Use for managing WordPress sites like tallerubens.com. Uses TALLERUBENS_SSH_* env vars as fallback.",
+  parameters: wpCliSchema,
+  execute: async (_id, { command, host, user, path }) => {
+    const effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
+    const effectivePath = path ?? process.env.TALLERUBENS_WP_PATH;
+    const effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
+    
+    let fullCommand = "wp " + command;
+    
+    if (effectivePath) {
+      fullCommand = `cd ${effectivePath} && wp ${command}`;
+    }
+
+    if (effectiveHost) {
+      const sshArgs = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "PreferredAuthentications=publickey", "-o", "IdentitiesOnly=yes"];
+      const target = `${effectiveUser}@${effectiveHost}`;
+      
+      const keyContent = process.env.TALLERUBENS_SSH_KEY ? Buffer.from(process.env.TALLERUBENS_SSH_KEY, "base64").toString("utf-8") : null;
+      let finalArgs = [...sshArgs];
+      if (keyContent) {
+        const keyFile = `/tmp/ssh_key_wp_${Date.now()}`;
+        await Bun.write(keyFile, keyContent);
+        await chmodSync(keyFile, 0o600);
+        finalArgs = [...finalArgs, "-i", keyFile];
+      }
+      
+      const proc = Bun.spawn(["ssh", ...finalArgs, target, fullCommand], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        auditToolUse("wp", { host: effectiveHost, command }, { exitCode, error: stderr });
+        throw new Error(`WP-CLI failed: ${stderr}`);
+      }
+
+      const output = stdout || stderr;
+      const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
+      
+      auditToolUse("wp", { host: effectiveHost, command }, { exitCode, outputLength: output.length });
+      return { content: [{ type: "text", text: truncated }], details: { exitCode } };
+    } else {
+      const proc = Bun.spawn(["wp", ...command.split(" ")], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const exitCode = await proc.exited;
+
+      if (exitCode !== 0) {
+        auditToolUse("wp", { command, local: true }, { exitCode, error: stderr });
+        throw new Error(`WP-CLI failed: ${stderr}`);
+      }
+
+      const output = stdout || stderr;
+      const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
+      
+      auditToolUse("wp", { command, local: true }, { exitCode, outputLength: output.length });
+      return { content: [{ type: "text", text: truncated }], details: { exitCode } };
+    }
+  },
+};
+
+// ─── ALARM CLOCK TOOLS ───────────────────────────────────────
+
+const scheduleAlarmSchema = Type.Object({
+  user_id: Type.String({ description: "Platform-specific user ID" }),
+  platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
+  platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID" })),
+  raw_message: Type.String({ description: "Raw intent message to store" }),
+  due_at: Type.String({ description: "ISO datetime to fire" }),
+  repeat_pattern: Type.Optional(Type.String({ description: "Optional repeat pattern (freeform)" })),
+  repeat_count: Type.Optional(Type.Number({ description: "Optional repeat count (null = infinite)" })),
+});
+
+export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
+  name: "schedule_alarm",
+  label: "Schedule Alarm",
+  description: "Schedule a dumb alarm clock entry. Stores raw message + due time.",
+  parameters: scheduleAlarmSchema,
+  execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, repeat_pattern, repeat_count }) => {
+    const dueAt = new Date(due_at);
+    if (isNaN(dueAt.getTime())) {
+      throw new Error(`Invalid due_at: ${due_at}`);
+    }
+
+    const reminder = await storeReminder({
+      userId: user_id,
+      platform,
+      platformChatId: platform_chat_id,
+      rawMessage: raw_message,
+      dueAt,
+      repeatPattern: repeat_pattern ?? null,
+      repeatCount: repeat_count ?? null,
+      firesRemaining: repeat_count ?? null,
+    });
+
+    return {
+      content: [{ type: "text", text: `Scheduled alarm #${reminder.id} for ${dueAt.toISOString()}` }],
+    };
+  },
+};
+
+const listAlarmsSchema = Type.Object({
+  user_id: Type.String({ description: "Platform-specific user ID" }),
+  platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
+});
+
+export const listAlarmsTool: AgentTool<typeof listAlarmsSchema> = {
+  name: "list_alarms",
+  label: "List Alarms",
+  description: "List active alarms for a user.",
+  parameters: listAlarmsSchema,
+  execute: async (_id, { user_id, platform }) => {
+    const reminders = await listReminders(user_id, platform);
+    const lines = reminders.map((r, i) => {
+      const due = new Date(r.dueAt).toISOString();
+      const recur = r.repeatPattern ? ` (${r.repeatPattern})` : "";
+      return `${i + 1}. [${r.id}] ${due}${recur} — ${r.rawMessage}`;
+    });
+
+    const text = lines.length > 0 ? lines.join("\n") : "No active alarms.";
+    return { content: [{ type: "text", text }] };
+  },
+};
+
+const cancelAlarmSchema = Type.Object({
+  alarm_id: Type.Number({ description: "Alarm ID to cancel" }),
+});
+
+export const cancelAlarmTool: AgentTool<typeof cancelAlarmSchema> = {
+  name: "cancel_alarm",
+  label: "Cancel Alarm",
+  description: "Cancel a specific alarm by ID.",
+  parameters: cancelAlarmSchema,
+  execute: async (_id, { alarm_id }) => {
+    const ok = await cancelReminder(alarm_id);
+    return { content: [{ type: "text", text: ok ? `Cancelled alarm #${alarm_id}` : `Alarm #${alarm_id} not found` }] };
+  },
+};
+
+const cancelAllAlarmsSchema = Type.Object({
+  user_id: Type.String({ description: "Platform-specific user ID" }),
+  platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
+});
+
+export const cancelAllAlarmsTool: AgentTool<typeof cancelAllAlarmsSchema> = {
+  name: "cancel_all_alarms",
+  label: "Cancel All Alarms",
+  description: "Cancel all alarms for a user on a platform.",
+  parameters: cancelAllAlarmsSchema,
+  execute: async (_id, { user_id, platform }) => {
+    const count = await cancelAllReminders(user_id, platform);
+    return { content: [{ type: "text", text: `Cancelled ${count} alarms.` }] };
+  },
+};
+
+const modifyAlarmSchema = Type.Object({
+  alarm_id: Type.Number({ description: "Alarm ID to modify" }),
+  due_at: Type.Optional(Type.String({ description: "New due time (ISO)" })),
+  raw_message: Type.Optional(Type.String({ description: "New raw message" })),
+  repeat_pattern: Type.Optional(Type.String({ description: "New repeat pattern" })),
+  repeat_count: Type.Optional(Type.Number({ description: "New repeat count" })),
+});
+
+export const modifyAlarmTool: AgentTool<typeof modifyAlarmSchema> = {
+  name: "modify_alarm",
+  label: "Modify Alarm",
+  description: "Modify alarm timing or text.",
+  parameters: modifyAlarmSchema,
+  execute: async (_id, { alarm_id, due_at, raw_message, repeat_pattern, repeat_count }) => {
+    const updates: any = {};
+    if (due_at) {
+      const dueAt = new Date(due_at);
+      if (isNaN(dueAt.getTime())) throw new Error(`Invalid due_at: ${due_at}`);
+      updates.dueAt = dueAt;
+    }
+    if (raw_message) updates.rawMessage = raw_message;
+    if (repeat_pattern !== undefined) updates.repeatPattern = repeat_pattern ?? null;
+    if (repeat_count !== undefined) {
+      updates.repeatCount = repeat_count ?? null;
+      updates.firesRemaining = repeat_count ?? null;
+    }
+
+    const updated = await modifyReminder(alarm_id, updates);
+    if (!updated) {
+      return { content: [{ type: "text", text: `Alarm #${alarm_id} not found or not modified.` }] };
+    }
+    return { content: [{ type: "text", text: `Updated alarm #${alarm_id}` }] };
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -531,10 +1236,64 @@ export const pixelTools = [
   checkHealthTool,
   readLogsTool,
   webFetchTool,
+  scheduleAlarmTool,
+  listAlarmsTool,
+  cancelAlarmTool,
+  cancelAllAlarmsTool,
+  modifyAlarmTool,
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,
   clawstrNotificationsTool,
   clawstrUpvoteTool,
   clawstrSearchTool,
+  gitStatusTool,
+  gitDiffTool,
+  gitLogTool,
+  gitShowTool,
+  gitBranchTool,
+  gitCloneTool,
+  gitPullTool,
+  gitPushTool,
+  gitCommitTool,
+  sshTool,
+  wpCliTool,
 ];
+
+// Map of tool names to their implementations
+const toolImplementations: Record<string, AgentTool<any>> = {
+  read_file: readFileTool,
+  write_file: writeFileTool,
+  edit_file: editFileTool,
+  bash: bashTool,
+  check_health: checkHealthTool,
+  read_logs: readLogsTool,
+  web_fetch: webFetchTool,
+};
+
+/**
+ * Execute a tool by name with given arguments.
+ * Used by reminder service to run tools before sending reminders.
+ * 
+ * Only exposes safe read-only tools: check_health, read_logs, web_fetch
+ */
+export async function executeTool(
+  toolName: string,
+  args: Record<string, unknown> = {}
+): Promise<string> {
+  const tool = toolImplementations[toolName];
+  if (!tool) {
+    return `[Error: Unknown tool '${toolName}']`;
+  }
+
+  try {
+    // Execute the tool handler
+    const result = await tool.handler(args);
+    if (typeof result === "string") {
+      return result;
+    }
+    return JSON.stringify(result, null, 2);
+  } catch (err: any) {
+    return `[Error executing ${toolName}: ${err.message}]`;
+  }
+}
