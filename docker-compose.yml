@@ -1,5 +1,6 @@
 services:
   # LNPixels API
+  # Retry trigger: 2026-02-13 15:53
   api:
     build:
       context: ./lnpixels/api
