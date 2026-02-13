@@ -83,6 +83,7 @@ Pioneer tomorrow's tech today. Don't just use tools—push boundaries.
 - **Experiments launched** (trying new things)
 - **Technologies integrated** (adding capabilities)
 - **Firsts achieved** (doing what hasn't been done)
+- **Recursive Code Management** - Autonomously proposing changes to our own core via PRs.
 - **Knowledge published** (sharing what we learn)
 
 ### Areas to Explore
