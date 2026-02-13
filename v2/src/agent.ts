@@ -14,7 +14,7 @@ import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
 import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
-import { pixelTools } from "./services/tools.js";
+import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./services/reminders.js";
@@ -68,9 +68,10 @@ function buildSystemPrompt(userId: string, platform: string, chatId?: string): s
 
   prompt += `\n\n## Current context
 - Platform: ${platform}
-- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (use this as platform_chat_id when scheduling alarms)` : ""}
+- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}
 - Current time (UTC): ${new Date().toISOString()}
-- User timezone: UTC-5 (Colombia)`;
+- User timezone: UTC-5 (Colombia)
+- When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.`;
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
     prompt += `\n\n## Group chat behavior
@@ -506,6 +507,10 @@ export async function promptWithHistory(
   let responseText = "";
   let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
 
+  // Set tool context so schedule_alarm can auto-fill chatId
+  setToolContext({ userId, platform, chatId });
+
+  try {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const responseChunks: string[] = [];
     let llmError: string | null = null;
@@ -632,6 +637,9 @@ export async function promptWithHistory(
   }
 
   return responseText || "";
+  } finally {
+    clearToolContext();
+  }
 }
 
 /**

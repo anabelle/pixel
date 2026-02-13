@@ -262,19 +262,38 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
 
   let sent = false;
   try {
-    if (!reminder.platformChatId) {
-      audit("reminder", `No platformChatId for reminder ${reminder.id}, skipping`);
+    // Derive chatId: use platformChatId if available, otherwise derive from userId for DMs
+    let effectiveChatId = reminder.platformChatId;
+    if (!effectiveChatId) {
+      // For Telegram DMs: userId is "tg-892935151" → chatId is "892935151"
+      // For WhatsApp DMs: userId is "wa-573223176133" → chatId is "573223176133"
+      // For Nostr DMs: userId is "nostr-dm-<pubkey>" → chatId is the pubkey
+      if (reminder.userId.startsWith("tg-") && !reminder.userId.startsWith("tg-group-")) {
+        effectiveChatId = reminder.userId.replace(/^tg-/, "");
+        audit("reminder", `Derived chatId ${effectiveChatId} from userId ${reminder.userId} for reminder ${reminder.id}`);
+      } else if (reminder.userId.startsWith("wa-")) {
+        effectiveChatId = reminder.userId.replace(/^wa-/, "");
+        audit("reminder", `Derived chatId ${effectiveChatId} from userId ${reminder.userId} for reminder ${reminder.id}`);
+      } else if (reminder.userId.startsWith("nostr-dm-")) {
+        effectiveChatId = reminder.userId.replace(/^nostr-dm-/, "");
+        audit("reminder", `Derived chatId ${effectiveChatId} from userId ${reminder.userId} for reminder ${reminder.id}`);
+      } else {
+        audit("reminder", `No platformChatId and cannot derive from userId ${reminder.userId} for reminder ${reminder.id}, skipping`);
+      }
+    }
+    
+    if (!effectiveChatId) {
+      audit("reminder", `No chatId for reminder ${reminder.id}, skipping delivery`);
     } else {
       // Route through promptWithHistory so the LLM processes the alarm
       const userId = reminder.userId;
       const platform = reminder.platform;
-      const chatId = reminder.platformChatId;
 
       let naturalMessage: string | null = null;
       try {
         const promptFn = await getPromptWithHistory();
         naturalMessage = await promptFn(
-          { userId, platform, chatId },
+          { userId, platform, chatId: effectiveChatId },
           alarmPrompt
         );
       } catch (err: any) {
@@ -299,14 +318,14 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
 
       switch (platform) {
         case "telegram":
-          sent = await sendTelegramMessage(chatId, naturalMessage);
+          sent = await sendTelegramMessage(effectiveChatId, naturalMessage);
           break;
         case "whatsapp":
-          sent = await sendWhatsAppMessage(chatId, naturalMessage);
+          sent = await sendWhatsAppMessage(effectiveChatId, naturalMessage);
           break;
         case "nostr":
         case "nostr-dm":
-          sent = await sendNostrDm(chatId, naturalMessage);
+          sent = await sendNostrDm(effectiveChatId, naturalMessage);
           break;
         default:
           audit("reminder", `Unknown platform ${platform} for reminder ${reminder.id}`);

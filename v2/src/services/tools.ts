@@ -1099,12 +1099,59 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
 
 // ─── ALARM CLOCK TOOLS ───────────────────────────────────────
 
+// Tool execution context — set by agent.ts before each prompt() call
+// so tools can access the current chat session info without LLM passing it
+let _toolContext: { userId?: string; platform?: string; chatId?: string } = {};
+
+/** Set the current tool execution context (called from agent.ts before prompt) */
+export function setToolContext(ctx: { userId?: string; platform?: string; chatId?: string }): void {
+  _toolContext = ctx;
+}
+
+/** Clear tool context after prompt completes */
+export function clearToolContext(): void {
+  _toolContext = {};
+}
+
+/**
+ * Parse a relative time string like "10 seconds", "5 minutes", "2 hours", "1 day"
+ * and return a Date that many units from now. Returns null if unparseable.
+ */
+function parseRelativeTime(input: string): Date | null {
+  const cleaned = input.toLowerCase().trim()
+    .replace(/^in\s+/, "")
+    .replace(/^en\s+/, "")       // Spanish: "en 10 segundos"
+    .replace(/^dentro de\s+/, ""); // Spanish: "dentro de 10 minutos"
+
+  const match = cleaned.match(/^(\d+)\s*(seconds?|segundos?|secs?|seg|minutes?|minutos?|mins?|min|hours?|horas?|hrs?|days?|días?|dias?|weeks?|semanas?)$/);
+  if (!match) return null;
+
+  const amount = parseInt(match[1], 10);
+  const unit = match[2];
+  const now = new Date();
+
+  if (/^(seconds?|segundos?|secs?|seg)$/.test(unit)) {
+    return new Date(now.getTime() + amount * 1000);
+  } else if (/^(minutes?|minutos?|mins?|min)$/.test(unit)) {
+    return new Date(now.getTime() + amount * 60_000);
+  } else if (/^(hours?|horas?|hrs?)$/.test(unit)) {
+    return new Date(now.getTime() + amount * 3_600_000);
+  } else if (/^(days?|días?|dias?)$/.test(unit)) {
+    return new Date(now.getTime() + amount * 86_400_000);
+  } else if (/^(weeks?|semanas?)$/.test(unit)) {
+    return new Date(now.getTime() + amount * 7 * 86_400_000);
+  }
+
+  return null;
+}
+
 const scheduleAlarmSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
-  platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID for delivering the alarm. IMPORTANT: use the Chat ID from the system prompt context." })),
+  platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID for delivering the alarm. Auto-filled from context if not provided." })),
   raw_message: Type.String({ description: "Raw intent message to store" }),
-  due_at: Type.String({ description: "ISO datetime to fire" }),
+  due_at: Type.Optional(Type.String({ description: "ISO datetime to fire (use this OR relative_time, not both)" })),
+  relative_time: Type.Optional(Type.String({ description: "Relative time from now, e.g. '10 seconds', '5 minutes', '2 hours', '1 day'. Server computes exact time. PREFERRED over due_at for short-term alarms." })),
   repeat_pattern: Type.Optional(Type.String({ description: "Optional repeat pattern (freeform)" })),
   repeat_count: Type.Optional(Type.Number({ description: "Optional repeat count (null = infinite)" })),
 });
@@ -1112,18 +1159,33 @@ const scheduleAlarmSchema = Type.Object({
 export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
   name: "schedule_alarm",
   label: "Schedule Alarm",
-  description: "Schedule a dumb alarm clock entry. Stores raw message + due time.",
+  description: "Schedule an alarm. For short-term alarms (seconds/minutes/hours), use relative_time instead of due_at to avoid time computation errors. The platform_chat_id is auto-filled from the current chat context.",
   parameters: scheduleAlarmSchema,
-  execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, repeat_pattern, repeat_count }) => {
-    const dueAt = new Date(due_at);
-    if (isNaN(dueAt.getTime())) {
-      throw new Error(`Invalid due_at: ${due_at}`);
+  execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
+    // Auto-fill platform_chat_id from tool context if LLM didn't provide it
+    const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
+    
+    // Compute due time: prefer relative_time (server-side, no LLM hallucination)
+    let dueAt: Date;
+    if (relative_time) {
+      const parsed = parseRelativeTime(relative_time);
+      if (!parsed) {
+        throw new Error(`Could not parse relative_time: "${relative_time}". Use formats like "10 seconds", "5 minutes", "2 hours".`);
+      }
+      dueAt = parsed;
+    } else if (due_at) {
+      dueAt = new Date(due_at);
+      if (isNaN(dueAt.getTime())) {
+        throw new Error(`Invalid due_at: ${due_at}`);
+      }
+    } else {
+      throw new Error("Either due_at or relative_time must be provided.");
     }
 
     const reminder = await storeReminder({
       userId: user_id,
       platform,
-      platformChatId: platform_chat_id,
+      platformChatId: effectiveChatId,
       rawMessage: raw_message,
       dueAt,
       repeatPattern: repeat_pattern ?? null,
@@ -1132,7 +1194,7 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
     });
 
     return {
-      content: [{ type: "text", text: `Scheduled alarm #${reminder.id} for ${dueAt.toISOString()}` }],
+      content: [{ type: "text", text: `Scheduled alarm #${reminder.id} for ${dueAt.toISOString()} (chatId: ${effectiveChatId || "MISSING"})` }],
     };
   },
 };
