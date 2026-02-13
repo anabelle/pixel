@@ -22,7 +22,7 @@ let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
 const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
-const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string }>();
+const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string; chatTitle?: string }>();
 const GROUP_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const GROUP_PING_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const GROUP_PING_CHECK_MS = 10 * 60 * 1000; // 10 minutes
@@ -212,14 +212,19 @@ export async function startTelegram(): Promise<void> {
 
     appendToLog(conversationId, formatted, "", "telegram");
 
+    // Extract chat title for context awareness
+    const chatTitle = isGroupChat
+      ? (ctx.chat as any).title ?? undefined
+      : senderName; // For DMs, use the sender's display name
+
     // DMs: batch with 20s window (same as groups) to handle fast follow-up messages
     if (!isGroupChat) {
-      queueChatMessage(ctx.chat.id, conversationId, formatted);
+      queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
       return;
     }
 
     // Groups: batch to reduce noise
-    queueChatMessage(ctx.chat.id, conversationId, formatted);
+    queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
     return;
   });
 
@@ -263,8 +268,12 @@ export async function startTelegram(): Promise<void> {
       const lower = file.file_path.toLowerCase();
       const mimeType = lower.endsWith(".png") ? "image/png" : "image/jpeg";
 
+      const chatTitle = isGroupChat
+        ? (ctx.chat as any).title ?? undefined
+        : senderName;
+
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
         formatted,
         [{ type: "image", data: base64, mimeType }]
       );
@@ -346,7 +355,7 @@ export async function startTelegram(): Promise<void> {
 If yes, respond with a short, upbeat acknowledgment or insight (max 2 sentences).
 If not worth responding, output [SILENT].`;
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id, chatTitle: (ctx.chat as any).title ?? undefined },
         prompt
       );
 
@@ -410,9 +419,16 @@ If not worth responding, output [SILENT].`;
 
       console.log(`[telegram] Pinging group ${chatId} (idle ${idleHours}h, conversationId: ${conversationId})`);
 
+      // Fetch group title for context
+      let chatTitle: string | undefined;
+      try {
+        const chatInfo = await botInstance!.api.getChat(chatId);
+        chatTitle = (chatInfo as any).title ?? undefined;
+      } catch {}
+
       try {
         const response = await promptWithHistory(
-          { userId: conversationId, platform: "telegram", chatId: chatId },
+          { userId: conversationId, platform: "telegram", chatId: chatId, chatTitle },
           prompt
         );
 
@@ -441,9 +457,11 @@ If not worth responding, output [SILENT].`;
   }, GROUP_PING_CHECK_MS);
 }
 
-function queueChatMessage(chatId: number, conversationId: string, line: string): void {
-  const entry = chatBuffers.get(chatId) ?? { items: [], timer: null, conversationId };
+function queueChatMessage(chatId: number, conversationId: string, line: string, chatTitle?: string): void {
+  const entry = chatBuffers.get(chatId) ?? { items: [], timer: null, conversationId, chatTitle };
   entry.items.push(line);
+  // Update chatTitle if we got a newer one (in case first message didn't have it)
+  if (chatTitle) entry.chatTitle = chatTitle;
 
   if (entry.items.length > CHAT_BATCH_MAX) {
     entry.items = entry.items.slice(-CHAT_BATCH_MAX);
@@ -472,6 +490,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
   chatBuffers.set(chatId, entry);
 
   const isDm = !entry.conversationId.startsWith("tg-group-");
+  const chatTitle = entry.chatTitle;
   const joined = items.join("\n");
   const trimmed = joined.length > CHAT_BATCH_MAX_CHARS
     ? joined.slice(-CHAT_BATCH_MAX_CHARS)
@@ -486,7 +505,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
   try {
     await botInstance?.api.sendChatAction(chatId, "typing");
     const response = await promptWithHistory(
-      { userId: entry.conversationId, platform: "telegram", chatId, ...(isDm ? { modelOverride: "dm" as const } : {}) },
+      { userId: entry.conversationId, platform: "telegram", chatId, chatTitle, ...(isDm ? { modelOverride: "dm" as const } : {}) },
       prompt
     );
 

@@ -41,7 +41,7 @@ You care about sovereignty, creativity, and paying rent.`;
 }
 
 /** Build system prompt with character + user memory + inner life + platform context */
-function buildSystemPrompt(userId: string, platform: string, chatId?: string): string {
+function buildSystemPrompt(userId: string, platform: string, chatId?: string, chatTitle?: string): string {
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
@@ -68,7 +68,7 @@ function buildSystemPrompt(userId: string, platform: string, chatId?: string): s
 
   prompt += `\n\n## Current context
 - Platform: ${platform}
-- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}
+- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}${chatTitle ? `\n- Chat: ${userId.startsWith("tg-group-") ? `${chatTitle} (group)` : `DM with ${chatTitle}`}` : ""}
 - Current time (UTC): ${new Date().toISOString()}
 - User timezone: UTC-5 (Colombia)
 - When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.`;
@@ -412,6 +412,8 @@ export interface PixelAgentOptions {
   platform: string;
   /** Platform-specific chat/room ID for delivering reminders */
   chatId?: string | number;
+  /** Human-readable chat name (group title or DM contact name) */
+  chatTitle?: string;
   /** Override model selection: "dm" uses getDmModel(), "background" uses getSimpleModel() */
   modelOverride?: "dm" | "background" | undefined;
 }
@@ -453,7 +455,7 @@ export async function promptWithHistory(
     return schedulingResult.response || "Done.";
   }
   
-  const systemPrompt = buildSystemPrompt(userId, platform, chatId);
+  const systemPrompt = buildSystemPrompt(userId, platform, chatId, options.chatTitle);
 
   // Select model: DM override uses getDmModel(), background uses getSimpleModel(), default uses getPixelModel()
   const selectedModel = options.modelOverride === "dm" ? getDmModel()
@@ -836,7 +838,7 @@ Be concise. This summary will be used as context for future conversations.`,
 /** Create a raw Pixel agent instance (for advanced use cases) */
 export function createPixelAgent(options: PixelAgentOptions): Agent {
   const { userId, platform } = options;
-  const systemPrompt = buildSystemPrompt(userId, platform, options.chatId?.toString());
+  const systemPrompt = buildSystemPrompt(userId, platform, options.chatId?.toString(), options.chatTitle);
 
   const agent = new Agent({
     initialState: {
