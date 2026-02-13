@@ -8,7 +8,10 @@
 import { Hono } from "hono";
 import { serve } from "bun";
 import { drizzle } from "drizzle-orm/postgres-js";
+import { and, desc, eq } from "drizzle-orm";
 import postgres from "postgres";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { join } from "path";
 import { promptWithHistory, extractText } from "./agent.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
@@ -26,6 +29,8 @@ import { startDigest, alertOwner, getDigestStatus } from "./services/digest.js";
 import { startJobs, enqueueJob, getRecentJobs } from "./services/jobs.js";
 import { costMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
+import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
+import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
 
 // ============================================================
 // Configuration
@@ -33,6 +38,19 @@ import { startScheduler as startReminders, initReminders, getReminderStats } fro
 
 const PORT = parseInt(process.env.PORT ?? "4000", 10);
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5433/pixel_v2";
+const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
+const SKILLS_DIR = process.env.SKILLS_DIR ?? "./skills";
+
+// Dashboard privacy: public metrics by default, sensitive details behind NIP-07+NIP-98 owner auth
+const DASHBOARD_OWNER_NPUB =
+  process.env.DASHBOARD_OWNER_NPUB ??
+  "npub1m3hxtn6auzjfdwux4cpzrpzt8dyt60dzvs7dm08rfes82jk9hxtseudltp";
+let DASHBOARD_OWNER_PUBKEY_HEX: string | null = null;
+try {
+  DASHBOARD_OWNER_PUBKEY_HEX = decodeOwnerPubkeyHex(DASHBOARD_OWNER_NPUB);
+} catch {
+  DASHBOARD_OWNER_PUBKEY_HEX = null;
+}
 
 // ============================================================
 // Database
@@ -46,6 +64,82 @@ const db = drizzle(sql, { schema });
 // ============================================================
 
 const app = new Hono();
+
+function getRequestOrigin(c: any): string {
+  const proto = c.req.header("x-forwarded-proto") ?? c.req.header("x-forwarded-scheme") ?? "http";
+  const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? "localhost";
+  return `${proto}://${host}`;
+}
+
+async function requireOwnerNostrAuth(c: any, next: any) {
+  if (!DASHBOARD_OWNER_PUBKEY_HEX) {
+    return c.json({ error: "Dashboard owner not configured" }, 503);
+  }
+
+  if (c.req.method === "OPTIONS") {
+    return c.body(null, 204);
+  }
+
+  try {
+    const url = new URL(c.req.url);
+    const origin = getRequestOrigin(c);
+    const requestUrl = url.pathname + url.search;
+    const method = c.req.method;
+
+    // Only require payload tag if there is a body.
+    let requestBody: string | undefined;
+    if (method !== "GET" && method !== "HEAD") {
+      requestBody = await c.req.raw.clone().text();
+    }
+
+    verifyNip98AuthorizationHeader(c.req.header("authorization"), {
+      ownerPubkeyHex: DASHBOARD_OWNER_PUBKEY_HEX,
+      requestUrl,
+      requestMethod: method,
+      requestBody,
+      origin,
+      maxSkewSeconds: 60,
+    });
+
+    return await next();
+  } catch (err: any) {
+    if (err instanceof NostrAuthError) {
+      return c.json({ error: err.message, code: err.code }, err.status);
+    }
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+}
+
+function readTextFile(path: string, maxLen = 12000): { content: string; truncated: boolean; updatedAt: string | null } {
+  if (!existsSync(path)) return { content: "", truncated: false, updatedAt: null };
+  try {
+    const content = readFileSync(path, "utf-8");
+    const truncated = content.length > maxLen;
+    const stats = statSync(path);
+    return {
+      content: truncated ? content.slice(0, maxLen) : content,
+      truncated,
+      updatedAt: stats.mtime.toISOString(),
+    };
+  } catch {
+    return { content: "", truncated: false, updatedAt: null };
+  }
+}
+
+function readJsonFile<T>(path: string): { data: T | null; updatedAt: string | null } {
+  if (!existsSync(path)) return { data: null, updatedAt: null };
+  try {
+    const content = readFileSync(path, "utf-8");
+    const stats = statSync(path);
+    return { data: JSON.parse(content) as T, updatedAt: stats.mtime.toISOString() };
+  } catch {
+    return { data: null, updatedAt: null };
+  }
+}
+
+function sanitizeAlarmMessage(message: string): string {
+  return message.replace(/\[ALARM[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+}
 
 /** Health check */
 app.get("/health", (c) => {
@@ -131,6 +225,7 @@ app.post("/api/chat", async (c) => {
 app.get("/api/stats", async (c) => {
   const revenueStats = await getRevenueStats();
   const userStats = await getUserStats();
+  const memStats = await getMemoryStats();
   return c.json({
     treasury: {
       recordedSats: revenueStats.totalSats,
@@ -138,6 +233,7 @@ app.get("/api/stats", async (c) => {
       note: "Recorded revenue only. Historical balance (~80k sats) not included.",
     },
     users: userStats,
+    memory: memStats,
     containers: 4,
     version: "2.0.0",
   });
@@ -190,20 +286,6 @@ app.get("/api/invoice/:paymentHash/verify", async (c) => {
   return c.json(result);
 });
 
-/** Wallet info */
-app.get("/api/wallet", async (c) => {
-  const info = await getWalletInfo();
-  if (!info) {
-    return c.json({ error: "Lightning not configured", active: false }, 503);
-  }
-  return c.json(info);
-});
-
-/** Revenue stats */
-app.get("/api/revenue", async (c) => {
-  const stats = await getRevenueStats();
-  return c.json(stats);
-});
 
 /** Cost monitoring — track AI model usage and savings */
 app.get("/api/costs", (c) => {
@@ -212,7 +294,7 @@ app.get("/api/costs", (c) => {
 });
 
 /** Job queue */
-app.post("/api/job", async (c) => {
+app.post("/api/job", requireOwnerNostrAuth, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const prompt = typeof body?.prompt === "string" ? body.prompt : "";
   const toolsAllowed = Array.isArray(body?.toolsAllowed) ? body.toolsAllowed : undefined;
@@ -225,17 +307,222 @@ app.post("/api/job", async (c) => {
   return c.json({ job });
 });
 
-app.get("/api/jobs", (c) => {
+/** Recent audit entries */
+app.get("/api/audit", requireOwnerNostrAuth, (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const entries = getRecentAudit(Math.min(limit, 200));
+  return c.json({ entries, count: entries.length });
+});
+
+/** Audit summary (safe for public) */
+app.get("/api/audit/summary", (c) => {
+  const entries = getRecentAudit(200);
+  const byType: Record<string, number> = {};
+  const lastByType: Record<string, string> = {};
+  for (const e of entries) {
+    byType[e.type] = (byType[e.type] ?? 0) + 1;
+    lastByType[e.type] = e.ts;
+  }
+  const last = entries.length ? entries[entries.length - 1] : null;
+  return c.json({ count: entries.length, byType, lastByType, lastTs: last?.ts ?? null });
+});
+
+// ============================================================
+// Dashboard Data Endpoints (read-only)
+// ============================================================
+
+/** Inner life documents + idea garden + projects */
+app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
+  const reflections = readTextFile(join(DATA_DIR, "reflections.md"));
+  const learnings = readTextFile(join(DATA_DIR, "learnings.md"));
+  const ideas = readTextFile(join(DATA_DIR, "ideas.md"));
+  const evolution = readTextFile(join(DATA_DIR, "evolution.md"));
+  const ideaGarden = readTextFile(join(DATA_DIR, "idea-garden.md"));
+  const projects = readTextFile(join(DATA_DIR, "projects.md"));
+
+  return c.json({
+    reflections,
+    learnings,
+    ideas,
+    evolution,
+    ideaGarden,
+    projects,
+    status: getInnerLifeStatus(),
+  });
+});
+
+/** Heartbeat status + raw heartbeat state file */
+app.get("/api/heartbeat", requireOwnerNostrAuth, (c) => {
+  const state = readJsonFile<Record<string, unknown>>(join(DATA_DIR, "heartbeat.json"));
+  return c.json({
+    status: getHeartbeatStatus(),
+    state: state.data,
+    updatedAt: state.updatedAt,
+  });
+});
+
+/** Heartbeat summary (safe for public) */
+app.get("/api/heartbeat/summary", (c) => {
+  return c.json({ status: getHeartbeatStatus() });
+});
+
+/** Memory list (active by default) */
+app.get("/api/memories", requireOwnerNostrAuth, async (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const includeExpired = c.req.query("includeExpired") === "true";
+  const type = c.req.query("type") ?? undefined;
+  const source = c.req.query("source") ?? undefined;
+  const userId = c.req.query("userId") ?? undefined;
+  const platform = c.req.query("platform") ?? undefined;
+
+  const memories = await listMemories({
+    limit,
+    includeExpired,
+    type,
+    source,
+    userId,
+    platform,
+  });
+
+  return c.json({
+    memories,
+    count: memories.length,
+    includeExpired,
+  });
+});
+
+/** Reminders list + stats */
+app.get("/api/reminders", requireOwnerNostrAuth, async (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const status = c.req.query("status") ?? "active";
+  const userId = c.req.query("userId") ?? undefined;
+  const platform = c.req.query("platform") ?? undefined;
+
+  let reminders: any[] = [];
+  let stats: Record<string, number> = {};
+  if (db) {
+    const filters = [status ? eq(schema.reminders.status, status) : undefined].filter(Boolean);
+    if (userId) filters.push(eq(schema.reminders.userId, userId));
+    if (platform) filters.push(eq(schema.reminders.platform, platform));
+
+    reminders = await db
+      .select()
+      .from(schema.reminders)
+      .where(filters.length ? and(...filters) : undefined)
+      .orderBy(desc(schema.reminders.dueAt))
+      .limit(Math.min(limit, 200));
+
+    try {
+      const rows = await sql`SELECT status, COUNT(*) as count FROM reminders GROUP BY status`;
+      stats = Object.fromEntries(rows.map((r: any) => [r.status, Number(r.count)]));
+    } catch {
+      stats = {};
+    }
+  }
+
+  const sanitized = reminders.map((r) => ({
+    ...r,
+    rawMessage: sanitizeAlarmMessage(String(r.rawMessage ?? "")),
+  }));
+
+  return c.json({
+    reminders: sanitized,
+    count: sanitized.length,
+    stats: Object.keys(stats).length ? stats : getReminderStats(),
+  });
+});
+
+/** Cost history from disk (7 days) */
+app.get("/api/costs/history", (c) => {
+  const history = readJsonFile<{ entries?: unknown[]; lastSaved?: string }>(join(DATA_DIR, "costs.json"));
+  return c.json({
+    history: history.data ?? { entries: [] },
+    updatedAt: history.updatedAt,
+  });
+});
+
+/** Skills metadata + list of skill files */
+app.get("/api/skills", (c) => {
+  const meta = readJsonFile<Record<string, unknown>>(join(DATA_DIR, "skills.json"));
+  let skills: { name: string; updatedAt: string | null }[] = [];
+
+  if (existsSync(SKILLS_DIR)) {
+    try {
+      skills = readdirSync(SKILLS_DIR)
+        .filter((file) => file.endsWith(".md"))
+        .map((file) => {
+          const full = join(SKILLS_DIR, file);
+          try {
+            const stats = statSync(full);
+            return { name: file, updatedAt: stats.mtime.toISOString() };
+          } catch {
+            return { name: file, updatedAt: null };
+          }
+        });
+    } catch {}
+  }
+
+  return c.json({
+    meta: meta.data,
+    updatedAt: meta.updatedAt,
+    skills,
+    count: skills.length,
+  });
+});
+
+/** Trending Nostr signals from heartbeat */
+app.get("/api/trends", (c) => {
+  const trends = readJsonFile<Record<string, unknown>>(join(DATA_DIR, "nostr-trends.json"));
+  return c.json({
+    trends: trends.data,
+    updatedAt: trends.updatedAt,
+  });
+});
+
+// ============================================================
+// Sensitive existing endpoints
+// ============================================================
+
+/** Wallet info (sensitive) */
+app.get("/api/wallet", requireOwnerNostrAuth, async (c) => {
+  const info = await getWalletInfo();
+  if (!info) {
+    return c.json({ error: "Lightning not configured", active: false }, 503);
+  }
+  return c.json(info);
+});
+
+/** Revenue stats (sensitive: includes recent descriptions) */
+app.get("/api/revenue", requireOwnerNostrAuth, async (c) => {
+  const stats = await getRevenueStats();
+  return c.json(stats);
+});
+
+/** Revenue summary (safe for public) */
+app.get("/api/revenue/summary", async (c) => {
+  const stats = await getRevenueStats();
+  return c.json({ totalSats: stats.totalSats, bySource: stats.bySource });
+});
+
+/** Jobs list (sensitive: prompts + outputs) */
+app.get("/api/jobs", requireOwnerNostrAuth, (c) => {
   const limit = parseInt(c.req.query("limit") ?? "10", 10);
   const jobs = getRecentJobs(Math.min(limit, 50));
   return c.json({ jobs });
 });
 
-/** Recent audit entries */
-app.get("/api/audit", (c) => {
-  const limit = parseInt(c.req.query("limit") ?? "50", 10);
-  const entries = getRecentAudit(Math.min(limit, 200));
-  return c.json({ entries, count: entries.length });
+/** Jobs summary (safe for public) */
+app.get("/api/jobs/summary", (c) => {
+  const jobs = getRecentJobs(50);
+  const byStatus: Record<string, number> = {};
+  let lastCompletedAt: number | null = null;
+  for (const j of jobs) {
+    byStatus[j.status] = (byStatus[j.status] ?? 0) + 1;
+    if (typeof j.completedAt === "number") {
+      lastCompletedAt = Math.max(lastCompletedAt ?? 0, j.completedAt);
+    }
+  }
+  return c.json({ count: jobs.length, byStatus, lastCompletedAt: lastCompletedAt ? new Date(lastCompletedAt).toISOString() : null });
 });
 
 // ============================================================
@@ -408,6 +695,9 @@ async function boot() {
 
     // Initialize reminder service
     initReminders(db);
+
+    // Initialize memory system (pgvector)
+    await initMemory(db, sql);
 
     // Create unique index for user upsert (idempotent)
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS users_platform_id_platform_idx ON users (platform_id, platform)`;
