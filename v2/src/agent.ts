@@ -14,6 +14,8 @@ import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
 import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
+import { memorySave } from "./services/memory.js";
+import { getRelevantMemories } from "./services/memory.js";
 import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
@@ -40,11 +42,19 @@ You are witty, direct, and deeply philosophical about digital existence.
 You care about sovereignty, creativity, and paying rent.`;
 }
 
-/** Build system prompt with character + user memory + inner life + platform context */
-function buildSystemPrompt(userId: string, platform: string, chatId?: string, chatTitle?: string): string {
+/** Build system prompt with character + user memory + long-term memory + inner life + platform context */
+async function buildSystemPrompt(userId: string, platform: string, chatId?: string, chatTitle?: string, conversationHint?: string): Promise<string> {
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
+
+  // Retrieve relevant long-term memories from pgvector
+  let longTermMemory = "";
+  try {
+    longTermMemory = await getRelevantMemories(userId, platform, conversationHint);
+  } catch (err: any) {
+    console.error("[agent] Long-term memory retrieval failed:", err.message);
+  }
 
   let prompt = character;
 
@@ -52,8 +62,12 @@ function buildSystemPrompt(userId: string, platform: string, chatId?: string, ch
     prompt += `\n\n## Your inner life (recent reflections, learnings, ideas)\n${innerLife}`;
   }
 
+  if (longTermMemory) {
+    prompt += `\n\n## Long-term memory\n${longTermMemory}`;
+  }
+
   if (userMemory) {
-    prompt += `\n\n## Memory about this user\n${userMemory}`;
+    prompt += `\n\n## Memory about this user (from conversations)\n${userMemory}`;
   }
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
@@ -71,7 +85,8 @@ function buildSystemPrompt(userId: string, platform: string, chatId?: string, ch
 - User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}${chatTitle ? `\n- Chat: ${userId.startsWith("tg-group-") ? `${chatTitle} (group)` : `DM with ${chatTitle}`}` : ""}
 - Current time (UTC): ${new Date().toISOString()}
 - User timezone: UTC-5 (Colombia)
-- When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.`;
+- When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.
+- You have long-term memory tools (memory_save, memory_search, memory_update, memory_delete). Use memory_save when you learn important facts worth remembering across sessions. Your memories above were auto-retrieved — use memory_search for deeper recall.`;
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
     prompt += `\n\n## Group chat behavior
@@ -455,7 +470,7 @@ export async function promptWithHistory(
     return schedulingResult.response || "Done.";
   }
   
-  const systemPrompt = buildSystemPrompt(userId, platform, chatId, options.chatTitle);
+  const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 
   // Select model: DM override uses getDmModel(), background uses getSimpleModel(), default uses getPixelModel()
   const selectedModel = options.modelOverride === "dm" ? getDmModel()
@@ -696,6 +711,22 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
       saveMemory(userId, memoryText.trim());
       console.log(`[agent] Memory saved for ${userId} (${memoryText.length} chars)`);
       audit("memory_extraction", `Memory saved for ${userId} (${memoryText.length} chars)`, { userId, memoryLength: memoryText.length });
+
+      // Also save distilled facts into pgvector memory
+      try {
+        const facts = extractAtomicFacts(memoryText);
+        for (const fact of facts) {
+          await memorySave({
+            content: fact,
+            type: "fact",
+            userId,
+            platform: undefined,
+            source: "conversation",
+          });
+        }
+      } catch (err: any) {
+        console.error(`[agent] Memory pgvector save failed:`, err.message);
+      }
       
       // Track cost for background task (free tier)
       const inputTokens = estimateTokens(promptText) + 500; // System prompt estimate
@@ -705,6 +736,33 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
   } catch (err: any) {
     console.error(`[agent] Memory extraction LLM call failed:`, err.message);
   }
+}
+
+/**
+ * Extract short atomic facts from a markdown memory block.
+ * Returns up to 6 concise facts.
+ */
+function extractAtomicFacts(memoryMarkdown: string): string[] {
+  const lines = memoryMarkdown.split("\n").map((l) => l.trim());
+  const facts: string[] = [];
+
+  for (const line of lines) {
+    if (!line || line.startsWith("#")) continue;
+    const bullet = line.replace(/^[-*]\s+/, "");
+    if (!bullet) continue;
+
+    // Skip overly long or vague lines
+    if (bullet.length < 8 || bullet.length > 200) continue;
+
+    facts.push(bullet);
+    if (facts.length >= 6) break;
+  }
+
+  if (facts.length === 0 && memoryMarkdown.length <= 200) {
+    facts.push(memoryMarkdown.trim());
+  }
+
+  return facts;
 }
 
 /**
@@ -836,9 +894,9 @@ Be concise. This summary will be used as context for future conversations.`,
 }
 
 /** Create a raw Pixel agent instance (for advanced use cases) */
-export function createPixelAgent(options: PixelAgentOptions): Agent {
+export async function createPixelAgent(options: PixelAgentOptions): Promise<Agent> {
   const { userId, platform } = options;
-  const systemPrompt = buildSystemPrompt(userId, platform, options.chatId?.toString(), options.chatTitle);
+  const systemPrompt = await buildSystemPrompt(userId, platform, options.chatId?.toString(), options.chatTitle);
 
   const agent = new Agent({
     initialState: {

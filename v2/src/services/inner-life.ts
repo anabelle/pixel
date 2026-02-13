@@ -30,6 +30,7 @@ import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
 import { audit } from "./audit.js";
 import { enqueueJob } from "./jobs.js";
+import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } from "./memory.js";
 
 
 // ============================================================
@@ -611,6 +612,11 @@ Write as yourself — Pixel reflecting privately. Not a report.`
     }
 
     writeLivingDoc("reflections.md", updated);
+    await memorySave({
+      content: response.trim(),
+      type: "identity",
+      source: "inner_life",
+    });
   }
 }
 
@@ -661,6 +667,11 @@ Format as bullet points. Be specific, not generic.`
       updated = updated.slice(0, MAX_LEARNINGS_SIZE);
     }
     writeLivingDoc("learnings.md", updated);
+    await memorySave({
+      content: response.trim(),
+      type: "fact",
+      source: "inner_life",
+    });
   }
 }
 
@@ -712,6 +723,11 @@ Each idea should be 1-2 sentences max. Keep the whole document under 500 chars.`
       updated = updated.slice(0, MAX_IDEAS_SIZE);
     }
     writeLivingDoc("ideas.md", updated);
+    await memorySave({
+      content: response.trim(),
+      type: "procedural",
+      source: "inner_life",
+    });
   }
 
   await updateIdeaGarden(reflections, learnings, existingIdeas);
@@ -769,11 +785,23 @@ Write in first person, lowercase, present tense.`
       updated = updated.slice(0, MAX_EVOLUTION_SIZE);
     }
     writeLivingDoc("evolution.md", updated);
+    await memorySave({
+      content: response.trim(),
+      type: "identity",
+      source: "inner_life",
+    });
   }
 
   await updateProjectQueue(reflections, learnings, ideas);
   await maybeCreateSkill(reflections, learnings, ideas);
   await maybeEnqueueIdeaJob();
+
+  // Periodic consolidation after identity updates
+  try {
+    await consolidateMemories();
+    await distillMemoryBlobs();
+    await cleanupMemory();
+  } catch {}
 }
 
 // ============================================================

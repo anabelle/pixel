@@ -1,4 +1,4 @@
-import { pgTable, serial, text, bigint, numeric, timestamp, jsonb, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, bigint, numeric, timestamp, jsonb, boolean, integer, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Pixel V2 Database Schema
@@ -100,6 +100,46 @@ export const reminders = pgTable("reminders", {
   status: text("status").default("active").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Long-term memories (pgvector-backed)
+ * 
+ * The `embedding` column (vector(256)) is managed via raw SQL since Drizzle
+ * doesn't support pgvector types natively. This schema handles all non-vector
+ * operations. Vector search uses raw SQL via the postgres driver.
+ * 
+ * Memory types:
+ * - fact: concrete knowledge ("User X prefers dark mode")
+ * - episode: interaction summaries ("Had a long conversation about Bitcoin")
+ * - identity: self-knowledge ("I am Pixel, a digital artist")
+ * - procedural: skills/patterns ("When asked about art, mention the canvas")
+ */
+export const memories = pgTable("memories", {
+  id: serial("id").primaryKey(),
+  /** The memory content (human-readable text) */
+  content: text("content").notNull(),
+  /** Memory type: 'fact', 'episode', 'identity', 'procedural' */
+  type: text("type").notNull().default("fact"),
+  /** Associated user ID (null for global/self memories) */
+  userId: text("user_id"),
+  /** Platform where this was learned (null for cross-platform) */
+  platform: text("platform"),
+  /** Source: 'conversation', 'inner_life', 'tool', 'migration', 'agent' */
+  source: text("source").notNull().default("conversation"),
+  /** How many times this memory has been retrieved */
+  accessCount: integer("access_count").default(0).notNull(),
+  /** Structured metadata (tags, confidence, etc.) */
+  metadata: jsonb("metadata"),
+  /** When this memory becomes invalid (null = never expires). Soft delete. */
+  validUntil: timestamp("valid_until", { withTimezone: true }),
+  /** Created */
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Last updated */
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("memories_user_id_idx").on(table.userId),
+  index("memories_type_idx").on(table.type),
+]);
 
 /** Cross-platform identity links */
 export const userLinks = pgTable("user_links", {
