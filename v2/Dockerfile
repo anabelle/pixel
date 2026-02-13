@@ -21,7 +21,8 @@ COPY character.md* ./
 FROM oven/bun:1-alpine
 
 # bash for agent's bash tool, curl for healthcheck/web fetch, docker-cli for Clawstr tool, git for git tools, openssh-client for SSH
-RUN apk add --no-cache bash curl docker-cli git openssh-client
+# su-exec for entrypoint to drop privileges (alpine equivalent of gosu)
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec
 
 WORKDIR /app
 
@@ -31,15 +32,17 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/character.md* ./
 
-# Create data directories
-RUN mkdir -p /app/conversations /app/skills /app/tools /app/data && \
+# Create data directories (including external for bind-mount fallback)
+RUN mkdir -p /app/conversations /app/skills /app/tools /app/data /app/external && \
     chown -R bun:bun /app
 
-USER bun
+# Entrypoint runs as root to fix bind-mount permissions, then drops to bun
+COPY entrypoint.sh ./
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD wget --spider -q http://127.0.0.1:4000/health || exit 1
 
-CMD ["bun", "run", "src/index.ts"]
+ENTRYPOINT ["/app/entrypoint.sh"]
