@@ -6,7 +6,7 @@
  */
 
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { sql, eq, and, or, lte, isNull, desc, gt } from "drizzle-orm";
+import { sql, eq, and, or, lte, isNull, desc } from "drizzle-orm";
 import { reminders } from "../db.js";
 import type * as schema from "../db.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
@@ -35,7 +35,8 @@ export function initReminders(database: PostgresJsDatabase<typeof schema>): void
   console.log("[reminders] Reminder service initialized");
 }
 
-const GRACE_PERIOD_MS = 60 * 60 * 1000; // 1 hour
+// No grace period — fire only when due_at <= now
+// (Previously 1 hour, which caused alarms to fire immediately)
 
 export interface ReminderInput {
   userId: string;
@@ -200,6 +201,12 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
       if (naturalMessage && naturalMessage.includes("[SILENT]")) {
         naturalMessage = null;
       }
+      
+      // Strip any leaked [ALARM] tags — LLM should never pass these through
+      if (naturalMessage) {
+        naturalMessage = naturalMessage.replace(/\[ALARM[^\]]*\]/gi, "").trim();
+        if (!naturalMessage) naturalMessage = null;
+      }
 
       // Fallback: if LLM failed, send a simple human-readable message
       if (!naturalMessage) {
@@ -232,7 +239,7 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
 
   if (reminder.firesRemaining !== null && reminder.firesRemaining !== undefined) {
     const nextRemaining = reminder.firesRemaining - 1;
-    updates.fires_remaining = nextRemaining;
+    updates.firesRemaining = nextRemaining;  // Use Drizzle camelCase, not snake_case
     if (nextRemaining <= 0) {
       updates.status = "fired";
     }
@@ -249,7 +256,7 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
   audit("reminder", `Reminder ${reminder.id} fired (sent=${sent})`);
 }
 
-/** Main scheduler loop — runs every minute */
+/** Main scheduler loop — runs every 15 seconds for reasonable alarm precision */
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startScheduler(): void {
@@ -261,9 +268,9 @@ export function startScheduler(): void {
   schedulerLoop();
   schedulerInterval = setInterval(() => {
     schedulerLoop();
-  }, 60_000);
+  }, 15_000);
 
-  console.log("[reminders] Scheduler started (every 60 seconds)");
+  console.log("[reminders] Scheduler started (every 15 seconds)");
 }
 
 export function stopScheduler(): void {
@@ -278,13 +285,14 @@ export function stopScheduler(): void {
 async function schedulerLoop(): Promise<void> {
   if (!db) return;
   const now = new Date();
-  const graceBoundary = new Date(now.getTime() + GRACE_PERIOD_MS);
 
   try {
+    // Only select reminders that are actually due (due_at <= now)
+    // No grace period — alarms fire precisely when due, not before
     const dueReminders = await db.select().from(reminders)
       .where(and(
         eq(reminders.status, "active"),
-        lte(reminders.dueAt, graceBoundary),
+        lte(reminders.dueAt, now),
         or(
           isNull(reminders.lastFiredAt),
           sql`${reminders.lastFiredAt} < ${reminders.dueAt}`
@@ -293,14 +301,15 @@ async function schedulerLoop(): Promise<void> {
 
     if (dueReminders.length > 0) {
       console.log(`[reminders] Found ${dueReminders.length} due reminders`);
-      for (const reminder of dueReminders as ReminderRecord[]) {
-        try {
-          await fireReminder(reminder);
-        } catch (err: any) {
-          console.error(`[reminders] Error firing reminder ${reminder.id}:`, err.message);
-          audit("reminder", `Error firing reminder ${reminder.id}: ${err.message}`);
-        }
-      }
+      // Fire all due reminders in parallel (don't let one slow LLM call block others)
+      const results = await Promise.allSettled(
+        (dueReminders as ReminderRecord[]).map((reminder) =>
+          fireReminder(reminder).catch((err: any) => {
+            console.error(`[reminders] Error firing reminder ${reminder.id}:`, err.message);
+            audit("reminder", `Error firing reminder ${reminder.id}: ${err.message}`);
+          })
+        )
+      );
     }
   } catch (err: any) {
     console.error("[reminders] Scheduler loop error:", err.message);
