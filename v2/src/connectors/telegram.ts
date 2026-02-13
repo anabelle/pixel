@@ -28,7 +28,7 @@ const GROUP_PING_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const GROUP_PING_CHECK_MS = 10 * 60 * 1000; // 10 minutes
 const REACTION_REPLY_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
 const groupReactionReply = new Map<number, { lastReply: number | null; messageIds: Set<number> }>();
-const CHAT_BATCH_WINDOW_MS = 20_000; // 20 seconds
+const CHAT_BATCH_WINDOW_MS = 20_000; // 20 seconds to batch fast follow-up messages
 const CHAT_BATCH_MAX = 8;
 const CHAT_BATCH_MAX_CHARS = 1600;
 
@@ -107,23 +107,36 @@ export async function sendTelegramMessage(
 
   try {
     // Split long messages (Telegram limit is 4096 chars)
-    if (text.length <= 4096) {
-      await botInstance.api.sendMessage(chatId, text, {
-        parse_mode: parseMode,
-      });
-    } else {
-      const chunks = splitMessage(text, 4096);
-      for (const chunk of chunks) {
-        await botInstance.api.sendMessage(chatId, chunk, {
-          parse_mode: parseMode,
-        });
-      }
+    const chunks = text.length <= 4096 ? [text] : splitMessage(text, 4096);
+    for (const chunk of chunks) {
+      await sendWithRetry(chatId, chunk, parseMode);
     }
     return true;
   } catch (err: any) {
     console.error(`[telegram] Failed to send message to ${chatId}:`, err.message);
     return false;
   }
+}
+
+/** Retry wrapper for Telegram sends (handles transient 429/5xx) */
+async function sendWithRetry(chatId: string | number, text: string, parseMode?: "Markdown" | "HTML") {
+  const attempts = [0, 500, 2000];
+  let lastError: any;
+  for (const delay of attempts) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try {
+      await botInstance?.api.sendMessage(chatId, text, { parse_mode: parseMode });
+      return;
+    } catch (err: any) {
+      lastError = err;
+      const code = err?.response?.error_code ?? err?.status ?? "?";
+      if (code === 429 || (typeof code === "number" && code >= 500)) {
+        continue; // retry
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -198,6 +211,14 @@ export async function startTelegram(): Promise<void> {
     }
 
     appendToLog(conversationId, formatted, "", "telegram");
+
+    // DMs: batch with 20s window (same as groups) to handle fast follow-up messages
+    if (!isGroupChat) {
+      queueChatMessage(ctx.chat.id, conversationId, formatted);
+      return;
+    }
+
+    // Groups: batch to reduce noise
     queueChatMessage(ctx.chat.id, conversationId, formatted);
     return;
   });
@@ -450,29 +471,53 @@ async function flushChatMessages(chatId: number): Promise<void> {
   entry.timer = null;
   chatBuffers.set(chatId, entry);
 
+  const isDm = !entry.conversationId.startsWith("tg-group-");
   const joined = items.join("\n");
   const trimmed = joined.length > CHAT_BATCH_MAX_CHARS
     ? joined.slice(-CHAT_BATCH_MAX_CHARS)
     : joined;
 
-  const prompt = `Recent group messages (batched):\n${trimmed}\n\nRespond once to the batch if useful. If nothing to add, output [SILENT].`;
+  // DMs: send the batched messages as a single user message with DM model
+  // Groups: wrap in batch context and allow [SILENT]
+  const prompt = isDm
+    ? trimmed
+    : `Recent group messages (batched):\n${trimmed}\n\nRespond once to the batch if useful. If nothing to add, output [SILENT].`;
 
-  await botInstance?.api.sendChatAction(chatId, "typing");
-  const response = await promptWithHistory(
-    { userId: entry.conversationId, platform: "telegram" },
-    prompt
-  );
+  try {
+    await botInstance?.api.sendChatAction(chatId, "typing");
+    const response = await promptWithHistory(
+      { userId: entry.conversationId, platform: "telegram", chatId, ...(isDm ? { modelOverride: "dm" as const } : {}) },
+      prompt
+    );
 
-  if (!response || response.includes("[SILENT]")) {
-    return;
-  }
+    if (!response || response.includes("[SILENT]")) {
+      return;
+    }
 
-  if (response.length <= 4096) {
-    await botInstance?.api.sendMessage(chatId, response);
-  } else {
-    const chunks = splitMessage(response, 4096);
-    for (const chunk of chunks) {
-      await botInstance?.api.sendMessage(chatId, chunk);
+    if (response.trim()) {
+      if (response.length <= 4096) {
+        await sendWithRetry(chatId, response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await sendWithRetry(chatId, chunk);
+        }
+      }
+    } else if (isDm) {
+      // Empty response on DM means LLM failed silently (e.g. 429 quota)
+      console.error(`[telegram] Empty response for DM ${entry.conversationId} — sending fallback`);
+      await sendWithRetry(chatId, "algo se atoró al responder. reintento en unos segundos.");
+    }
+  } catch (err: any) {
+    console.error(`[telegram] Chat flush failed for ${entry.conversationId}:`, err.message);
+    if (isDm) {
+      const code = err?.response?.error_code ?? err?.status ?? err?.code;
+      const msg = code === 429
+        ? "me quedé sin cuota por un momento. estoy reintentando en breve."
+        : "algo se atoró al responder. reintento en unos segundos.";
+      try {
+        await sendWithRetry(chatId, msg);
+      } catch {}
     }
   }
 }

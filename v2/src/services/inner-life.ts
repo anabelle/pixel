@@ -24,7 +24,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getPixelModel, extractText, loadCharacter } from "../agent.js";
+import { getSimpleModel, extractText, loadCharacter } from "../agent.js";
 import { getNostrInstance } from "../connectors/nostr.js";
 import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
@@ -370,7 +370,7 @@ async function llmCall(systemPrompt: string, userPrompt: string): Promise<string
   const agent = new Agent({
     initialState: {
       systemPrompt,
-      model: getPixelModel(),
+      model: getSimpleModel(),
       thinkingLevel: "off",
       tools: [],
     },

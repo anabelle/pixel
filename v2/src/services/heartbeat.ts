@@ -22,7 +22,7 @@
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
 import { getNostrInstance, hasRepliedTo, markReplied } from "../connectors/nostr.js";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getPixelModel, loadCharacter, extractText } from "../agent.js";
+import { getSimpleModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
 import { getRevenueStats, getRevenueSince } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
@@ -604,7 +604,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
   const agent = new Agent({
     initialState: {
       systemPrompt,
-      model: getPixelModel(),
+      model: getSimpleModel(),
       thinkingLevel: "off",
       tools: [],
     },
@@ -774,7 +774,7 @@ async function checkAndReplyToMentions(): Promise<void> {
 
     const images = await fetchImages(extractImageUrls(event.content));
     const response = await promptWithHistory(
-      { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+      { userId: `nostr-${event.pubkey}`, platform: "nostr", modelOverride: "background" },
       event.content,
       images.length > 0 ? images : undefined
     );
@@ -1077,7 +1077,7 @@ async function notificationLoop(): Promise<void> {
 
       const images = await fetchImages(extractImageUrls(event.content));
       const response = await promptWithHistory(
-        { userId: `nostr-${event.pubkey}`, platform: "nostr" },
+        { userId: `nostr-${event.pubkey}`, platform: "nostr", modelOverride: "background" },
         prompt,
         images.length > 0 ? images : undefined
       );
@@ -1327,7 +1327,7 @@ async function artReportLoop(): Promise<void> {
     ].join("\n");
 
     const response = await promptWithHistory(
-      { userId: "nostr-art-report", platform: "nostr" },
+      { userId: "nostr-art-report", platform: "nostr", modelOverride: "background" },
       prompt
     );
 
@@ -1402,7 +1402,7 @@ async function spotlightLoop(): Promise<void> {
     ].join("\n");
 
     const response = await promptWithHistory(
-      { userId: "nostr-spotlight", platform: "nostr" },
+      { userId: "nostr-spotlight", platform: "nostr", modelOverride: "background" },
       prompt
     );
 
@@ -1506,7 +1506,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   const images = await fetchImages(extractImageUrls(item.content));
   const useQuote = Math.random() < QUOTE_REPOST_CHANCE;
   const response = await promptWithHistory(
-    { userId: `nostr-${item.pubkey}`, platform: "nostr" },
+    { userId: `nostr-${item.pubkey}`, platform: "nostr", modelOverride: "background" },
     prompt,
     images.length > 0 ? images : undefined
   );
@@ -1688,7 +1688,7 @@ async function classifyZapTopicLLM(content: string): Promise<string | undefined>
   const agent = new Agent({
     initialState: {
       systemPrompt: "Infer a short topic label (1-3 words) for the zap context. Output only the label.",
-      model: getPixelModel(),
+      model: getSimpleModel(),
       thinkingLevel: "off",
       tools: [],
     },
@@ -1861,7 +1861,7 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
 
       const images = await fetchImages(extractImageUrls(post));
       const response = await promptWithHistory(
-        { userId: `clawstr-${id}`, platform: "clawstr" },
+        { userId: `clawstr-${id}`, platform: "clawstr", modelOverride: "background" },
         prompt,
         images.length > 0 ? images : undefined
       );

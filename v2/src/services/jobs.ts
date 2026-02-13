@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getPixelModel, extractText } from "../agent.js";
+import { getSimpleModel, extractText } from "../agent.js";
 import { pixelTools } from "./tools.js";
 import { audit } from "./audit.js";
 
@@ -132,7 +132,7 @@ async function runNextJob(): Promise<void> {
   const agent = new Agent({
     initialState: {
       systemPrompt: "You are Pixel's autonomous job runner. Complete the job precisely. If tools are available, use them as needed. Return the final output only.",
-      model: getPixelModel(),
+      model: getSimpleModel(),
       thinkingLevel: "off",
       tools,
     },

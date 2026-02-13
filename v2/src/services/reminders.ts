@@ -14,6 +14,18 @@ import { sendWhatsAppMessage } from "../connectors/whatsapp.js";
 import { sendNostrDm } from "../connectors/nostr.js";
 import { audit } from "./audit.js";
 
+// Late-bound reference to promptWithHistory to avoid circular import
+// (agent.ts imports from reminders.ts, reminders.ts needs agent.ts)
+let _promptWithHistory: ((options: any, message: string) => Promise<string>) | null = null;
+
+async function getPromptWithHistory() {
+  if (!_promptWithHistory) {
+    const mod = await import("../agent.js");
+    _promptWithHistory = mod.promptWithHistory;
+  }
+  return _promptWithHistory;
+}
+
 // Will be set by initReminders() from index.ts
 let db: PostgresJsDatabase<typeof schema> | null = null;
 
@@ -146,42 +158,68 @@ export async function modifyReminder(
 }
 
 /**
- * Fire a single reminder: send raw wake-up message to Pixel
+ * Fire a single reminder: pass the alarm through the LLM so the user
+ * receives a natural-language notification instead of raw metadata.
  */
 async function fireReminder(reminder: ReminderRecord): Promise<void> {
   const now = new Date();
   audit("reminder", `Firing reminder ${reminder.id}: "${reminder.rawMessage}"`);
 
-  const wakeMessage = [
-    "[ALARM]",
-    `You set this reminder for yourself on ${reminder.createdAt.toISOString()}:`,
-    "",
-    `\"${reminder.rawMessage}\"`,
-    "",
-    `It is now ${now.toISOString()}. What do you do?`
+  // Build a prompt that the LLM will turn into a friendly notification
+  const alarmPrompt = [
+    `[ALARM — internal, do NOT show this tag to the user]`,
+    `You previously set a reminder on ${reminder.createdAt.toISOString()}:`,
+    `"${reminder.rawMessage}"`,
+    `It is now ${now.toISOString()}.`,
+    `Deliver this reminder to the user in a friendly, natural way. Be brief (1-3 sentences).`,
+    `Do NOT include any metadata, timestamps, or the word "ALARM" in your reply.`,
   ].join("\n");
 
   let sent = false;
   try {
-    switch (reminder.platform) {
-      case "telegram":
-        if (reminder.platformChatId) {
-          sent = await sendTelegramMessage(reminder.platformChatId, wakeMessage);
-        }
-        break;
-      case "whatsapp":
-        if (reminder.platformChatId) {
-          sent = await sendWhatsAppMessage(reminder.platformChatId, wakeMessage);
-        }
-        break;
-      case "nostr":
-      case "nostr-dm":
-        if (reminder.platformChatId) {
-          sent = await sendNostrDm(reminder.platformChatId, wakeMessage);
-        }
-        break;
-      default:
-        audit("reminder", `Unknown platform ${reminder.platform} for reminder ${reminder.id}`);
+    if (!reminder.platformChatId) {
+      audit("reminder", `No platformChatId for reminder ${reminder.id}, skipping`);
+    } else {
+      // Route through promptWithHistory so the LLM processes the alarm
+      const userId = reminder.userId;
+      const platform = reminder.platform;
+      const chatId = reminder.platformChatId;
+
+      let naturalMessage: string | null = null;
+      try {
+        const promptFn = await getPromptWithHistory();
+        naturalMessage = await promptFn(
+          { userId, platform, chatId },
+          alarmPrompt
+        );
+      } catch (err: any) {
+        console.error(`[reminders] LLM processing failed for reminder ${reminder.id}:`, err.message);
+      }
+
+      // Strip any [SILENT] — alarms should never be silent
+      if (naturalMessage && naturalMessage.includes("[SILENT]")) {
+        naturalMessage = null;
+      }
+
+      // Fallback: if LLM failed, send a simple human-readable message
+      if (!naturalMessage) {
+        naturalMessage = `Hey! Reminder: ${reminder.rawMessage}`;
+      }
+
+      switch (platform) {
+        case "telegram":
+          sent = await sendTelegramMessage(chatId, naturalMessage);
+          break;
+        case "whatsapp":
+          sent = await sendWhatsAppMessage(chatId, naturalMessage);
+          break;
+        case "nostr":
+        case "nostr-dm":
+          sent = await sendNostrDm(chatId, naturalMessage);
+          break;
+        default:
+          audit("reminder", `Unknown platform ${platform} for reminder ${reminder.id}`);
+      }
     }
   } catch (err: any) {
     audit("reminder", `Failed to send reminder ${reminder.id}: ${err.message}`);
@@ -204,7 +242,7 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
     updates.status = "fired";
   }
 
-  await db.update(reminders)
+  await db!.update(reminders)
     .set(updates)
     .where(eq(reminders.id, reminder.id));
 

@@ -20,6 +20,7 @@ import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./services/reminders.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
+const DM_MODEL_ID = process.env.DM_MODEL || process.env.AI_MODEL || "gemini-3-flash-preview";
 
 // Track message count per user for periodic memory extraction
 const userMessageCounts = new Map<string, number>();
@@ -85,7 +86,7 @@ function buildSystemPrompt(userId: string, platform: string): string {
 /** Get the AI model based on environment config (intelligent tier for conversations) */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
-  const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
+  const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
   return getModel(provider as any, modelId);
 }
 
@@ -96,15 +97,16 @@ function getSimpleModel() {
   return getModel(provider as any, "gemini-2.0-flash");
 }
 
-/**
- * Detect and handle scheduling intent from user message.
-      .trim();
-    if (!msg) msg = "reminder";
-    
-    return { dueAt: due, message: msg, repeatPattern: null };
-  }
-  
-  return null;
+/** Get the DM-specific model (can differ from main) */
+function getDmModel() {
+  const provider = process.env.AI_PROVIDER ?? "google";
+  return getModel(provider as any, DM_MODEL_ID);
+}
+
+/** Get the fallback model for 429/quota errors (gemini-2.5-flash) */
+function getFallbackModel() {
+  const provider = process.env.AI_PROVIDER ?? "google";
+  return getModel(provider as any, "gemini-2.5-flash");
 }
 
 /**
@@ -118,7 +120,7 @@ async function handleSchedulingIntent(
   message: string,
   chatId?: string
 ): Promise<{ handled: boolean; response?: string }> {
-  const model = getPixelModel();
+  const model = getSimpleModel(); // Use free tier for intent detection
   const now = new Date();
 
   const intentPrompt = `You are Pixel. Decide if the user is asking to schedule, list, cancel, or modify reminders.
@@ -408,6 +410,8 @@ export interface PixelAgentOptions {
   platform: string;
   /** Platform-specific chat/room ID for delivering reminders */
   chatId?: string | number;
+  /** Override model selection: "dm" uses getDmModel(), "background" uses getSimpleModel() */
+  modelOverride?: "dm" | "background" | undefined;
 }
 
 /**
@@ -449,11 +453,16 @@ export async function promptWithHistory(
   
   const systemPrompt = buildSystemPrompt(userId, platform);
 
+  // Select model: DM override uses getDmModel(), background uses getSimpleModel(), default uses getPixelModel()
+  const selectedModel = options.modelOverride === "dm" ? getDmModel()
+    : options.modelOverride === "background" ? getSimpleModel()
+    : getPixelModel();
+
   const agent = new Agent({
     initialState: {
       systemPrompt,
-      model: getPixelModel(),
-      thinkingLevel: "off",
+      model: selectedModel,
+      thinkingLevel: "minimal",
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -491,81 +500,105 @@ export async function promptWithHistory(
     agent.replaceMessages(existingMessages);
   }
 
-  // Collect response from assistant message_end events
-  const responseChunks: string[] = [];
-  let llmError: string | null = null;
-  agent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const msg = event.message as any;
-      if (msg.stopReason === "error") {
-        console.error(`[agent] LLM error for ${userId}: ${msg.errorMessage}`);
-        llmError = msg.errorMessage ?? "Unknown LLM error";
-      } else {
-        const text = extractText(msg);
-        if (text) responseChunks.push(text);
+  // Retry loop: on 429, immediately switch to fallback model (gemini-2.5-flash)
+  const MAX_RETRIES = 1; // One retry with fallback model
+  let responseText = "";
+  let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const responseChunks: string[] = [];
+    let llmError: string | null = null;
+
+    // On retry, switch to fallback model
+    const isRetryWithFallback = attempt > 0;
+    const retryModel = isRetryWithFallback ? getFallbackModel() : selectedModel;
+
+    // Fresh agent for retries (pi-agent-core doesn't support re-prompting after error)
+    const attemptAgent = attempt === 0 ? agent : new Agent({
+      initialState: {
+        systemPrompt,
+        model: retryModel,
+        thinkingLevel: "minimal",
+        tools: pixelTools,
+      },
+      getApiKey: async (provider: string) => resolveApiKey(provider),
+    });
+
+    if (attempt > 0) {
+      // Reload context for retry agent
+      const retryMessages = loadContext(userId);
+      if (retryMessages.length > 0) {
+        attemptAgent.replaceMessages(retryMessages);
+      }
+      console.log(`[agent] 429 fallback: switching to gemini-2.5-flash for ${userId}`);
+    }
+
+    attemptAgent.subscribe((event: any) => {
+      if (event.type === "message_end" && event.message?.role === "assistant") {
+        const msg = event.message as any;
+        if (msg.stopReason === "error") {
+          llmError = msg.errorMessage ?? "Unknown LLM error";
+        } else {
+          const text = extractText(msg);
+          if (text) responseChunks.push(text);
+        }
+      }
+    });
+
+    await attemptAgent.prompt(message, images);
+
+    responseText = responseChunks.join("\n");
+    if (!responseText) {
+      // Fallback: read from agent state
+      const state = attemptAgent.state;
+      if (state?.messages) {
+        const assistantMsgs = state.messages.filter(
+          (m: any) => m.role === "assistant"
+        );
+        if (assistantMsgs.length > 0) {
+          responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
+        }
       }
     }
-  });
 
-  // Prompt the agent
-  await agent.prompt(message, images);
-
-  // Extract response
-  let responseText = responseChunks.join("\n");
-  if (!responseText) {
-    // Fallback: read from agent state
-    const state = agent.state;
-    if (state?.messages) {
-      const assistantMsgs = state.messages.filter(
-        (m: any) => m.role === "assistant"
-      );
-      if (assistantMsgs.length > 0) {
-        responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
+    // If we got a response, save context from this agent and break
+    if (responseText) {
+      if (isRetryWithFallback) {
+        usedModelId = "gemini-2.5-flash";
       }
+      if (attemptAgent.state?.messages) {
+        const noImages = stripImageBlocks(attemptAgent.state.messages as any[]);
+        const sanitized = sanitizeMessagesForContext(noImages);
+        saveContext(userId, sanitized);
+      }
+      break;
     }
-  }
 
-  // Last-resort fallback if agent-core errored out
-  if (!responseText && llmError) {
-    try {
-      const model = getPixelModel();
-      const fallbackContext = {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message },
-        ],
-        tools: [],
-      } as any;
-      const fallback = await complete(model as any, fallbackContext);
-      if (fallback?.message) {
-        responseText = extractText(fallback.message as any);
-      } else if (typeof fallback?.text === "string") {
-        responseText = fallback.text;
-      }
-      if (responseText) {
-        console.log(`[agent] Fallback response used for ${userId}`);
-      }
-    } catch (err: any) {
-      console.error(`[agent] Fallback LLM call failed for ${userId}:`, err.message);
+    // Check if 429 — switch to fallback on next iteration
+    const is429 = llmError && (llmError.includes("429") || llmError.includes("RESOURCE_EXHAUSTED") || llmError.includes("quota"));
+    if (is429 && attempt < MAX_RETRIES) {
+      console.log(`[agent] 429 from primary model for ${userId}, switching to fallback model`);
+      continue;
     }
+
+    // Not a 429 or exhausted retries — log and break
+    if (llmError) {
+      console.error(`[agent] LLM error for ${userId} (attempt ${attempt + 1}): ${llmError.substring(0, 200)}`);
+    }
+    break;
   }
 
-  // Save updated context (all messages including the new exchange)
-  if (agent.state?.messages) {
-    const noImages = stripImageBlocks(agent.state.messages as any[]);
-    const sanitized = sanitizeMessagesForContext(noImages);
-    saveContext(userId, sanitized);
-  }
+  // Note: context is saved inside the retry loop on success (line ~554-561).
+  // No duplicate save needed here.
 
   // Append to log
   if (responseText) {
     appendToLog(userId, message, responseText, platform);
     
-    // Track cost for user conversations (intelligent model)
-    const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
+    // Track cost for user conversations (using actual model that responded)
     const inputTokens = estimateTokens(message) + estimateTokens(systemPrompt);
     const outputTokens = estimateTokens(responseText);
-    costMonitor.recordUsage(modelId, inputTokens, outputTokens, 'conversation');
+    costMonitor.recordUsage(usedModelId, inputTokens, outputTokens, 'conversation');
   }
 
   // Track user in PostgreSQL (non-blocking)
@@ -631,7 +664,7 @@ ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMem
 
 Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`,
       model: getSimpleModel(), // Use free tier for background tasks
-      thinkingLevel: "off",
+      thinkingLevel: "minimal",
       tools: [],
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -693,7 +726,7 @@ Keep under 1200 characters. Be accurate. No speculation.
 
 ${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
       model: getSimpleModel(), // Use free tier for background tasks
-      thinkingLevel: "off",
+      thinkingLevel: "minimal",
       tools: [],
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -760,7 +793,7 @@ async function compactContext(userId: string, platform: string): Promise<void> {
 
 Be concise. This summary will be used as context for future conversations.`,
       model: getSimpleModel(), // Use free tier for background tasks
-      thinkingLevel: "off",
+      thinkingLevel: "minimal",
       tools: [],
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -800,7 +833,7 @@ export function createPixelAgent(options: PixelAgentOptions): Agent {
     initialState: {
       systemPrompt,
       model: getPixelModel(),
-      thinkingLevel: "off",
+      thinkingLevel: "minimal",
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -809,4 +842,4 @@ export function createPixelAgent(options: PixelAgentOptions): Agent {
   return agent;
 }
 
-export { loadCharacter, buildSystemPrompt, getPixelModel };
+export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel };

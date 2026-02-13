@@ -24,6 +24,7 @@ services:
       - CHARACTER_PATH=/app/character.md
       - AI_PROVIDER=google
       - AI_MODEL=gemini-3-flash-preview
+      - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
     volumes:
       - ./conversations:/app/conversations
