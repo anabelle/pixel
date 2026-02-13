@@ -16,6 +16,8 @@ import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr,
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
+import { readAgentLog, searchAgentLog } from "./logging.js";
+import { getRevenueStats } from "./revenue.js";
 import { parse as parseHTML } from "node-html-parser";
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -282,8 +284,9 @@ export const checkHealthTool: AgentTool<typeof healthSchema> = {
 // ─── READ LOGS ────────────────────────────────────────────────
 
 const logsSchema = Type.Object({
-  source: Type.String({ description: "Log source: 'self' (own stdout), 'conversations' (list user conversations), 'revenue' (revenue stats), or a specific conversation id" }),
-  lines: Type.Optional(Type.Number({ description: "Number of recent lines to show (default: 50)" })),
+  source: Type.String({ description: "Log source: 'self' (own stdout/stderr logs), 'conversations' (list user conversations), 'revenue' (revenue stats from DB), or a specific conversation id" }),
+  lines: Type.Optional(Type.Number({ description: "Number of recent lines to show (default: 50 for conversations, 100 for self)" })),
+  filter: Type.Optional(Type.String({ description: "Regex pattern to filter self-logs (only used with source='self')" })),
   conversationId: Type.Optional(Type.String({ description: "Conversation ID (e.g. tg-group--4839030836)" })),
   includeContext: Type.Optional(Type.Boolean({ description: "Include current context.json if available (default: false)" })),
 });
@@ -293,7 +296,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
   label: "Read Logs",
   description: "Read Pixel's own logs, conversation history, or revenue data.",
   parameters: logsSchema,
-  execute: async (_id, { source, lines, conversationId, includeContext }) => {
+  execute: async (_id, { source, lines, filter, conversationId, includeContext }) => {
     const count = lines ?? 50;
 
     const convDir = "/app/conversations";
@@ -355,25 +358,51 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
       }
       case "revenue": {
         try {
-          const res = await fetch("http://127.0.0.1:4000/api/revenue", { signal: AbortSignal.timeout(5000) });
-          const data = await res.json();
-          auditToolUse("read_logs", { source }, { ok: true });
+          // Direct DB call — no HTTP, no auth barrier. Same process, same DB.
+          const data = await getRevenueStats();
+          auditToolUse("read_logs", { source }, { ok: true, totalSats: data.totalSats });
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+            content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
             details: data,
           };
         } catch (e: any) {
           auditToolUse("read_logs", { source }, { error: e.message });
-          throw new Error(`Failed to fetch revenue: ${e.message}`);
+          throw new Error(`Failed to get revenue stats: ${e.message}`);
         }
       }
       case "self":
       default: {
-        // Read from data directory if we're logging there, otherwise just report status
-        auditToolUse("read_logs", { source }, { ok: true });
+        // Read from agent log file (tee'd from console.log/error/warn)
+        const logCount = lines ?? 100;
+
+        // Support filtering by pattern
+        if (filter) {
+          const filtered = searchAgentLog(filter, logCount);
+          auditToolUse("read_logs", { source, filter }, { ok: true, count: filtered.length });
+          if (filtered.length === 0) {
+            return {
+              content: [{ type: "text", text: `No log lines matching pattern: ${filter}` }],
+              details: { count: 0 },
+            };
+          }
+          return {
+            content: [{ type: "text", text: `Agent log (${filtered.length} lines matching "${filter}"):\n${filtered.join("\n")}` }],
+            details: { count: filtered.length },
+          };
+        }
+
+        const { lines: logLines, totalLines } = readAgentLog(logCount);
+        if (logLines.length === 0) {
+          auditToolUse("read_logs", { source }, { ok: true, count: 0 });
+          return {
+            content: [{ type: "text", text: "No agent logs available yet. The log file is populated from console output after boot." }],
+            details: undefined,
+          };
+        }
+        auditToolUse("read_logs", { source }, { ok: true, count: logLines.length, totalLines });
         return {
-          content: [{ type: "text" as const, text: "Self-logs are in container stdout. Use bash tool with: 'echo check health endpoint instead' or check_health tool for live status." }],
-          details: undefined,
+          content: [{ type: "text", text: `Agent log (${logLines.length} of ${totalLines} total lines):\n${logLines.join("\n")}` }],
+          details: { count: logLines.length, totalLines },
         };
       }
     }
@@ -1920,6 +1949,70 @@ const memoryDeleteTool: AgentTool<typeof memoryDeleteSchema> = {
   },
 };
 
+// ─── INTROSPECT ───────────────────────────────────────────────
+
+const introspectSchema = Type.Object({
+  tool: Type.Optional(Type.String({ description: "Name of a specific tool to inspect in detail (omit to list all tools)" })),
+});
+
+/**
+ * Self-discovery tool — lets Pixel programmatically list and inspect
+ * all available tools, their descriptions, and parameter schemas.
+ */
+const introspectTool: AgentTool<typeof introspectSchema> = {
+  name: "introspect",
+  label: "Introspect Tools",
+  description: "List all available tools with their names, descriptions, and parameter schemas. Use this to discover what capabilities you have at runtime.",
+  parameters: introspectSchema,
+  execute: async (_id, { tool }) => {
+    // Build the tool list from pixelTools (which includes introspectTool itself)
+    const allTools = pixelTools;
+
+    if (tool) {
+      // Detail view for a specific tool
+      const found = allTools.find((t) => t.name === tool);
+      if (!found) {
+        const names = allTools.map((t) => t.name).join(", ");
+        return {
+          content: [{ type: "text", text: `Tool "${tool}" not found. Available tools: ${names}` }],
+          details: undefined,
+        };
+      }
+
+      const params = found.parameters?.properties
+        ? Object.entries(found.parameters.properties).map(([name, schema]: [string, any]) => {
+            const required = found.parameters?.required?.includes(name) ?? false;
+            return `  - ${name}${required ? "" : " (optional)"}: ${schema.type ?? "any"} — ${schema.description ?? "no description"}`;
+          })
+        : ["  (no parameters)"];
+
+      const detail = [
+        `Tool: ${found.name}`,
+        `Label: ${found.label ?? found.name}`,
+        `Description: ${found.description}`,
+        `Parameters:`,
+        ...params,
+      ].join("\n");
+
+      auditToolUse("introspect", { tool }, { found: true });
+      return { content: [{ type: "text", text: detail }], details: { tool: found.name } };
+    }
+
+    // Summary view — all tools
+    const summary = allTools.map((t) => {
+      const paramNames = t.parameters?.properties
+        ? Object.keys(t.parameters.properties).join(", ")
+        : "none";
+      return `- ${t.name}: ${t.description?.slice(0, 100) ?? "no description"} [params: ${paramNames}]`;
+    });
+
+    const output = `${allTools.length} tools available:\n\n${summary.join("\n")}\n\nUse introspect(tool="<name>") for detailed parameter info.`;
+
+    auditToolUse("introspect", {}, { count: allTools.length });
+    return { content: [{ type: "text", text: output }], details: { count: allTools.length } };
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -1961,6 +2054,7 @@ export const pixelTools = [
   gitCommitTool,
   sshTool,
   wpCliTool,
+  introspectTool,
 ];
 
 // Map of tool names to their implementations
@@ -1978,6 +2072,7 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   memory_search: memorySearchTool,
   memory_update: memoryUpdateTool,
   memory_delete: memoryDeleteTool,
+  introspect: introspectTool,
 };
 
 /**
