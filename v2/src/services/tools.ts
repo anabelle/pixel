@@ -1102,7 +1102,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
 const scheduleAlarmSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
-  platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID" })),
+  platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID for delivering the alarm. IMPORTANT: use the Chat ID from the system prompt context." })),
   raw_message: Type.String({ description: "Raw intent message to store" }),
   due_at: Type.String({ description: "ISO datetime to fire" }),
   repeat_pattern: Type.Optional(Type.String({ description: "Optional repeat pattern (freeform)" })),

@@ -41,7 +41,7 @@ You care about sovereignty, creativity, and paying rent.`;
 }
 
 /** Build system prompt with character + user memory + inner life + platform context */
-function buildSystemPrompt(userId: string, platform: string): string {
+function buildSystemPrompt(userId: string, platform: string, chatId?: string): string {
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
@@ -68,7 +68,7 @@ function buildSystemPrompt(userId: string, platform: string): string {
 
   prompt += `\n\n## Current context
 - Platform: ${platform}
-- User ID: ${userId}
+- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (use this as platform_chat_id when scheduling alarms)` : ""}
 - Date: ${new Date().toISOString().split("T")[0]}`;
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
@@ -451,7 +451,7 @@ export async function promptWithHistory(
     return schedulingResult.response || "Done.";
   }
   
-  const systemPrompt = buildSystemPrompt(userId, platform);
+  const systemPrompt = buildSystemPrompt(userId, platform, chatId);
 
   // Select model: DM override uses getDmModel(), background uses getSimpleModel(), default uses getPixelModel()
   const selectedModel = options.modelOverride === "dm" ? getDmModel()
@@ -827,7 +827,7 @@ Be concise. This summary will be used as context for future conversations.`,
 /** Create a raw Pixel agent instance (for advanced use cases) */
 export function createPixelAgent(options: PixelAgentOptions): Agent {
   const { userId, platform } = options;
-  const systemPrompt = buildSystemPrompt(userId, platform);
+  const systemPrompt = buildSystemPrompt(userId, platform, options.chatId?.toString());
 
   const agent = new Agent({
     initialState: {

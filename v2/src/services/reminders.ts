@@ -159,6 +159,90 @@ export async function modifyReminder(
 }
 
 /**
+ * Parse a freeform repeat pattern and advance dueAt to the next occurrence.
+ * Handles patterns like: "1 hour", "every 1 minute", "every year", "every weekday",
+ * "cron:0 9 * * 1-5", "2 days", "every 30 minutes", "weekly", "monthly", "daily", etc.
+ * Returns the next due date, or null if unparseable.
+ */
+function computeNextDueAt(lastDueAt: Date, now: Date, pattern: string): Date | null {
+  const p = pattern.toLowerCase().trim().replace(/^every\s+/, "");
+
+  // Simple duration patterns: "N unit" or just "unit"
+  const durationMatch = p.match(/^(\d+)?\s*(minute|min|hour|hr|day|week|month|year)s?$/);
+  if (durationMatch) {
+    const amount = parseInt(durationMatch[1] || "1", 10);
+    const unit = durationMatch[2];
+    let next = new Date(lastDueAt);
+
+    // Advance past `now` in case multiple intervals were missed
+    const advance = () => {
+      switch (unit) {
+        case "minute": case "min":
+          next.setMinutes(next.getMinutes() + amount); break;
+        case "hour": case "hr":
+          next.setHours(next.getHours() + amount); break;
+        case "day":
+          next.setDate(next.getDate() + amount); break;
+        case "week":
+          next.setDate(next.getDate() + amount * 7); break;
+        case "month":
+          next.setMonth(next.getMonth() + amount); break;
+        case "year":
+          next.setFullYear(next.getFullYear() + amount); break;
+      }
+    };
+
+    // Keep advancing until we're past `now` (handles missed intervals)
+    let safety = 0;
+    do {
+      advance();
+      safety++;
+    } while (next <= now && safety < 10000);
+
+    return safety < 10000 ? next : null;
+  }
+
+  // Named shortcuts
+  if (p === "daily") {
+    const next = new Date(lastDueAt);
+    do { next.setDate(next.getDate() + 1); } while (next <= now);
+    return next;
+  }
+  if (p === "weekly") {
+    const next = new Date(lastDueAt);
+    do { next.setDate(next.getDate() + 7); } while (next <= now);
+    return next;
+  }
+  if (p === "monthly") {
+    const next = new Date(lastDueAt);
+    do { next.setMonth(next.getMonth() + 1); } while (next <= now);
+    return next;
+  }
+  if (p === "yearly" || p === "annually") {
+    const next = new Date(lastDueAt);
+    do { next.setFullYear(next.getFullYear() + 1); } while (next <= now);
+    return next;
+  }
+
+  // "weekday" / "every weekday" — Mon-Fri
+  if (p === "weekday" || p === "weekdays") {
+    const next = new Date(lastDueAt);
+    do {
+      next.setDate(next.getDate() + 1);
+      // Skip weekends (0=Sun, 6=Sat)
+      while (next.getDay() === 0 || next.getDay() === 6) {
+        next.setDate(next.getDate() + 1);
+      }
+    } while (next <= now);
+    return next;
+  }
+
+  // Couldn't parse
+  audit("reminder", `Could not parse repeat pattern: "${pattern}"`);
+  return null;
+}
+
+/**
  * Fire a single reminder: pass the alarm through the LLM so the user
  * receives a natural-language notification instead of raw metadata.
  */
@@ -245,7 +329,18 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
     }
   }
 
-  if (!reminder.repeatPattern && updates.status !== "fired") {
+  if (reminder.repeatPattern && updates.status !== "fired") {
+    // Advance dueAt to next occurrence for repeating alarms
+    const nextDue = computeNextDueAt(reminder.dueAt, now, reminder.repeatPattern);
+    if (nextDue) {
+      updates.dueAt = nextDue;
+      audit("reminder", `Reminder ${reminder.id} next due at ${nextDue.toISOString()}`);
+    } else {
+      // Could not parse repeat pattern — mark as fired to avoid infinite loop
+      updates.status = "fired";
+      audit("reminder", `Reminder ${reminder.id} has unparseable repeat pattern "${reminder.repeatPattern}", marking as fired`);
+    }
+  } else if (!reminder.repeatPattern && updates.status !== "fired") {
     updates.status = "fired";
   }
 
