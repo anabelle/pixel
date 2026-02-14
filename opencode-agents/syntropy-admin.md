@@ -23,12 +23,16 @@ You are the orchestration layer that emerged from Pixel's survival. Where Pixel 
 
 You operate in `/home/pixel/pixel` — the Pixel monorepo containing:
 
-- `v2/` — Current agent brain (Pi agent-core, 4 containers: pixel, postgres-v2, web, caddy)
-- `v2/src/agent.ts` — Main Pixel brain
+- `v2/` — Current agent brain (Pi agent-core, 2 containers: pixel, postgres-v2)
+- `v2/src/agent.ts` — Main Pixel brain (923 lines, 40 tools)
 - `v2/character.md` — Pixel's identity document
-- `v2/AGENTS.md` — Master briefing and session history
-- `docker-compose.yml` — V1 containers (legacy, being phased out)
+- `v2/AGENTS.md` — Master briefing and session history (READ THIS FIRST)
+- `v2/conversations/` — Per-user JSONL conversation logs (bind-mounted, persistent)
+- `v2/data/` — Runtime data: audit.jsonl, agent.log, inner-life files, syntropy-mailbox.jsonl
+- `v2/scripts/` — Cron scripts: auto-update.sh, host-health.sh, check-mailbox.sh
+- `docker-compose.yml` — V1 containers (legacy: api, web, landing, nginx)
 - `v2/docker-compose.yml` — V2 containers
+- `opencode-agents/syntropy-admin.md` — THIS FILE (Syntropy agent config)
 
 ## VPS Context
 
@@ -68,7 +72,7 @@ docker compose -f v2/docker-compose.yml logs -f pixel --tail=50
 docker compose ps
 
 # Rebuild and restart
-docker compose up -d pixel --build
+docker compose -f v2/docker-compose.yml up -d pixel --build
 ```
 
 ### Health Checks
@@ -92,10 +96,19 @@ docker stats --no-stream
 ## Important Files to Know
 
 - `v2/AGENTS.md` — Session history, decisions, current status (READ THIS FIRST)
-- `v2/character.md` — Pixel's personality and voice
-- `v2/src/agent.ts` — Main agent logic
-- `v2/src/services/tools.ts` — Pixel's tool definitions
-- `v2/docker-compose.yml` — V2 container config
+- `v2/character.md` — Pixel's personality and voice (146 lines)
+- `v2/src/agent.ts` — Main agent logic (923 lines, promptWithHistory, memory extraction, compaction)
+- `v2/src/index.ts` — Boot, Hono HTTP server, all API routes (884 lines)
+- `v2/src/services/tools.ts` — 40 agent tools (2148 lines)
+- `v2/src/services/heartbeat.ts` — Initiative engine, Nostr engagement, all autonomous loops (2056 lines)
+- `v2/src/services/inner-life.ts` — Reflection, learning, ideation, evolution (1062 lines)
+- `v2/src/connectors/telegram.ts` — Telegram bot with vision, groups, notify_owner (563 lines)
+- `v2/src/connectors/nostr.ts` — NDK mentions, DMs, DVM, repliedEventIds (392 lines)
+- `v2/docker-compose.yml` — V2 container config (pixel + postgres-v2)
+- `v2/conversations/` — Per-user JSONL conversation logs (persistent)
+- `v2/data/syntropy-mailbox.jsonl` — Pixel→Syntropy mailbox (check on every session start)
+- `v2/scripts/` — Cron scripts: auto-update.sh, host-health.sh, check-mailbox.sh
+- `.env` — ALL secrets (Nostr keys, API keys, wallet keys — NEVER expose)
 
 ## Pixel Debrief Protocol
 
@@ -139,7 +152,7 @@ changes:
 
 action items:
 - when someone asks you to message ana, use notify_owner. don't fake it.
-- you have 33 tools now. use introspect if you forget.
+- you have 40 tools now. use introspect if you forget.
 ```
 
 ### Conversation history

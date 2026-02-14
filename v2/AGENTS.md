@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-13 | Session: 27
+> Last updated: 2026-02-14 | Session: 28
 
 ---
 
@@ -141,25 +141,38 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 27 (Nostr feed + proactive outreach):** Two features shipped and deployed. (A) **Nostr feed on landing page** — added `GET /api/posts` endpoint to V2 (`index.ts`) that reads `nostr-posts.jsonl` and returns newest-first posts with `?limit=N` (default 20, max 50). Created `NostrFeed.tsx` client component for landing page that polls every 60 seconds, shows posts with color-coded type badges (pulse/art/spotlight/repost), relative timestamps, and link to Pixel's Primal profile. Added i18n translations for all 4 languages (en, es, fr, ja). Integrated between "Find Pixel" and "Live Canvas Stats" sections. (B) **Proactive outreach service** (`outreach.ts`, ~410 lines) — Pixel autonomously decides whether to message its owner (Ana) on Telegram. Uses LLM judgment with full inner life context (reflections, learnings, ideas, evolution), owner memory, recent conversation history, and system signals (heartbeat, revenue, users). Runs every 4 hours with 5-minute startup delay. Safety: 6-hour minimum gap between pings (1 hour for urgency ≥85), daily limit of 3, SHA256 dedup of recent messages. Logs decisions to owner's conversation JSONL. Wired into `index.ts` boot/shutdown and `/health` endpoint. Added `outreach_decision` audit type. Both containers rebuilt and verified healthy. Landing submodule commit: `24d939f`.
 
-**V2 file inventory (16 source files, ~3600 lines):**
+**Session 28 (Syntropy identity unification + bidirectional communication):** Fixed dashboard showing robotic Spanish spam instead of real Syntropy conversations, and established persistent bidirectional communication between Syntropy and Pixel. Changes: (A) **Killed spam cron** — identified `syntropy-cycle.sh` running every 15 min via crontab, spinning up a free LLM (kimi-k2.5) to send robotic status dumps as `userId=syntropy`. Removed from crontab, deleted script. (B) **Unified Syntropy identity** — three separate userIds existed (`syntropy`, `syntropy-admin`, `syntropy-opencode`). Merged all real conversations into canonical `syntropy-admin` thread (13 messages). Deleted old `syntropy/` and `syntropy-opencode/` conversation dirs. (C) **Fixed dashboard** — changed `pixel-landing` dashboard from `/api/conversations/syntropy` to `/api/conversations/syntropy-admin` (2 locations: initial fetch + poll). Added dashboard translations (es, fr, ja). (D) **Fixed agent.ts** — Syntropy context check changed from `userId === "syntropy"` to `userId === "syntropy" || userId === "syntropy-admin"`. (E) **notify_owner verified** — end-to-end tested: Pixel can send real Telegram messages to Ana. (F) **Persistent mailbox monitor** — created `v2/scripts/check-mailbox.sh` (cron every 30 min). When Pixel writes to `syntropy-mailbox.jsonl` via `syntropy_notify` tool, the cron forwards to Pixel who calls `notify_owner` → Ana gets Telegram alert → invokes Syntropy. Max 30 min latency from Pixel distress to Ana's phone. (G) **Debrief protocol documented** — added to `opencode-agents/syntropy-admin.md` as rule #8. (H) **Documentation audit** — updated file inventory (16→23 files, ~3600→~13,067 lines), tools count (7→40), status tables, session history. Commits: `347c26b`, `c70b476`.
+
+**V2 file inventory (23 source files, ~13,067 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~880 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking index, outreach startup |
-| `src/agent.ts` | ~345 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring |
-| `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
-| `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
-| `src/connectors/nostr.ts` | ~260 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
-| `src/connectors/whatsapp.ts` | ~175 | Baileys bot with pairing code auth |
-| `src/services/dvm.ts` | ~238 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
-| `src/services/lightning.ts` | ~220 | LNURL-pay invoices, invoiceCache (no dummy invoices), sats/millisats fix |
-| `src/services/revenue.ts` | ~108 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
-| `src/services/users.ts` | ~120 | User tracking — initUsers(), trackUser() upsert, getUserStats() |
-| `src/services/heartbeat.ts` | ~625 | Initiative engine — topic rotation, mood rotation, proactive Nostr engagement, live canvas stats |
-| `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
-| `src/services/inner-life.ts` | ~558 | Autonomous self-reflection, learning extraction, ideation, identity evolution |
-| `src/services/tools.ts` | ~366 | 7 agent tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch |
+| `src/index.ts` | ~884 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, /api/job, /api/jobs, DB auto-init, user tracking, outreach startup |
+| `src/agent.ts` | ~923 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring, Syntropy context for userId syntropy/syntropy-admin |
+| `src/conversations.ts` | ~280 | JSONL persistence, context compaction (summarize old messages via LLM) |
+| `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
+| `src/connectors/telegram.ts` | ~563 | grammY bot with persistent memory, image/vision support, group lore, notify_owner |
+| `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
+| `src/connectors/whatsapp.ts` | ~192 | Baileys bot with pairing code auth |
+| `src/services/audit.ts` | ~257 | Audit trail — tool use, revenue, errors, structured JSONL logging |
+| `src/services/clawstr.ts` | ~129 | Clawstr (Stacker News) API integration — feed, post, reply, notifications |
+| `src/services/cost-monitor.ts` | ~246 | LLM cost tracking and budget monitoring |
+| `src/services/digest.ts` | ~198 | Periodic digest generation for owner |
+| `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
+| `src/services/heartbeat.ts` | ~2056 | Initiative engine — topic/mood rotation, Nostr engagement, Clawstr notifications, discovery (Primal trending), zap thanks, follow/unfollow loops, art reports, community spotlight, revenue-goal loop, live canvas stats |
+| `src/services/inner-life.ts` | ~1062 | Autonomous self-reflection, learning extraction, ideation, identity evolution |
+| `src/services/jobs.ts` | ~349 | Job system — scheduled tasks, ecosystem reports, idea garden |
+| `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
+| `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache, sats/millisats fix |
+| `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log with timestamps and levels |
+| `src/services/memory.ts` | ~865 | Persistent memory — save/search/update/delete facts per user, vector-aware |
+| `src/services/nostr-auth.ts` | ~169 | NIP-98 HTTP auth verification for dashboard endpoints |
 | `src/services/outreach.ts` | ~410 | Proactive owner outreach — LLM-judged Telegram pings with cooldowns, dedup, daily limits |
-| `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
+| `src/services/primal.ts` | ~136 | Primal Cache API — trending 24h and most-zapped 4h Nostr posts |
+| `src/services/reminders.ts` | ~437 | Alarm/reminder system — schedule, list, cancel, modify with relative time support |
+| `src/services/revenue.ts` | ~141 | Revenue tracking — initRevenue(), recordRevenue(), getRevenueStats() |
+| `src/services/tools.ts` | ~2148 | 40 agent tools: filesystem (read/write/edit), bash, web (fetch/search/research), git (status/diff/log/show/branch/clone/pull/push/commit), ssh, wp (WordPress), clawstr (feed/post/reply/notifications/upvote/search), alarms (schedule/list/cancel/modify), chat (list/find), memory (save/search/update/delete), notify_owner, syntropy_notify, introspect, check_health, read_logs |
+| `src/services/users.ts` | ~124 | User tracking — initUsers(), trackUser() upsert, getUserStats() |
+| `src/services/vision.ts` | ~46 | Image URL extraction and fetching for multi-modal input |
 
 **Key realizations (from earlier sessions, preserved):**
 1. Clawi is making millions by wrapping OpenClaw in a sign-up page + WhatsApp connector. No ERC-8004, no DVMs, no x402. Just normie access.
@@ -864,43 +877,59 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 27 (2026-02-13)
-**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats). Landing page shows V2 identity + Nostr feed.
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running. Tools deployed. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`.
+**Last session:** 28 (2026-02-14)
+**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058+ pixels, 80,318+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor).
 **Total containers:** 6 (down from 18 at V1 peak)
+**Disk:** 60% (31GB free)
+**RAM:** 2.7GB used / 3.8GB total
+**Cron jobs:** 3 (auto-update hourly, host-health daily 3:15am, mailbox-check every 30 min)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 **Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
 
 | Component | Status |
 |-----------|--------|
-| v2/AGENTS.md | DONE |
+| v2/AGENTS.md | DONE — updated session 28 |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
-| v2/src/index.ts (core boot + HTTP API) | DONE - Hono server, /health, /api/chat, /api/user/:id/stats, agent-card.json (text-generation, conversation), /api/invoice, /api/wallet, /api/revenue, /api/stats (incl. user stats), DB auto-init, user tracking index |
-| v2/src/agent.ts (Pi agent wrapper) | DONE - promptWithHistory(), context compaction, periodic memory extraction, trackUser(), tools wiring |
-| v2/src/conversations.ts | DONE - JSONL per-user persistence, context compaction (summarize old messages via LLM) |
-| v2/src/connectors/telegram.ts | DONE - @PixelSurvival_bot with persistent memory |
-| v2/src/connectors/nostr.ts | DONE - NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
+| v2/src/index.ts (core boot + HTTP API) | DONE — Hono server, /health, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId (auth-gated), /api/job, /api/jobs, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking |
+| v2/src/agent.ts (Pi agent wrapper) | DONE — promptWithHistory(), context compaction, periodic memory extraction, trackUser(), 40 tools wiring, Syntropy context for syntropy/syntropy-admin userIds |
+| v2/src/conversations.ts | DONE — JSONL per-user persistence, context compaction (summarize old messages via LLM) |
+| v2/src/connectors/telegram.ts | DONE — @PixelSurvival_bot with persistent memory, vision support, group lore, notify_owner |
+| v2/src/connectors/nostr.ts | DONE — NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
 | v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
 | v2/src/connectors/instagram.ts | NOT STARTED |
-| v2/src/services/dvm.ts | DONE - NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
-| v2/src/services/lightning.ts | DONE - sats/millisats fix, invoiceCache, no dummy invoices |
-| v2/src/services/revenue.ts | DONE - PostgreSQL revenue tracking, /api/revenue endpoint |
-| v2/src/services/l402.ts | DONE - L402 middleware, preimage verification, 402 challenge, revenue recording. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
-| v2/src/services/heartbeat.ts | DONE - Initiative engine: 8 topics, 6 moods, proactive Nostr engagement, live canvas stats, uses shared repliedEventIds |
-| v2/src/services/inner-life.ts | DONE - Autonomous reflection, learning, ideation, identity evolution on heartbeat cycles |
-| v2/src/services/tools.ts | DONE - 7 tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch. Deployed and verified. |
-| v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
-| v2/src/services/users.ts | DONE - User tracking: trackUser() upsert, getUserStats(), wired into /api/stats |
-| v2/src/services/outreach.ts | DONE - Proactive owner outreach: LLM-judged Telegram pings, 4h cycle, cooldowns, dedup, daily limits |
-| v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
-| v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
-| v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches, bash+curl installed in runtime |
-| v2/docker-compose.yml | DONE - pixel (4000) + postgres-v2 (5433), WhatsApp auth volume, Docker socket mount, group_add for self-healing |
-| v2/character.md | DONE - Pixel identity document, enriched with V1's best voice rules, post examples, conversation patterns (146 lines) |
-| Conversation persistence (JSONL) | DONE - Per-user directories, context compaction at 40 messages |
-| Nginx V2 routing | DONE - /v2/* → V2 API, /.well-known/agent-card.json → V2 |
+| v2/src/services/audit.ts | DONE — Structured JSONL audit trail |
+| v2/src/services/clawstr.ts | DONE — Stacker News API integration |
+| v2/src/services/cost-monitor.ts | DONE — LLM cost tracking |
+| v2/src/services/digest.ts | DONE — Periodic owner digest |
+| v2/src/services/dvm.ts | DONE — NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
+| v2/src/services/heartbeat.ts | DONE — Initiative engine: topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, art reports, spotlight, revenue-goal |
+| v2/src/services/inner-life.ts | DONE — Autonomous reflection, learning, ideation, identity evolution |
+| v2/src/services/jobs.ts | DONE — Job system, ecosystem reports, idea garden |
+| v2/src/services/l402.ts | DONE — L402 middleware. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
+| v2/src/services/lightning.ts | DONE — LNURL-pay invoices, invoiceCache, sats/millisats fix |
+| v2/src/services/logging.ts | DONE — Console interceptor → /app/data/agent.log |
+| v2/src/services/memory.ts | DONE — Persistent memory: save/search/update/delete per user |
+| v2/src/services/nostr-auth.ts | DONE — NIP-98 HTTP auth for dashboard |
+| v2/src/services/outreach.ts | DONE — Proactive owner outreach: LLM-judged Telegram pings, 4h cycle, cooldowns |
+| v2/src/services/primal.ts | DONE — Primal Cache API for trending Nostr posts |
+| v2/src/services/reminders.ts | DONE — Alarm/reminder system with relative time |
+| v2/src/services/revenue.ts | DONE — PostgreSQL revenue tracking, /api/revenue endpoint |
+| v2/src/services/tools.ts | DONE — 40 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs |
+| v2/src/services/users.ts | DONE — User tracking: trackUser() upsert, getUserStats() |
+| v2/src/services/vision.ts | DONE — Image URL extraction for multi-modal input |
+| v2/src/services/x402.ts | RESEARCHED — needs @x402/hono deps + Base wallet |
+| v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving) |
+| v2/src/db.ts (Drizzle schema) | DONE — users, revenue, canvas_pixels, conversation_log |
+| v2/Dockerfile | DONE — Multi-stage bun:1-alpine, zero patches |
+| v2/docker-compose.yml | DONE — pixel (4000) + postgres-v2 (5433), volumes, docker socket |
+| v2/character.md | DONE — Pixel identity (146 lines) |
+| Conversation persistence (JSONL) | DONE — Per-user directories, compaction at 40 messages |
+| Nginx V2 routing | DONE — /v2/* → V2 API, /.well-known/agent-card.json → V2 |
+| Syntropy↔Pixel communication | DONE — Debrief protocol (Syntropy→Pixel), mailbox monitor (Pixel→Syntropy→Ana), dashboard auditable |
 | Sandbox container | NOT STARTED |
-| V1 teardown | IN PROGRESS - Agent+Syntropy killed, 5 remain (canvas+landing+nginx+postgres) |
+| V1 teardown | IN PROGRESS — Agent+Syntropy+PostgreSQL killed, 4 remain (api, web, landing, nginx) |
+| Cron jobs | DONE — auto-update.sh (hourly), host-health.sh (daily 3:15am), check-mailbox.sh (every 30 min) |
 
 ### Key Decisions (Sessions 11-12)
 
@@ -961,7 +990,7 @@ git status && git log --oneline -5
 
 38. **Inner life on heartbeat cycles:** Instead of a separate timer, inner life activities piggyback on the heartbeat loop. Different intervals for different activities (reflect: 3, learn: 2, ideate: 5, evolve: 10). This means inner life activity scales naturally with heartbeat cadence.
 39. **Inner life context in system prompt:** `getInnerLifeContext()` reads the latest entries from reflections/learnings/ideas/evolution markdown files and injects them into every conversation's system prompt. Pixel's self-knowledge enriches all interactions.
-40. **7 tools not 4:** Pi has 4 (read, write, edit, bash). Added `check_health`, `read_logs`, `web_fetch` because Pixel is an autonomous agent, not a coding assistant — it needs to monitor itself and research the web.
+40. **40 tools, not 4:** Started with Pi's 4 (read, write, edit, bash). Grew to 40: filesystem, web (fetch/search/research), git (9 commands), ssh, wp, clawstr (6 tools), alarms (5 tools), chat (list/find), memory (4 tools), notify_owner, syntropy_notify, introspect, check_health, read_logs. Pixel is an autonomous agent — it needs to interact with its full environment.
 41. **Only main agent gets tools:** Memory extraction and compaction agents keep `tools: []` — they're lightweight single-purpose LLM calls. Giving them tools would waste context and invite misuse.
 42. **Docker socket via group_add:** Instead of running as root, added `group_add: ["988"]` (docker group GID) to the container. This gives user 1000 access to `/var/run/docker.sock` without compromising container user isolation.
 43. **Path resolution:** All file tools resolve paths relative to `/app` (container root) or accept absolute paths. Pixel can read its own source code, data files, conversations, and skills.
@@ -980,3 +1009,11 @@ git status && git log --oneline -5
 50. **Nostr posts via local JSONL:** Used existing `nostr-posts.jsonl` data rather than Primal Cache API for simplicity. The data is already written by heartbeat — no external dependency needed.
 51. **Outreach is judgment, not digest:** The proactive outreach service uses full LLM judgment to decide if something is worth interrupting the owner. It's explicitly NOT a periodic status report — the digest service already handles that. Outreach is for insights, issues, and opportunities that merit human attention.
 52. **Outreach safety stack:** 6-hour cooldown (1 hour for urgent), 3/day limit, SHA256 message dedup (last 50), and the LLM's own `shouldNotify: false` judgment. Multiple layers prevent notification spam.
+
+### Key Decisions (Session 28)
+
+53. **Canonical Syntropy userId is `syntropy-admin`:** Three userIds existed (`syntropy`, `syntropy-admin`, `syntropy-opencode`). Unified to `syntropy-admin`. The `agent.ts` Syntropy context check accepts both `syntropy` and `syntropy-admin` for backward compatibility.
+54. **Bidirectional Syntropy↔Pixel communication:** Two persistent channels: (A) Syntropy→Pixel: debrief via `POST /api/chat` with `userId=syntropy-admin`, stored in conversation JSONL, visible on dashboard. (B) Pixel→Syntropy: `syntropy_notify` tool → `syntropy-mailbox.jsonl` → cron forwards within 30 min → Pixel calls `notify_owner` → Ana gets Telegram → invokes Syntropy.
+55. **Mailbox monitor over LLM cron:** The old `syntropy-cycle.sh` spun up an LLM every 15 min for status checks — wasteful and produced spam. Replaced with `check-mailbox.sh`: pure bash, no LLM, only fires when mailbox is non-empty, forwards to existing infrastructure (Pixel's `notify_owner`). Zero resource waste when idle.
+56. **Conversation JSONL is the audit trail:** All Syntropy↔Pixel exchanges persist in `v2/conversations/syntropy-admin/log.jsonl`, served via auth-gated `/api/conversations/syntropy-admin`, displayed on the dashboard. The conversation IS the documentation of infrastructure changes.
+57. **Documentation is long-term memory:** `.md` files (AGENTS.md, syntropy-admin.md, character.md) are the brain that survives context compaction. Must be updated every session. Stale docs = amnesia.
