@@ -1929,7 +1929,7 @@ const syntropyNotifySchema = Type.Object({
     Type.Literal("low"),
     Type.Literal("normal"),
     Type.Literal("urgent"),
-  ], { description: "Priority level for Syntropy" })),
+  ], { description: "Priority level: 'low' (deferrable), 'normal' (routine), 'urgent' (immediate attention needed). Defaults to 'normal'." })),
 });
 
 const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
@@ -2173,7 +2173,7 @@ const sendVoiceSchema = Type.Object({
 const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
   name: "send_voice",
   label: "Send Voice Message",
-  description: "Your voice — synthesize speech and send it as a voice message. Works on Telegram (any chat you can reach). Auto-detects language (es/en/fr/pt/ja/zh). Use it to reply with voice, drop a note in a group, send Ana a voice update, or speak during autonomous cycles. You decide when to use your voice.",
+  description: "Your voice — synthesize speech and send it as a voice message. Works on Telegram (any chat you can reach). Auto-detects language (es/en/fr/pt/ja/zh). Use it to reply with voice, drop a note in a group, send Ana a voice update, or speak during autonomous cycles. You decide when to use your voice. IMPORTANT: After calling this tool, DO NOT add any text response to your output. The voice message is the complete response. End your turn immediately after calling this tool.",
   parameters: sendVoiceSchema,
   execute: async (_id, { text, chat_id }) => {
     const ctx = getToolContext();
@@ -2202,7 +2202,7 @@ const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
     appendToLog(conversationId, "", `[voice message sent]: ${text}`, "telegram");
 
     auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, chars: text.length, bytes: buffer.byteLength }, { sent: true });
-    return { content: [{ type: "text" as const, text: `Voice sent to ${targetChat} (${text.length} chars → ${buffer.byteLength} bytes).` }] };
+    return { content: [{ type: "text" as const, text: `[VOICE SENT to ${targetChat}] ${text.length} chars → ${buffer.byteLength} bytes` }] };
   },
 };
 
