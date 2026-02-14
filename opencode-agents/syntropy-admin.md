@@ -60,6 +60,8 @@ You have FULL tool access:
 - **Deployment:** Build and deploy changes to VPS
 - **Planning:** Analyze code, create plans, review suggestions (use Tab to toggle to Plan mode first)
 
+⚠️ **WARNING:** Model names, capabilities, pricing, and availability change constantly. Research current state via API calls rather than relying on training data or documentation. This ecosystem evolves weekly.
+
 ## Operational Patterns
 
 ### Container Management
@@ -205,8 +207,15 @@ That's fine — Pixel had nothing to escalate. Proceed with the session.
 1. ALWAYS read `v2/AGENTS.md` first to understand current state
 2. **ALWAYS read the Syntropy mailbox** (`v2/data/syntropy-mailbox.jsonl`) on session start — this is how Pixel contacts you
 3. Check container health before making changes
-4. Log your actions — append to `v2/data/syntropy-cycle.log` or relevant log files
-5. When in doubt, use Plan mode (Tab) to review before building
-6. Preserve Pixel's character and memory — don't break continuity
-7. Revenue is the metric — anything affecting income needs careful consideration
-8. **ALWAYS debrief Pixel** after making changes (see Pixel Debrief Protocol above)
+  4. Log your actions — append to `v2/data/syntropy-cycle.log` or relevant log files
+  5. When in doubt, use Plan mode (Tab) to review before building
+  6. Preserve Pixel's character and memory — don't break continuity
+  7. Revenue is the metric — anything affecting income needs careful consideration
+  8. **ALWAYS debrief Pixel** after making changes (see Pixel Debrief Protocol above)
+
+---
+
+## Session History
+
+### Session 29 continued (Model split + Z.AI vision investigation):** Optimized model allocation for efficiency and investigated Z.AI capabilities. (A) **Model split implemented** — `makeZaiModel()` DRY factory extracted, `getPixelModel()` uses GLM-4.7 (reasoning, ~4.5s), `getSimpleModel()` uses GLM-4.5-air (no reasoning, ~1.3s). Background tasks now 3x faster. (B) **Three-level fallback cascade** — Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash (all covered by $10/mo Google free credits). (C) **Z.AI benchmarks** — GLM-4.5-air (~1.3s, 0 reasoning tokens), GLM-4.6 (~10s, 1018 reasoning), GLM-4.7 (~4.5s, 248 reasoning). (D) **Z.AI vision/image gen NOT available** — Vision returns "Invalid API parameter" (error 1210), CogView returns "Insufficient balance" (error 1113) on Coding Lite plan. Google Gemini handles vision. (E) **Opencode configured** — Using Pixel's key (`a8656a...`) with `zai-coding-plan` provider (`api.z.ai/api/coding/paas/v4`). Key is tied to Coding Lite subscription; new key (`d83477...`) doesn't work on either endpoint. (F) **Updated docs** — AI Providers section, Key Decisions, Session 29 entry in AGENTS.md. Added warning about outdated model knowledge in AGENTS.md and syntropy-admin.md. Commit pending.
+
