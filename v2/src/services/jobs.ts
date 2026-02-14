@@ -113,28 +113,40 @@ function writeInnerLifeDoc(filename: string, content: string): void {
   }
 }
 
-function determineContentType(label: string, output: string): "learning" | "idea" | "reflection" | "other" {
+function determineContentType(label: string, output: string, isInternal?: boolean): "learning" | "idea" | "reflection" | "other" {
   const lowerLabel = label.toLowerCase();
   const lowerOutput = output.toLowerCase();
 
-  if (lowerLabel.includes("research") || lowerLabel.includes("investigación") ||
-      lowerLabel.includes("tendencias") || lowerLabel.includes("trends") ||
-      lowerLabel.includes("competencia") || lowerLabel.includes("competition") ||
-      lowerOutput.includes("hallazgos") || lowerOutput.includes("key findings")) {
-    return "learning";
-  }
-
+  // Ideas — brainstorming, features, projects
   if (lowerLabel.includes("idea") || lowerLabel.includes("ideación") ||
       lowerLabel.includes("brainstorm") || lowerLabel.includes("proyecto") ||
       lowerLabel.includes("feature") || lowerLabel.includes("nuevo")) {
     return "idea";
   }
 
+  // Reflections — self-audit, analysis, introspection
   if (lowerLabel.includes("reflexión") || lowerLabel.includes("reflexionar") ||
       lowerLabel.includes("análisis") || lowerLabel.includes("evaluar") ||
       lowerLabel.includes("auto-auditoría") || lowerOutput.includes("mi progreso")) {
     return "reflection";
   }
+
+  // Learnings — research, trends, any topic investigation
+  if (lowerLabel.includes("research") || lowerLabel.includes("investigación") ||
+      lowerLabel.includes("tendencias") || lowerLabel.includes("trends") ||
+      lowerLabel.includes("competencia") || lowerLabel.includes("competition") ||
+      lowerLabel.includes("state of") || lowerLabel.includes("estado de") ||
+      lowerLabel.includes("current") || lowerLabel.includes("actual") ||
+      lowerLabel.includes("landscape") || lowerLabel.includes("panorama") ||
+      lowerLabel.includes("solutions") || lowerLabel.includes("soluciones") ||
+      lowerOutput.includes("hallazgos") || lowerOutput.includes("key findings") ||
+      lowerOutput.includes("summary") || lowerOutput.includes("resumen") ||
+      lowerOutput.includes("source") || lowerOutput.includes("fuente")) {
+    return "learning";
+  }
+
+  // Internal jobs default to "learning" — they exist for Pixel's autonomous growth
+  if (isInternal) return "learning";
 
   return "other";
 }
@@ -142,7 +154,7 @@ function determineContentType(label: string, output: string): "learning" | "idea
 function injectIntoInnerLife(job: JobEntry): void {
   if (!job.output || job.status !== "completed") return;
 
-  const contentType = determineContentType(job.callbackLabel ?? "", job.output);
+  const contentType = determineContentType(job.callbackLabel ?? "", job.output, job.internal);
 
   if (contentType === "other") {
     console.log(`[jobs] Content type unclear for job ${job.id}, skipping inner-life injection`);

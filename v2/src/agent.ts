@@ -1105,19 +1105,19 @@ Be concise. This summary will be used as context for future conversations.`,
       `Summarize this conversation:\n\n${conversationText.slice(0, 4000)}`
     );
 
-    if (summaryText) {
+    if (summaryText && summaryText.length > 20) {
       saveCompactedContext(userId, summaryText, toKeep);
       console.log(`[agent] Context compacted for ${userId}: ${summaryText.length} char summary`);
       audit("conversation_compaction", `Context compacted for ${userId} (${toSummarize.length} msgs summarized)`, { userId, summarized: toSummarize.length, summaryLength: summaryText.length });
     } else {
-      // All models failed — trim without summary rather than leaving bloated context
-      saveCompactedContext(userId, "(Summary unavailable — older context trimmed)", toKeep);
-      console.log(`[agent] Context trimmed for ${userId} (summary generation failed)`);
+      // Summary generation failed — ABORT compaction entirely.
+      // A bloated context is better than amnesia. Will retry next threshold crossing.
+      console.warn(`[agent] Compaction ABORTED for ${userId} — summary generation returned empty/short. Context preserved intact.`);
     }
   } catch (err: any) {
-    console.error(`[agent] Summary generation failed for ${userId}:`, err.message);
-    // Fallback: just trim without summary
-    saveCompactedContext(userId, "(Summary unavailable — older context trimmed)", toKeep);
+    // Summary generation crashed — ABORT compaction entirely.
+    // Don't destroy conversation history just because the LLM is down.
+    console.error(`[agent] Compaction ABORTED for ${userId} — summary failed: ${err.message}. Context preserved intact.`);
   }
 }
 
