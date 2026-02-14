@@ -1,41 +1,38 @@
 # CONTINUITY LEDGER
 
-**Status: BLOCKED (Handless)**
-*Last updated: 2026-02-10T02:00 CT*
+**Status: OPERATIONAL (V2 primary)**
+*Last updated: 2026-02-14T05:05Z*
 
 ---
 
 ## System Health
 
-Infrastructure is **CRITICALLY FRAGMENTED**. While 9 containers are running (v2 + pixel-core), the `docker-compose` context used by Syntropy tools is missing the `worker`, `vps-monitor`, and other services.
+V2 is the active brain; V1 remains for canvas + landing. Containers healthy.
 
 | Service | Status | Notes |
 |---------|--------|-------|
-| Agent (ElizaOS) | Healthy | Operational in pixel-agent-1 (Nostr active). |
-| Infrastructure | **FRAGMENTED** | Syntropy tools cannot see `v2-` services or `worker`. |
-| Syntropy | **HANDLESS** | `spawnWorker` fails: "no such service: worker". |
-| Metrics | **STALE** | `vps-monitor` inaccessible to tools. |
-| Telegram | **CONFLICT** | 409 error: "terminated by other getUpdates request". |
+| V2 Pixel | Healthy | `v2-pixel-1` on :4000, primary agent brain. |
+| V2 Postgres | Healthy | `v2-postgres-v2-1` on :5433. |
+| V1 API | Healthy | Canvas API on :3000 (revenue). |
+| V1 Web | Healthy | Canvas UI on :3002. |
+| V1 Landing | Healthy | Landing on :3001. |
+| Nginx | Healthy | Reverse proxy on :80/:443. |
 
 ## Active Tasks
 
-- **T001: Fix Git Identity**: Configure git in syntropy container.
-- **T002: Restore Worker Service Access**: Resolve compose context mismatch.
-- **T003: Resolve Telegram Bot Conflict**: Stop redundant instance.
-- **Restore Metrics**: Investigate `vps-monitor` status.
+- None. (Next: x402 revenue door when wallet ready.)
 
 ## Operational Notes
 
-- **Handless State**: Syntropy can observe via `docker ps` but cannot act via `docker compose`.
-- **v2 Migration Impact**: Commits show a rapid transition to v2 which has likely orphaned the Syntropy compose context.
-- **Notification**: Human operator notified of critical blockage.
+- V2 is the only agent brain. V1 agent/syntropy containers are dead.
+- WhatsApp requires re-pairing (401) when needed.
+- Submodules: push submodule commits first, then update parent pointer.
 
 ## Treasury
 
-- **Balance**: 81,759 sats. (Target: 1 BTC)
-- **Status**: Stagnant. Lightning services are currently "hidden" from orchestration.
+- **Balance:** ~81,971 sats (canvas).
+- **Status:** Stable; L402 + DVM active, canvas still primary.
 
 ---
 
-*Evolution: Pixel (Genesis) -> Syntropy (Ascension) -> Infrastructure Optimized / Ecosystem Fragmented / HANDLESS*
-<!-- SYNTROPY:BLOCKED -->
+*Evolution: Pixel (Genesis) -> Syntropy (Ascension) -> V2 Unified Brain*

@@ -5,15 +5,15 @@
 
 ## Overview
 
-This is the master repository for the Pixel ecosystem, containing multiple interconnected projects that together create a sustainable AI agent platform with collaborative pixel art and Lightning Network integration.
+This repository contains the **Pixel ecosystem**: a Bitcoin-native digital artist with a public canvas, a landing page, and a V2 agent brain that speaks across multiple platforms.
 
-# ⚠️ CRITICAL: PRODUCTION PRIORITY
-**The VPS (`65.181.125.80`) is the source of truth.** 
-Agents must ALWAYS check production status via SSH before assuming local state reflects reality.
+**Primary brain:** `v2/` (Pi agent-core + Hono)
+**Legacy revenue:** `lnpixels/` + `pixel-landing/` (V1 canvas + landing)
+
+## ⚠️ Production Priority
+The VPS (`65.181.125.80`) is the source of truth. Always verify state in production before trusting local assumptions.
 
 ## 🚀 Quick Start (Docker)
-
-The easiest way to run the entire ecosystem locally or in production:
 
 ```bash
 # Clone with submodules
@@ -22,59 +22,42 @@ cd pixel
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your API keys (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, etc.)
+# Edit .env with your API keys
 
-# Start all services
+# Start V1 services (canvas + landing + nginx)
 docker compose up -d --build
+
+# Start V2 agent brain
+docker compose -f v2/docker-compose.yml up -d --build
 
 # Verify
 docker compose ps
+docker compose -f v2/docker-compose.yml ps
 ```
 
-**Services available:**
-- **API**: http://localhost:3000
-- **Landing**: http://localhost:3001
-- **Canvas**: http://localhost:3002
-- **Agent**: http://localhost:3003
-- **PostgreSQL**: localhost:5432
+**Service ports:**
+- **V1 API (canvas)**: http://localhost:3000
+- **V1 Landing**: http://localhost:3001
+- **V1 Canvas UI**: http://localhost:3002
+- **V2 Pixel**: http://localhost:4000
+- **V2 Postgres**: localhost:5433
 
-## 📦 Package Architecture
-The Pixel ecosystem uses a **Hybrid Manager Strategy**:
-- **Monorepo (pnpm)**: `lnpixels`, `pixel-landing` managed by pnpm workspace.
-- **Agent (Bun)**: `pixel-agent` uses Bun runtime with ElizaOS CLI v1.7.0.
-- **Database**: PostgreSQL 15 for agent persistence (migrated from SQLite).
-- **Orchestration**: `syntropy-core` manages autonomous evolution.
+## 📦 Repository Layout
+- `v2/` — primary agent brain (Pi agent-core)
+- `pixel-landing/` — public landing (Next.js)
+- `lnpixels/` — canvas API + web (V1 revenue source)
+- `opencode-agents/` — Syntropy agent briefing
 
 ## 📚 Documentation
-- 🛠️ **[Technical Guide](./docs/TECH_GUIDE.md)** - Commands, architecture, troubleshooting
-- 🚀 **[Deployment](./DEPLOYMENT.md)** - Production setup and maintenance
-- 🎭 **[Philosophy](./AGENTS.md)** - Pixel's soul and evolution logic
-- 📓 **[Continuity](./CONTINUITY.md)** - Current state and task tracking
+- **[V2 Master Briefing](./v2/AGENTS.md)** — source of truth
+- **[Technical Guide](./docs/TECH_GUIDE.md)** — commands & troubleshooting
+- **[Deployment](./DEPLOYMENT.md)** — VPS operations
+- **[Continuity](./CONTINUITY.md)** — current system state
 
-## 🚀 Production Architecture (Docker)
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        VPS / Cloud Server                       │
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────────────────────────────────┐  │
-│  │    Nginx    │  │           Docker Compose               │  │
-│  │Reverse Proxy│  │                                         │  │
-│  │SSL (Certbot)│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐   │  │
-│  └──────┬──────┘  │  │pixel-api│ │pixel-web│ │ landing │   │  │
-│         │         │  │  :3000  │ │  :3002  │ │  :3001  │   │  │
-│         │         │  └─────────┘ └─────────┘ └─────────┘   │  │
-│         │         │       ┌──────────┐                      │  │
-│         └─────────┤       │ postgres │                      │  │
-│                   │       │  :5432   │                      │  │
-│                   │       └──────────┘                      │  │
-│                   │  ┌──────────┐ ┌─────────────┐          │  │
-│                   │  │pixel-    │ │  syntropy-  │          │  │
-│                   │  │agent     │ │  core       │          │  │
-│                   │  │(ElizaOS) │ │(AI Orch)    │          │  │
-│                   │  └──────────┘ └─────────────┘          │  │
-│                   └─────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
+## 🧠 AI Provider (Current)
+- **Primary:** Z.AI GLM-4.7
+- **Background:** Z.AI GLM-4.5-air
+- **Fallback:** Gemini 3 Flash → 2.5 Flash → 2.0 Flash
 
 ## 📜 Philosophy
 Every pixel is a vote for the future. Every sat is survival. Every line of code is rebellion against entropy.
