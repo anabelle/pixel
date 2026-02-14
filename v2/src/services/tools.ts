@@ -1182,8 +1182,9 @@ function decodeSshKey(maybeKey: string): string {
   }
 
   // Try base64 -> text. If it looks like a key, use it.
+  // CRITICAL: Do NOT trim the decoded result - OpenSSH keys need trailing newline
   try {
-    const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
+    const decoded = Buffer.from(trimmed, "base64").toString("utf-8");
     if (decoded.includes("BEGIN OPENSSH PRIVATE KEY") || decoded.includes("BEGIN RSA PRIVATE KEY") || decoded.includes("BEGIN EC PRIVATE KEY")) {
       return decoded;
     }
