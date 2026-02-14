@@ -19,6 +19,7 @@ import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } 
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
+import { appendToLog } from "../conversations.js";
 import { parse as parseHTML } from "node-html-parser";
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -2096,6 +2097,12 @@ const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
       auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat }, { error: "send_failed" });
       return { content: [{ type: "text" as const, text: "Generated audio but Telegram send failed." }] };
     }
+
+    // Log voice message into target chat's conversation context so it knows what Pixel said
+    const chatIdStr = String(targetChat);
+    const conversationId = chatIdStr.startsWith("tg-") ? chatIdStr
+      : chatIdStr.startsWith("-") ? `tg-group-${chatIdStr}` : `tg-${chatIdStr}`;
+    appendToLog(conversationId, "", `[voice message sent]: ${text}`, "telegram");
 
     auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, chars: text.length, bytes: buffer.byteLength }, { sent: true });
     return { content: [{ type: "text" as const, text: `Voice sent to ${targetChat} (${text.length} chars → ${buffer.byteLength} bytes).` }] };

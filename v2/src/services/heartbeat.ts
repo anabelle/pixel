@@ -21,8 +21,8 @@
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
 import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from "../connectors/nostr.js";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getSimpleModel, loadCharacter, extractText } from "../agent.js";
+import { loadCharacter, extractText } from "../agent.js";
+import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
 import { getRevenueStats, getRevenueSince } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
@@ -404,22 +404,6 @@ function pickTopic(): Topic {
   return pickRandom(candidates, lastTopic);
 }
 
-/** Get API key for the given provider */
-function resolveApiKey(provider?: string): string {
-  const p = provider ?? process.env.AI_PROVIDER ?? "google";
-  switch (p) {
-    case "zai":
-      return process.env.ZAI_API_KEY ?? "";
-    case "openrouter":
-      return process.env.OPENROUTER_API_KEY ?? "";
-    case "google":
-      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-    case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? "";
-    default:
-      return process.env.OPENROUTER_API_KEY ?? "";
-  }
-}
 
 // ============================================================
 // Topic-specific context builders
@@ -604,30 +588,12 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model: getSimpleModel(),
-      thinkingLevel: "off",
-      tools: pixelTools,
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
+  const responseText = await backgroundLlmCall({
+    systemPrompt,
+    userPrompt: "Write your next Nostr post.",
+    tools: pixelTools,
+    label: "heartbeat",
   });
-
-  let responseText = "";
-  agent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) responseText = text;
-    }
-  });
-
-  try {
-    await agent.prompt("Write your next Nostr post.");
-  } catch (err: any) {
-    console.error("[heartbeat] Post generation failed:", err.message);
-    return null;
-  }
 
   // Check for [SILENT] response
   if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
@@ -1697,34 +1663,16 @@ function extractZapTopic(content: string): string | undefined {
 async function classifyZapTopicLLM(content: string): Promise<string | undefined> {
   if (!content || content.trim().length < 8) return undefined;
 
-  const agent = new Agent({
-    initialState: {
-      systemPrompt: "Infer a short topic label (1-3 words) for the zap context. Output only the label.",
-      model: getSimpleModel(),
-      thinkingLevel: "off",
-      tools: [],
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
+  const result = await backgroundLlmCall({
+    systemPrompt: "Infer a short topic label (1-3 words) for the zap context. Output only the label.",
+    userPrompt: content.slice(0, 800),
+    tools: [],
+    label: "heartbeat",
+    timeoutMs: 15_000,
   });
 
-  let result = "";
-  agent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) result = text.trim().toLowerCase();
-    }
-  });
-
-  try {
-    await Promise.race([
-      agent.prompt(content.slice(0, 800)),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15_000)),
-    ]);
-  } catch {
-    return undefined;
-  }
-
-  const cleaned = result.replace(/[^a-z0-9 _-]/gi, " ").replace(/\s+/g, " ").trim();
+  if (!result) return undefined;
+  const cleaned = result.trim().toLowerCase().replace(/[^a-z0-9 _-]/gi, " ").replace(/\s+/g, " ").trim();
   if (!cleaned) return undefined;
   if (cleaned.length > 32) return cleaned.slice(0, 32).trim();
   return cleaned;

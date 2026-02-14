@@ -386,8 +386,11 @@ export async function startTelegram(): Promise<void> {
           const voiceBuffer = await textToSpeech(response);
           if (voiceBuffer) {
             await ctx.replyWithVoice(new InputFile(voiceBuffer, "voice.ogg"));
-            // Also send text for accessibility (silent, no notification)
-            await ctx.reply(response, { disable_notification: true }).catch(() => {});
+            // In DMs, also send text for accessibility (silent, no notification)
+            // In groups, voice-only — text duplicate is noisy
+            if (!isGroupChat) {
+              await ctx.reply(response, { disable_notification: true }).catch(() => {});
+            }
             return;
           }
         } catch (ttsErr: any) {

@@ -150,12 +150,13 @@ function getDmModel() {
   return getModel(provider as any, DM_MODEL_ID);
 }
 
-/** Fallback cascade — Google models ($10/mo free credits) */
+/** Fallback cascade — Google models (all free tier, strongest → safest) */
 function getFallbackModel(level: number = 1) {
   switch (level) {
-    case 1: return getModel("google" as any, "gemini-3-flash-preview");
-    case 2: return getModel("google" as any, "gemini-2.5-flash");
-    default: return getModel("google" as any, "gemini-2.0-flash");
+    case 1: return getModel("google" as any, "gemini-2.5-pro");        // strongest GA model
+    case 2: return getModel("google" as any, "gemini-3-flash-preview"); // newest gen flash
+    case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
+    default: return getModel("google" as any, "gemini-2.0-flash");      // always works
   }
 }
 
@@ -391,7 +392,7 @@ Return JSON: {"index": number | null}`;
 }
 
 /** Get API key for the given provider (called by pi-agent-core per LLM call) */
-function resolveApiKey(provider?: string): string {
+export function resolveApiKey(provider?: string): string {
   const p = provider ?? process.env.AI_PROVIDER ?? "google";
   switch (p) {
     case "zai":
@@ -566,8 +567,8 @@ export async function promptWithHistory(
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
-  // GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash
-  const MAX_RETRIES = 3;
+  // GLM-4.7 → Gemini 2.5 Pro → Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash
+  const MAX_RETRIES = 4;
   let responseText = "";
   let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
 
@@ -657,13 +658,25 @@ export async function promptWithHistory(
       errorStr.includes("1308")
     );
     if (isRetryable && attempt < MAX_RETRIES) {
-      console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}, cascading to next fallback`);
+      console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}: ${errorStr.substring(0, 150)} — cascading to fallback`);
+      const nextModel = getFallbackModel(attempt + 1);
+      costMonitor.recordError(
+        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : getFallbackModel(attempt).id,
+        errorStr,
+        'conversation',
+        nextModel.id
+      );
       continue;
     }
 
     // Not a 429 or exhausted retries — log and break
     if (errorStr) {
       console.error(`[agent] LLM error for ${userId} (attempt ${attempt + 1}): ${errorStr.substring(0, 200)}`);
+      costMonitor.recordError(
+        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : getFallbackModel(attempt).id,
+        errorStr,
+        'conversation'
+      );
     }
     break;
   }
@@ -969,3 +982,86 @@ export async function createPixelAgent(options: PixelAgentOptions): Promise<Agen
 }
 
 export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVisionModel };
+
+// ─── BACKGROUND LLM CALL ─────────────────────────────────────
+// Shared utility for heartbeat, inner-life, jobs — any autonomous agent cycle.
+// Tries getSimpleModel() first, then full Gemini fallback cascade on error.
+// Tracks costs. Logs errors with detail.
+
+export interface BackgroundLlmOptions {
+  systemPrompt: string;
+  userPrompt: string;
+  tools?: any[];
+  label?: string;          // For logging/cost tracking: "heartbeat", "inner-life", "jobs"
+  timeoutMs?: number;      // Default 60s
+}
+
+export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
+  const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000 } = opts;
+  const models = [getSimpleModel(), getFallbackModel(1), getFallbackModel(2), getFallbackModel(3), getFallbackModel(4)];
+
+  for (let attempt = 0; attempt < models.length; attempt++) {
+    const model = models[attempt];
+    const agent = new Agent({
+      initialState: {
+        systemPrompt,
+        model,
+        thinkingLevel: "off" as any,
+        tools: tools ?? [],
+      },
+      getApiKey: async (provider: string) => resolveApiKey(provider),
+    });
+
+    let responseText = "";
+    let llmError: string | null = null;
+
+    agent.subscribe((event: any) => {
+      if (event.type === "message_end" && event.message?.role === "assistant") {
+        const msg = event.message as any;
+        if (msg.stopReason === "error") {
+          llmError = msg.errorMessage ?? "Unknown LLM error";
+        } else {
+          const text = extractText(msg);
+          if (text) responseText = text;
+        }
+      }
+    });
+
+    try {
+      await Promise.race([
+        agent.prompt(userPrompt),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs)),
+      ]);
+    } catch (err: any) {
+      llmError = err.message;
+    }
+
+    if (responseText) {
+      // Track cost
+      const inputTokens = estimateTokens(userPrompt) + estimateTokens(systemPrompt);
+      const outputTokens = estimateTokens(responseText);
+      costMonitor.recordUsage(model.id, inputTokens, outputTokens, label);
+      return responseText;
+    }
+
+    if (llmError) {
+      const isRetryable = (
+        llmError.includes("429") || llmError.includes("RESOURCE_EXHAUSTED") ||
+        llmError.includes("quota") || llmError.includes("Insufficient balance") ||
+        llmError.includes("rate limit") || llmError.includes("Usage limit") ||
+        llmError.includes("1308") || llmError.includes("timeout")
+      );
+      if (isRetryable && attempt < models.length - 1) {
+        console.log(`[${label}] ${model.id} failed: ${llmError.substring(0, 120)} — falling back to ${models[attempt + 1].id}`);
+        costMonitor.recordError(model.id, llmError, label as any, models[attempt + 1].id);
+        continue;
+      }
+      console.error(`[${label}] LLM error (${model.id}): ${llmError.substring(0, 200)}`);
+      costMonitor.recordError(model.id, llmError, label as any);
+    }
+
+    break;
+  }
+
+  return "";
+}

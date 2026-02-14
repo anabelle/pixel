@@ -9,7 +9,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } fr
 import { join } from "path";
 import { createHash } from "crypto";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getPixelModel, extractText, loadCharacter } from "../agent.js";
+import { getPixelModel, extractText, loadCharacter, resolveApiKey } from "../agent.js";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { getHeartbeatStatus } from "./heartbeat.js";
 import { getInnerLifeStatus } from "./inner-life.js";
@@ -141,22 +141,7 @@ function readOwnerLog(): string {
   }
 }
 
-/** Get API key for the given provider */
-function resolveApiKey(provider?: string): string {
-  const p = provider ?? process.env.AI_PROVIDER ?? "google";
-  switch (p) {
-    case "zai":
-      return process.env.ZAI_API_KEY ?? "";
-    case "openrouter":
-      return process.env.OPENROUTER_API_KEY ?? "";
-    case "google":
-      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-    case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? "";
-    default:
-      return process.env.OPENROUTER_API_KEY ?? "";
-  }
-}
+
 
 // ============================================================
 // Core

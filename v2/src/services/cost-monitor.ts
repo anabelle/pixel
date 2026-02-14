@@ -20,6 +20,15 @@ interface CostEntry {
   task: 'conversation' | 'memory' | 'summary' | 'compaction' | 'inner-life' | 'heartbeat' | 'job' | 'other';
 }
 
+interface ErrorEntry {
+  model: string;
+  error: string;          // Normalized error type: '429' | 'quota' | 'balance' | 'timeout' | 'rate_limit' | 'unknown'
+  rawError: string;       // First 200 chars of actual error message
+  task: CostEntry['task'];
+  timestamp: string;
+  cascadedTo?: string;    // Which model we fell back to (if any)
+}
+
 // Pricing per 1M tokens (from Google AI pricing Feb 2026)
 const PRICING: Record<string, { input: number; output: number; free: boolean }> = {
   // Gemini models
@@ -40,6 +49,7 @@ const COSTS_FILE = join(DATA_DIR, 'costs.json');
 
 class CostMonitor {
   private entries: CostEntry[] = [];
+  private errors: ErrorEntry[] = [];
   private dailyLimit: number = 15; // $15/day warning threshold
   private lastLogTime: number = 0;
   private logInterval: number = 5 * 60 * 1000; // 5 minutes
@@ -63,7 +73,12 @@ class CostMonitor {
           return entryDate >= sevenDaysAgo;
         });
         
-        console.log(`[cost-monitor] Loaded ${this.entries.length} entries from disk`);
+        this.errors = (data.errors || []).filter((e: ErrorEntry) => {
+          const entryDate = new Date(e.timestamp);
+          return entryDate >= sevenDaysAgo;
+        });
+        
+        console.log(`[cost-monitor] Loaded ${this.entries.length} entries, ${this.errors.length} errors from disk`);
       }
     } catch (err) {
       console.error('[cost-monitor] Failed to load from disk:', err);
@@ -80,6 +95,7 @@ class CostMonitor {
       
       writeFileSync(COSTS_FILE, JSON.stringify({
         entries: this.entries,
+        errors: this.errors,
         lastSaved: new Date().toISOString()
       }, null, 2));
       
@@ -117,6 +133,59 @@ class CostMonitor {
     if (now - this.lastSaveTime > this.saveInterval) {
       this.saveToDisk();
     }
+  }
+  
+  /** Normalize raw error string into a category */
+  private normalizeErrorType(errorMsg: string): string {
+    if (errorMsg.includes('429')) return '429';
+    if (errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) return 'quota';
+    if (errorMsg.includes('Insufficient balance') || errorMsg.includes('subscription plan') || errorMsg.includes('1308')) return 'balance';
+    if (errorMsg.includes('timeout')) return 'timeout';
+    if (errorMsg.includes('rate limit') || errorMsg.includes('Rate limit') || errorMsg.includes('Usage limit')) return 'rate_limit';
+    return 'unknown';
+  }
+  
+  /** Record an error from an LLM call */
+  recordError(model: string, errorMsg: string, task: CostEntry['task'], cascadedTo?: string) {
+    // Normalize model name (same logic as recordUsage)
+    const normalizedModel = model.includes('gemini-3') ? 'gemini-3-flash-preview' :
+                           model.includes('gemini-2.5') ? 'gemini-2.5-flash' :
+                           model.includes('gemini-2.0-flash-lite') ? 'gemini-2.0-flash-lite' :
+                           model.includes('gemini-2.0') ? 'gemini-2.0-flash' :
+                           model.startsWith('glm-') ? model : model;
+    
+    this.errors.push({
+      model: normalizedModel,
+      error: this.normalizeErrorType(errorMsg),
+      rawError: errorMsg.substring(0, 200),
+      task,
+      timestamp: new Date().toISOString(),
+      cascadedTo,
+    });
+    
+    // Save to disk on errors (they're important enough not to lose)
+    const now = Date.now();
+    if (now - this.lastSaveTime > this.saveInterval) {
+      this.saveToDisk();
+    }
+  }
+  
+  /** Get error stats grouped by model for today */
+  getErrorsByModel(): Record<string, { total: number; byType: Record<string, number>; cascades: number }> {
+    const today = new Date().toDateString();
+    const todayErrors = this.errors.filter(e => new Date(e.timestamp).toDateString() === today);
+    const byModel: Record<string, { total: number; byType: Record<string, number>; cascades: number }> = {};
+    
+    for (const err of todayErrors) {
+      if (!byModel[err.model]) {
+        byModel[err.model] = { total: 0, byType: {}, cascades: 0 };
+      }
+      byModel[err.model].total++;
+      byModel[err.model].byType[err.error] = (byModel[err.model].byType[err.error] ?? 0) + 1;
+      if (err.cascadedTo) byModel[err.model].cascades++;
+    }
+    
+    return byModel;
   }
   
   getCost(entry: CostEntry): number {
@@ -198,12 +267,22 @@ class CostMonitor {
     const today = this.getTodayCost();
     const savings = this.getSavingsVsSingleModel();
     const breakdown = this.getBreakdownByModel();
+    const errorsByModel = this.getErrorsByModel();
     
     console.log(`[cost-monitor] Today: $${today.toFixed(2)} | Saved: $${savings.saved.toFixed(2)} vs all-gemini-3 | Calls: ${this.getTodayCalls()}`);
     
     for (const [model, data] of Object.entries(breakdown)) {
       const tier = PRICING[model]?.free ? 'FREE' : 'PAID';
-      console.log(`[cost-monitor]   ${model} (${tier}): ${data.calls} calls, ${(data.tokens/1000).toFixed(1)}K tokens, $${data.cost.toFixed(2)}`);
+      const errInfo = errorsByModel[model];
+      const errStr = errInfo ? ` | Errors: ${errInfo.total} (${Object.entries(errInfo.byType).map(([t, c]) => `${t}:${c}`).join(', ')})` : '';
+      console.log(`[cost-monitor]   ${model} (${tier}): ${data.calls} calls, ${(data.tokens/1000).toFixed(1)}K tokens, $${data.cost.toFixed(2)}${errStr}`);
+    }
+    
+    // Log models that only have errors (no successful calls)
+    for (const [model, errInfo] of Object.entries(errorsByModel)) {
+      if (!breakdown[model]) {
+        console.log(`[cost-monitor]   ${model}: 0 calls, Errors: ${errInfo.total} (${Object.entries(errInfo.byType).map(([t, c]) => `${t}:${c}`).join(', ')})`);
+      }
     }
     
     if (today > this.dailyLimit) {
@@ -218,6 +297,11 @@ class CostMonitor {
     const calls = this.getTodayCalls();
     const breakdown = this.getBreakdownByModel();
     const byTask = this.getBreakdownByTask();
+    const errorsByModel = this.getErrorsByModel();
+    
+    // Compute total errors today
+    const todayStr = new Date().toDateString();
+    const todayErrors = this.errors.filter(e => new Date(e.timestamp).toDateString() === todayStr);
     
     // Estimate remaining credits (starting from $5000)
     const startingCredits = 5000;
@@ -231,6 +315,10 @@ class CostMonitor {
         calls: calls,
         breakdown: breakdown,
         byTask: byTask
+      },
+      errors: {
+        total: todayErrors.length,
+        byModel: errorsByModel,
       },
       savings: {
         amount: savings.saved,

@@ -23,8 +23,8 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getSimpleModel, extractText, loadCharacter } from "../agent.js";
+import { loadCharacter } from "../agent.js";
+import { backgroundLlmCall } from "../agent.js";
 import { getNostrInstance } from "../connectors/nostr.js";
 import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
@@ -352,56 +352,14 @@ function autoHarvestProjects(garden: Garden): void {
   writeLivingDoc("projects.md", updated);
 }
 
-/** Get API key for the given provider */
-function resolveApiKey(provider?: string): string {
-  const p = provider ?? process.env.AI_PROVIDER ?? "google";
-  switch (p) {
-    case "zai":
-      return process.env.ZAI_API_KEY ?? "";
-    case "openrouter":
-      return process.env.OPENROUTER_API_KEY ?? "";
-    case "google":
-      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-    case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? "";
-    default:
-      return process.env.OPENROUTER_API_KEY ?? "";
-  }
-}
-
-/** Run a simple LLM prompt and return the response text (with 60s timeout) */
+/** Run a simple LLM prompt and return the response text (with 60s timeout, full fallback cascade) */
 async function llmCall(systemPrompt: string, userPrompt: string): Promise<string> {
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model: getSimpleModel(),
-      thinkingLevel: "off",
-      tools: pixelTools,
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
+  return backgroundLlmCall({
+    systemPrompt,
+    userPrompt,
+    tools: pixelTools,
+    label: "inner-life",
   });
-
-  let responseText = "";
-  agent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) responseText = text;
-    }
-  });
-
-  // Timeout after 60 seconds to prevent hanging
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("LLM call timed out after 60s")), 60_000)
-  );
-
-  try {
-    await Promise.race([agent.prompt(userPrompt), timeout]);
-  } catch (err: any) {
-    console.error(`[inner-life] llmCall failed:`, err.message);
-    return "";
-  }
-
-  return responseText;
 }
 
 // ============================================================

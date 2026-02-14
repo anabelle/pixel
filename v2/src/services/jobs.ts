@@ -1,6 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getSimpleModel, extractText } from "../agent.js";
+import { backgroundLlmCall } from "../agent.js";
 import { pixelTools } from "./tools.js";
 import { audit } from "./audit.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
@@ -47,22 +46,6 @@ const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per job
 let running = false;
 let currentJobId: string | null = null;
 let jobTimer: ReturnType<typeof setTimeout> | null = null;
-
-function resolveApiKey(provider?: string): string {
-  const p = provider ?? process.env.AI_PROVIDER ?? "google";
-  switch (p) {
-    case "zai":
-      return process.env.ZAI_API_KEY ?? "";
-    case "openrouter":
-      return process.env.OPENROUTER_API_KEY ?? "";
-    case "google":
-      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-    case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? "";
-    default:
-      return process.env.OPENROUTER_API_KEY ?? "";
-  }
-}
 
 function loadJobs(): JobEntry[] {
   if (!existsSync(JOBS_PATH)) return [];
@@ -294,40 +277,22 @@ async function runNextJob(): Promise<void> {
 
   const tools = allowedTools(next.toolsAllowed);
   let output = "";
-  let usedTools: string[] = [];
-
-  const agent = new Agent({
-    initialState: {
-      systemPrompt: "You are Pixel's autonomous job runner. Complete the job precisely. If tools are available, use them as needed. Return the final output only.",
-      model: getSimpleModel(),
-      thinkingLevel: "off",
-      tools,
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
-  });
-
-  agent.subscribe((event: any) => {
-    if (event.type === "tool_execution_start" && event.tool?.name) {
-      usedTools.push(event.tool.name);
-    }
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) output = text.trim();
-    }
-  });
 
   try {
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Job timed out after ${JOB_TIMEOUT_MS / 1000}s`)), JOB_TIMEOUT_MS)
-    );
-    await Promise.race([agent.prompt(next.prompt), timeoutPromise]);
+    output = await backgroundLlmCall({
+      systemPrompt: "You are Pixel's autonomous job runner. Complete the job precisely. If tools are available, use them as needed. Return the final output only.",
+      userPrompt: next.prompt,
+      tools,
+      label: "jobs",
+      timeoutMs: JOB_TIMEOUT_MS,
+    });
     next.status = "completed";
     next.completedAt = Date.now();
     next.output = output || "(no output)";
     saveJobs(jobs);
     logJob(next);
     appendReport(`## ${new Date().toISOString()} — ${next.id}\n${next.output}`);
-    audit("tool_use", `Job completed: ${next.id}`, { id: next.id, tools: usedTools });
+    audit("tool_use", `Job completed: ${next.id}`, { id: next.id });
   } catch (err: any) {
     next.status = "failed";
     next.completedAt = Date.now();
