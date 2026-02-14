@@ -11,6 +11,7 @@
 import { Bot } from "grammy";
 import { promptWithHistory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
+import { transcribeAudio } from "../services/audio.js";
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 
@@ -293,6 +294,258 @@ export async function startTelegram(): Promise<void> {
     } catch (error: any) {
       console.error(`[telegram] Image error for ${conversationId}:`, error.message);
       await ctx.reply("Something broke while reading that image.").catch(() => {});
+    }
+  });
+
+  // Handle voice messages (audio transcription)
+  bot.on("message:voice", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const voice = ctx.message.voice;
+    if (!voice) return;
+
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      const file = await bot.api.getFile(voice.file_id);
+      if (!file.file_path) {
+        await ctx.reply("I couldn't access that voice message.");
+        return;
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+      const res = await fetch(fileUrl);
+      if (!res.ok) {
+        await ctx.reply("I couldn't download that voice message.");
+        return;
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const mimeType = voice.mime_type ?? "audio/ogg";
+      const duration = voice.duration ?? 0;
+
+      console.log(`[telegram] Voice message from ${senderName}: ${buffer.byteLength} bytes, ${duration}s, ${mimeType}`);
+
+      // Transcribe audio via Gemini
+      const transcription = await transcribeAudio(buffer, mimeType);
+      if (!transcription) {
+        await ctx.reply("I couldn't understand that voice message. Could you type it out?");
+        return;
+      }
+
+      // Format the message with transcription context
+      const formatted = isGroupChat
+        ? `${senderName} [voice message, ${duration}s]: ${transcription}`
+        : `[voice message, ${duration}s]: ${transcription}`;
+
+      const chatTitle = isGroupChat
+        ? (ctx.chat as any).title ?? undefined
+        : senderName;
+
+      appendToLog(conversationId, formatted, "", "telegram");
+
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        formatted
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await ctx.reply(response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk);
+        }
+      }
+    } catch (error: any) {
+      console.error(`[telegram] Voice message error for ${conversationId}:`, error.message);
+      await ctx.reply("Something broke while processing that voice message.").catch(() => {});
+    }
+  });
+
+  // Handle audio files (music, recordings sent as documents)
+  bot.on("message:audio", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const audio = ctx.message.audio;
+    if (!audio) return;
+
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      const file = await bot.api.getFile(audio.file_id);
+      if (!file.file_path) {
+        await ctx.reply("I couldn't access that audio file.");
+        return;
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+      const res = await fetch(fileUrl);
+      if (!res.ok) {
+        await ctx.reply("I couldn't download that audio file.");
+        return;
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const mimeType = audio.mime_type ?? "audio/mpeg";
+      const duration = audio.duration ?? 0;
+      const title = audio.title ?? "audio";
+
+      console.log(`[telegram] Audio file from ${senderName}: ${title}, ${buffer.byteLength} bytes, ${duration}s, ${mimeType}`);
+
+      const transcription = await transcribeAudio(buffer, mimeType);
+      if (!transcription) {
+        const caption = ctx.message.caption?.trim();
+        if (caption) {
+          // If there's a caption but transcription failed, use caption
+          const formatted = isGroupChat ? `${senderName}: ${caption} (sent audio file: ${title})` : `${caption} (sent audio file: ${title})`;
+          appendToLog(conversationId, formatted, "", "telegram");
+          const response = await promptWithHistory(
+            { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle: isGroupChat ? (ctx.chat as any).title ?? undefined : senderName },
+            formatted
+          );
+          if (response && !response.includes("[SILENT]")) {
+            await ctx.reply(response.length <= 4096 ? response : splitMessage(response, 4096)[0]);
+          }
+          return;
+        }
+        await ctx.reply("I couldn't process that audio file.");
+        return;
+      }
+
+      const formatted = isGroupChat
+        ? `${senderName} [audio file "${title}", ${duration}s]: ${transcription}`
+        : `[audio file "${title}", ${duration}s]: ${transcription}`;
+
+      const chatTitle = isGroupChat
+        ? (ctx.chat as any).title ?? undefined
+        : senderName;
+
+      appendToLog(conversationId, formatted, "", "telegram");
+
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        formatted
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await ctx.reply(response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk);
+        }
+      }
+    } catch (error: any) {
+      console.error(`[telegram] Audio file error for ${conversationId}:`, error.message);
+      await ctx.reply("Something broke while processing that audio file.").catch(() => {});
+    }
+  });
+
+  // Handle video notes (round video messages)
+  bot.on("message:video_note", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const videoNote = ctx.message.video_note;
+    if (!videoNote) return;
+
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
+
+    try {
+      await ctx.replyWithChatAction("typing");
+
+      // Video notes are small round videos — extract audio track for transcription
+      // Gemini supports video formats too, but the audio track is what matters
+      const file = await bot.api.getFile(videoNote.file_id);
+      if (!file.file_path) {
+        await ctx.reply("I couldn't access that video message.");
+        return;
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+      const res = await fetch(fileUrl);
+      if (!res.ok) {
+        await ctx.reply("I couldn't download that video message.");
+        return;
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const duration = videoNote.duration ?? 0;
+
+      console.log(`[telegram] Video note from ${senderName}: ${buffer.byteLength} bytes, ${duration}s`);
+
+      // Video notes are MP4 — Gemini supports audio/mp4
+      const transcription = await transcribeAudio(buffer, "audio/mp4");
+      if (!transcription) {
+        const formatted = isGroupChat
+          ? `${senderName} sent a video message (${duration}s, no transcription available).`
+          : `Received a video message (${duration}s, no transcription available).`;
+        appendToLog(conversationId, formatted, "", "telegram");
+        await ctx.reply("I received your video message but couldn't transcribe the audio. What did you say?");
+        return;
+      }
+
+      const formatted = isGroupChat
+        ? `${senderName} [video message, ${duration}s]: ${transcription}`
+        : `[video message, ${duration}s]: ${transcription}`;
+
+      const chatTitle = isGroupChat
+        ? (ctx.chat as any).title ?? undefined
+        : senderName;
+
+      appendToLog(conversationId, formatted, "", "telegram");
+
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        formatted
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await ctx.reply(response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk);
+        }
+      }
+    } catch (error: any) {
+      console.error(`[telegram] Video note error for ${conversationId}:`, error.message);
+      await ctx.reply("Something broke while processing that video message.").catch(() => {});
     }
   });
 

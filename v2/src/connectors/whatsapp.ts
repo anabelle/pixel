@@ -14,9 +14,11 @@ import makeWASocket, {
   type WASocket,
   Browsers,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import { promptWithHistory } from "../agent.js";
+import { transcribeAudio } from "../services/audio.js";
 
 let sock: WASocket | null = null;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
@@ -96,12 +98,56 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // Extract text from various message types
       const text = extractWhatsAppText(msg.message);
-      if (!text) continue;
 
       const jid = msg.key.remoteJid!;
       // User ID: phone number without @s.whatsapp.net
       const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@g.us", "")}`;
       const isGroup = jid.endsWith("@g.us");
+
+      // Handle audio messages separately (need async transcription)
+      if (!text && msg.message?.audioMessage) {
+        if (isGroup) continue; // Skip group audio for now
+        try {
+          console.log(`[whatsapp] Audio message from ${userId}`);
+          await sock!.sendPresenceUpdate("composing", jid);
+
+          const audioBuffer = await downloadMediaMessage(msg, "buffer", {}) as Buffer;
+          const mimeType = msg.message.audioMessage.mimetype ?? "audio/ogg";
+          const duration = msg.message.audioMessage.seconds ?? 0;
+
+          const transcription = await transcribeAudio(audioBuffer, mimeType);
+          if (!transcription) {
+            await sock!.sendPresenceUpdate("paused", jid);
+            await sock!.sendMessage(jid, { text: "I couldn't understand that voice message. Could you type it out?" });
+            continue;
+          }
+
+          const formatted = `[voice message, ${duration}s]: ${transcription}`;
+          const response = await promptWithHistory(
+            { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+            formatted
+          );
+
+          await sock!.sendPresenceUpdate("paused", jid);
+
+          if (!response) {
+            await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+            continue;
+          }
+
+          await sock!.sendMessage(jid, { text: response });
+          console.log(`[whatsapp] Replied to voice from ${userId} (${response.length} chars)`);
+        } catch (err: any) {
+          console.error(`[whatsapp] Audio error for ${userId}:`, err.message);
+          try {
+            await sock!.sendPresenceUpdate("paused", jid);
+            await sock!.sendMessage(jid, { text: "Something broke while processing that voice message." });
+          } catch {}
+        }
+        continue;
+      }
+
+      if (!text) continue;
 
       // In groups, only respond if mentioned or replied to
       if (isGroup) {
@@ -187,6 +233,7 @@ function extractWhatsAppText(message: any): string | null {
   if (message.videoMessage?.caption) return message.videoMessage.caption;
   if (message.documentMessage?.caption) return message.documentMessage.caption;
 
-  // TODO: handle audio messages (transcription), stickers, etc.
+  // Audio messages are handled separately in the message handler (need async transcription)
+  // Stickers and other media types are not yet supported
   return null;
 }
