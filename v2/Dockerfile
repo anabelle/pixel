@@ -22,7 +22,8 @@ FROM oven/bun:1-alpine
 
 # bash for agent's bash tool, curl for healthcheck/web fetch, docker-cli for Clawstr tool, git for git tools, openssh-client for SSH
 # su-exec for entrypoint to drop privileges (alpine equivalent of gosu)
-RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec
+# ffmpeg for audio format conversion (MP3→OGG/Opus for Telegram voice replies)
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg
 
 WORKDIR /app
 

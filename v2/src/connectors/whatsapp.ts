@@ -19,6 +19,7 @@ import makeWASocket, {
 import { Boom } from "@hapi/boom";
 import { promptWithHistory } from "../agent.js";
 import { transcribeAudio } from "../services/audio.js";
+import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 
 let sock: WASocket | null = null;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
@@ -135,6 +136,22 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             continue;
           }
 
+          // Voice in → voice out (if content is suitable)
+          if (isSuitableForVoice(response)) {
+            try {
+              const voiceBuffer = await textToSpeech(response);
+              if (voiceBuffer) {
+                await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+                // Also send text for accessibility
+                await sock!.sendMessage(jid, { text: response }).catch(() => {});
+                console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
+                continue;
+              }
+            } catch (ttsErr: any) {
+              console.error(`[whatsapp] TTS failed, falling back to text:`, ttsErr.message);
+            }
+          }
+
           await sock!.sendMessage(jid, { text: response });
           console.log(`[whatsapp] Replied to voice from ${userId} (${response.length} chars)`);
         } catch (err: any) {
@@ -173,6 +190,22 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         if (!response) {
           await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
           continue;
+        }
+
+        // Check if user asked for voice reply (text → voice on request)
+        const wantsVoice = /\b(h[aá]blame|mand[aá]?me? (?:un )?(?:audio|voz|nota de voz)|send (?:me )?(?:a )?(?:voice|audio)|speak|respond(?:e|é)? (?:con|en|with) (?:voz|audio|voice))\b/i.test(text);
+        if (wantsVoice && isSuitableForVoice(response)) {
+          try {
+            const voiceBuffer = await textToSpeech(response);
+            if (voiceBuffer) {
+              await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+              await sock!.sendMessage(jid, { text: response }).catch(() => {});
+              console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
+              continue;
+            }
+          } catch (ttsErr: any) {
+            console.error(`[whatsapp] TTS failed on text request, falling back:`, ttsErr.message);
+          }
         }
 
         // WhatsApp message limit is ~65536 chars, but keep it reasonable

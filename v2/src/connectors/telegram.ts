@@ -8,10 +8,11 @@
  * (heartbeat digests, audit alerts, revenue events, inner life updates).
  */
 
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import { promptWithHistory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
+import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 
@@ -361,6 +362,22 @@ export async function startTelegram(): Promise<void> {
         return;
       }
 
+      // Voice in → voice out (if content is suitable)
+      if (isSuitableForVoice(response)) {
+        try {
+          const voiceBuffer = await textToSpeech(response);
+          if (voiceBuffer) {
+            await ctx.replyWithVoice(new InputFile(voiceBuffer, "voice.ogg"));
+            // Also send text for accessibility (silent, no notification)
+            await ctx.reply(response, { disable_notification: true }).catch(() => {});
+            return;
+          }
+        } catch (ttsErr: any) {
+          console.error(`[telegram] TTS failed, falling back to text:`, ttsErr.message);
+        }
+      }
+
+      // Fallback: text reply
       if (response.length <= 4096) {
         await ctx.reply(response);
       } else {
@@ -767,6 +784,22 @@ async function flushChatMessages(chatId: number): Promise<void> {
     }
 
     if (response.trim()) {
+      // Check if user asked for voice reply (text → voice on request)
+      const wantsVoice = isDm && /\b(h[aá]blame|mand[aá]?me? (?:un )?(?:audio|voz|nota de voz)|send (?:me )?(?:a )?(?:voice|audio)|speak|respond(?:e|é)? (?:con|en|with) (?:voz|audio|voice))\b/i.test(trimmed);
+      if (wantsVoice && isSuitableForVoice(response)) {
+        try {
+          const voiceBuffer = await textToSpeech(response);
+          if (voiceBuffer && botInstance) {
+            await botInstance.api.sendVoice(chatId, new InputFile(voiceBuffer, "voice.ogg"));
+            // Also send text for accessibility
+            await sendWithRetry(chatId, response).catch(() => {});
+            return;
+          }
+        } catch (ttsErr: any) {
+          console.error(`[telegram] TTS failed on text request, falling back:`, ttsErr.message);
+        }
+      }
+
       if (response.length <= 4096) {
         await sendWithRetry(chatId, response);
       } else {
