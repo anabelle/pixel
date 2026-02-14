@@ -25,6 +25,8 @@ export type JobEntry = {
   callbackChatId?: string;
   callbackUserId?: string;
   callbackLabel?: string;
+  // Internal mode: for Pixel's autonomous learning (no user notification)
+  internal?: boolean;
 };
 
 export interface JobCallback {
@@ -143,6 +145,13 @@ export function getRecentJobs(limit = 10): JobEntry[] {
 }
 
 async function deliverJobResult(job: JobEntry): Promise<void> {
+  // Internal jobs: for Pixel's autonomous learning, no user notification
+  if (job.internal) {
+    audit("tool_use", `Internal job completed (no notification): ${job.id}`, { id: job.id });
+    return;
+  }
+
+  // External jobs: deliver results to user
   if (!job.callbackPlatform || !job.callbackChatId) return;
 
   const label = job.callbackLabel ?? "investigación";

@@ -155,6 +155,11 @@ function getFallbackModel(level: number = 1) {
   }
 }
 
+/** Vision-capable model — Google Gemini (Z.AI doesn't support vision on Coding Lite) */
+function getVisionModel() {
+  return getModel("google" as any, "gemini-2.0-flash");
+}
+
 /**
  * Detect and handle scheduling intent from user message.
  * Returns { handled: true } if a reminder was scheduled, modified, or cancelled.

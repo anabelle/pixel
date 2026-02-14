@@ -584,17 +584,18 @@ export const webSearchTool: AgentTool<typeof webSearchSchema> = {
 const researchTaskSchema = Type.Object({
   topic: Type.String({ description: "What to research" }),
   instructions: Type.String({ description: "Specific instructions, criteria, or questions to answer" }),
+  internal: Type.Optional(Type.Boolean({ description: "If true, results are for Pixel's autonomous learning (no user notification). Use this for self-directed research to expand Pixel's knowledge, not to answer user questions." })),
 });
 
 export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
   name: "research_task",
   label: "Background Research",
-  description: "Enqueue a background research task. Results will be delivered to the current chat when complete (~60 seconds). Use this for research that requires visiting multiple websites, comparing information, or takes more than a few tool calls in the current conversation.",
+  description: "Enqueue a background research task. Use this for research that requires visiting multiple websites, comparing information, or takes more than a few tool calls in current conversation. Set internal=true for autonomous learning (no notification to user).",
   parameters: researchTaskSchema,
-  execute: async (_id, { topic, instructions }) => {
+  execute: async (_id, { topic, instructions, internal = false }) => {
     const ctx = getToolContext();
-    if (!ctx.userId || !ctx.platform) {
-      throw new Error("No tool context available — cannot determine callback chat");
+    if (!internal && (!ctx.userId || !ctx.platform)) {
+      throw new Error("No tool context available — cannot determine callback chat for external jobs");
     }
 
     const { enqueueJob } = await import("./jobs.js");
@@ -607,7 +608,7 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
       ``,
       `### Process`,
       `1. Use web_search to find relevant sources (try multiple queries if needed)`,
-      `2. Use web_fetch to read the most promising results (at least 3-5 sources)`,
+      `2. Use web_fetch to read most promising results (at least 3-5 sources)`,
       `3. Extract key facts, URLs, dates, and actionable information`,
       `4. Synthesize findings into a clear, structured report`,
       `5. Include all source URLs for verification`,
@@ -623,20 +624,24 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
     const job = enqueueJob(
       prompt,
       ["web_search", "web_fetch", "read_file", "write_file"],
-      {
-        platform: ctx.platform,
-        chatId: ctx.chatId ?? "",
-        userId: ctx.userId,
-        label: topic,
-      }
+      internal
+        ? { internal: true }
+        : {
+            platform: ctx.platform,
+            chatId: ctx.chatId ?? "",
+            userId: ctx.userId,
+            label: topic,
+          }
     );
 
-    auditToolUse("research_task", { topic, instructions }, { jobId: job.id });
+    auditToolUse("research_task", { topic, instructions, internal }, { jobId: job.id });
 
     return {
       content: [{
         type: "text" as const,
-        text: `investigación encolada: "${topic}" (job ${job.id}). los resultados se entregarán a este chat cuando estén listos (~60s).`,
+        text: internal
+          ? `investigación interna encolada: "${topic}" (job ${job.id}). para mi aprendizaje autónomo.`
+          : `investigación encolada: "${topic}" (job ${job.id}). los resultados se entregarán a este chat cuando estén listos (~60s).`,
       }],
       details: { jobId: job.id },
     };

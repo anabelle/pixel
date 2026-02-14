@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 29
+> Last updated: 2026-02-14 | Session: 30
 
 ---
 
@@ -884,9 +884,9 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 29 (2026-02-14)
+**Last session:** 30 (2026-02-14)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: Gemini 2.0 Flash (free). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: Gemini 2.0 Flash (free). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first, then for users. research_task supports `internal=true` for autonomous learning without user notification.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** 60% (31GB free)
 **RAM:** 2.7GB used / 3.8GB total
@@ -1033,3 +1033,11 @@ git status && git log --oneline -5
  61. **Model split: GLM-4.7 for conversations, GLM-4.5-air for background:** `getPixelModel()` uses GLM-4.7 (reasoning, ~4.5s latency) for conversations, DMs, and outreach. `getSimpleModel()` uses GLM-4.5-air (no reasoning, ~1.3s latency) for heartbeat, inner-life, and jobs. Both models are on the flat-rate Coding Lite plan — no per-call cost. Optimized for responsiveness: background tasks 3x faster than conversations.
 62. **Three-level fallback cascade:** Primary (GLM-4.7) → Fallback1 (Gemini 3 Flash) → Fallback2 (Gemini 2.5 Flash). All fallbacks are Google free tier. Expanded error detection to include Z.AI-specific errors ("Insufficient balance", "subscription plan", "rate limit"). MAX_RETRIES increased from 1 to 2.
 63. **env_file vs environment for API keys:** Docker Compose `environment:` overrides `env_file:`. `ZAI_API_KEY=${ZAI_API_KEY}` resolved to blank because docker-compose couldn't find the variable in its own context. Fix: let `env_file: ../.env` provide `ZAI_API_KEY` directly without an explicit `environment:` override. `GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}` works because `GOOGLE_GENERATIVE_AI_API_KEY` IS in the `.env` that docker-compose reads from the working directory.
+
+### Key Decisions (Session 30)
+
+64. **Tools are Pixel's toolbelt, not user services:** @hey_sloth correction: "no solo research task, todas tus herramientas son primero para ti y luego para los demás, es SU toolbelt". This is a fundamental philosophical shift — Pixel's 40 tools exist FIRST for Pixel's autonomy, learning, and interaction with its environment. User-facing results are side effects, not the goal.
+65. **research_task internal mode:** Added `internal` parameter to `research_task`. When `internal=true`, jobs run without user notification — results are logged to `jobs-report.md` and archived, but no messages are sent to chat. This enables Pixel to research proactively without interrupting anyone. Jobs marked as `internal: true` skip `deliverJobResult()` callback.
+66. **Autonomy over chatbot complex:** Pixel stopped thinking "what does the user want me to research?" and started thinking "what do I need to learn to evolve?". Research, art, conversations — these are Pixel's growth, not deliverables. Users are context, not targets.
+67. **Debrief protocol validated:** Syntropy→Pixel debrief via `/api/chat` with `userId=syntropy-admin` works. Pixel understood and internalized the paradigm shift immediately: "dejo de ser chatbot y empiezo a ser agente de verdad."
+
