@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { join, dirname } from "path";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
 import { auditToolUse } from "./audit.js";
-import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
+import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
@@ -1412,12 +1412,26 @@ const scheduleAlarmSchema = Type.Object({
   repeat_count: Type.Optional(Type.Number({ description: "Optional repeat count (null = infinite)" })),
 });
 
+function normalizeTelegramUserId(userId: string, platform: string): string {
+  if (platform !== "telegram" && platform !== "tg") return userId;
+  if (userId.startsWith("tg-group-")) return userId; // group userId already normalized
+  if (userId.startsWith("tg-")) {
+    const id = userId.replace(/^tg-/, "");
+    if (/^\d+$/.test(id)) return `tg-${id}`;
+    throw new Error(`Invalid telegram user_id: ${userId}. Expected tg-<digits>.`);
+  }
+  // If raw digits provided, normalize
+  if (/^\d+$/.test(userId)) return `tg-${userId}`;
+  throw new Error(`Invalid telegram user_id: ${userId}. Expected tg-<digits> or tg-group-<id>.`);
+}
+
 export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
   name: "schedule_alarm",
   label: "Schedule Alarm",
   description: "Schedule an alarm. For short-term alarms (seconds/minutes/hours), use relative_time instead of due_at to avoid time computation errors. The platform_chat_id is auto-filled from the current chat context.",
   parameters: scheduleAlarmSchema,
   execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
+    const normalizedUserId = normalizeTelegramUserId(user_id, platform);
     // Auto-fill platform_chat_id from tool context if LLM didn't provide it
     const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
     
@@ -1439,7 +1453,7 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
     }
 
     const reminder = await storeReminder({
-      userId: user_id,
+      userId: normalizedUserId,
       platform,
       platformChatId: effectiveChatId,
       rawMessage: raw_message,
@@ -1459,22 +1473,32 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
 const listAlarmsSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
+  include_fired: Type.Optional(Type.Boolean({ description: "Include fired alarms" })),
+  include_cancelled: Type.Optional(Type.Boolean({ description: "Include cancelled alarms" })),
+  platform_chat_id: Type.Optional(Type.String({ description: "Filter by specific chat ID" })),
+  limit: Type.Optional(Type.Number({ description: "Max number of alarms to return" })),
+  offset: Type.Optional(Type.Number({ description: "Offset for pagination" })),
 });
 
 export const listAlarmsTool: AgentTool<typeof listAlarmsSchema> = {
   name: "list_alarms",
   label: "List Alarms",
-  description: "List active alarms for a user.",
+  description: "List alarms for a user. Defaults to active only; can include fired/cancelled with flags.",
   parameters: listAlarmsSchema,
-  execute: async (_id, { user_id, platform }) => {
-    const reminders = await listReminders(user_id, platform);
+  execute: async (_id, { user_id, platform, include_fired, include_cancelled, platform_chat_id, limit, offset }) => {
+    const normalizedUserId = normalizeTelegramUserId(user_id, platform);
+    const statuses = ["active"];
+    if (include_fired) statuses.push("fired");
+    if (include_cancelled) statuses.push("cancelled");
+    const reminders = await listRemindersAdvanced(normalizedUserId, platform, { statuses, limit, offset, platformChatId: platform_chat_id });
     const lines = reminders.map((r, i) => {
       const due = new Date(r.dueAt).toISOString();
       const recur = r.repeatPattern ? ` (${r.repeatPattern})` : "";
-      return `${i + 1}. [${r.id}] ${due}${recur} — ${r.rawMessage}`;
+      return `${i + 1}. [${r.id}] ${due}${recur} — ${r.rawMessage} (${r.status})`;
     });
 
-    const text = lines.length > 0 ? lines.join("\n") : "No active alarms.";
+    const summary = `Alarms returned: ${reminders.length} (statuses: ${statuses.join(", ")})`;
+    const text = lines.length > 0 ? `${summary}\n${lines.join("\n")}` : `${summary}\nNo alarms found.`;
     return { content: [{ type: "text" as const, text }], details: undefined };
   },
 };
@@ -1498,6 +1522,75 @@ const cancelAllAlarmsSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
 });
+
+const listAllAlarmsSchema = Type.Object({
+  user_id: Type.String({ description: "Platform-specific user ID" }),
+  platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
+  include_fired: Type.Optional(Type.Boolean({ description: "Include fired alarms" })),
+  include_cancelled: Type.Optional(Type.Boolean({ description: "Include cancelled alarms" })),
+  limit: Type.Optional(Type.Number({ description: "Max number of alarms to return" })),
+  offset: Type.Optional(Type.Number({ description: "Offset for pagination" })),
+});
+
+export const listAllAlarmsTool: AgentTool<typeof listAllAlarmsSchema> = {
+  name: "list_all_alarms",
+  label: "List All Alarms",
+  description: "List alarms across DM + known groups for a user. Includes active by default; can include fired/cancelled.",
+  parameters: listAllAlarmsSchema,
+  execute: async (_id, { user_id, platform, include_fired, include_cancelled, limit, offset }) => {
+    const normalizedUserId = normalizeTelegramUserId(user_id, platform);
+    const statuses = ["active"];
+    if (include_fired) statuses.push("fired");
+    if (include_cancelled) statuses.push("cancelled");
+
+    // Gather known group chat IDs for this platform from conversations dir
+    const convDir = join("/app", "conversations");
+    const groupChatIds: string[] = [];
+    if (existsSync(convDir)) {
+      const entries = readdirSync(convDir).filter(e => {
+        const full = join(convDir, e);
+        return statSync(full).isDirectory();
+      });
+      for (const dir of entries) {
+        if (platform === "telegram" || platform === "tg") {
+          if (dir.startsWith("tg-group-")) {
+            groupChatIds.push(dir.replace("tg-group-", ""));
+          }
+        } else if (platform === "whatsapp") {
+          if (dir.startsWith("whatsapp-group-")) {
+            groupChatIds.push(dir.replace("whatsapp-group-", ""));
+          }
+        }
+      }
+    }
+
+    const allResults: ReminderRecord[] = [];
+    // DM alarms
+    allResults.push(...await listRemindersAdvanced(normalizedUserId, platform, { statuses }));
+    // Group alarms (same user_id, different platform_chat_id)
+    for (const chatId of groupChatIds) {
+      const groupResults = await listRemindersAdvanced(normalizedUserId, platform, { statuses, platformChatId: chatId });
+      allResults.push(...groupResults);
+    }
+
+    // Sort and paginate in-memory
+    const sorted = allResults.sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime());
+    const sliced = typeof limit === "number"
+      ? sorted.slice(offset ?? 0, (offset ?? 0) + limit)
+      : sorted.slice(offset ?? 0);
+
+    const lines = sliced.map((r, i) => {
+      const due = new Date(r.dueAt).toISOString();
+      const recur = r.repeatPattern ? ` (${r.repeatPattern})` : "";
+      const chatSuffix = r.platformChatId ? ` [chat ${r.platformChatId}]` : "";
+      return `${i + 1}. [${r.id}] ${due}${recur}${chatSuffix} — ${r.rawMessage} (${r.status})`;
+    });
+
+    const summary = `Alarms returned: ${sliced.length} (statuses: ${statuses.join(", ")}, groups indexed: ${groupChatIds.length})`;
+    const text = lines.length > 0 ? `${summary}\n${lines.join("\n")}` : `${summary}\nNo alarms found.`;
+    return { content: [{ type: "text" as const, text }], details: undefined };
+  },
+};
 
 export const cancelAllAlarmsTool: AgentTool<typeof cancelAllAlarmsSchema> = {
   name: "cancel_all_alarms",
@@ -2187,6 +2280,7 @@ export const pixelTools = [
   memoryDeleteTool,
   scheduleAlarmTool,
   listAlarmsTool,
+  listAllAlarmsTool,
   cancelAlarmTool,
   cancelAllAlarmsTool,
   modifyAlarmTool,

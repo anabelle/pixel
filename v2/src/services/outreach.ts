@@ -93,7 +93,7 @@ function sanitizeMemory(content: string): string {
   return content.replace(/```[\s\S]*?```/g, "").trim();
 }
 
-function readText(path: string, maxLen = 1200): string {
+function readText(path: string, maxLen = 3000): string {
   if (!existsSync(path)) return "";
   try {
     const content = readFileSync(path, "utf-8");

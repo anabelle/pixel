@@ -960,7 +960,7 @@ async function extractAndSaveMemory(userId: string, messages: any[]): Promise<vo
 ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMemory}` : "No existing memory — create fresh."}
 
 Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`;
-    const promptText = `Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 2000)}`;
+    const promptText = `Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 8000)}`;
     const memoryText = await backgroundLlmCall(sysPrompt, promptText);
 
     if (memoryText && memoryText.trim().length > 10) {
@@ -1050,7 +1050,7 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 Keep under 1200 characters. Be accurate. No speculation.
 
 ${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
-      `Update the group summary using this recent context:\n\n${recent.slice(0, 2400)}`
+      `Update the group summary using this recent context:\n\n${recent.slice(0, 8000)}`
     );
 
     if (summaryText && summaryText.trim().length > 20) {
@@ -1102,7 +1102,7 @@ async function compactContext(userId: string, platform: string): Promise<void> {
 - The general tone and relationship
 
 Be concise. This summary will be used as context for future conversations.`,
-      `Summarize this conversation:\n\n${conversationText.slice(0, 4000)}`
+      `Summarize this conversation:\n\n${conversationText.slice(0, 16000)}`
     );
 
     if (summaryText && summaryText.length > 20) {

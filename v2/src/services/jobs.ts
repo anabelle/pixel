@@ -177,8 +177,8 @@ function injectIntoInnerLife(job: JobEntry): void {
 
   const updated = newEntry + existing;
 
-  // Limit size (same as inner-life)
-  const MAX_SIZE = contentType === "learning" ? 2000 : 2000;
+  // Limit size (generous — models have 128K context)
+  const MAX_SIZE = 8000;
   if (updated.length > MAX_SIZE) {
     const trimmed = updated.slice(0, MAX_SIZE);
     console.log(`[jobs] Trimmed ${filename} to ${MAX_SIZE} chars`);
@@ -204,8 +204,8 @@ async function wakeUpPixelWithResults(job: JobEntry): Promise<void> {
   if (!job.output || job.status !== "completed") return;
 
   const label = job.callbackLabel ?? "autonomous research";
-  // Truncate output for the wake-up prompt (keep it digestible)
-  const maxOutputLen = 3000;
+  // Truncate output for the wake-up prompt (generous — GLM-4.7 has 128K context)
+  const maxOutputLen = 12000;
   const outputSnippet = job.output.length > maxOutputLen
     ? job.output.slice(0, maxOutputLen) + "\n\n[... truncated, full results saved to inner-life files and jobs-report.md]"
     : job.output;
@@ -327,8 +327,8 @@ async function deliverJobResult(job: JobEntry): Promise<void> {
   const output = job.status === "completed"
     ? (job.output ?? "(sin resultados)")
     : `error en la investigación: ${job.error ?? "desconocido"}`;
-  // Truncate for context (keep it digestible for the LLM)
-  const maxLen = 3000;
+  // Truncate for context (generous — GLM-4.7 has 128K context)
+  const maxLen = 12000;
   const truncated = output.length > maxLen
     ? output.slice(0, maxLen) + "\n\n[... resultado truncado, completo guardado en jobs-report.md]"
     : output;

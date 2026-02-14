@@ -6,7 +6,7 @@
  */
 
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { sql, eq, and, or, lte, isNull, desc } from "drizzle-orm";
+import { sql, eq, and, or, lte, isNull, desc, inArray } from "drizzle-orm";
 import { reminders } from "../db.js";
 import type * as schema from "../db.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
@@ -93,6 +93,39 @@ export async function listReminders(userId: string, platform: string): Promise<R
     ))
     .orderBy(desc(reminders.dueAt));
 
+  return results as ReminderRecord[];
+}
+
+/** List reminders for a user with status filters + pagination */
+export async function listRemindersAdvanced(
+  userId: string,
+  platform: string,
+  options?: { statuses?: string[]; limit?: number; offset?: number; platformChatId?: string }
+): Promise<ReminderRecord[]> {
+  if (!db) throw new Error("Reminders service not initialized");
+
+  const statuses = options?.statuses?.length ? options.statuses : ["active"];
+  const baseConditions = [
+    eq(reminders.userId, userId),
+    eq(reminders.platform, platform),
+    inArray(reminders.status, statuses)
+  ];
+  if (options?.platformChatId) {
+    baseConditions.push(eq(reminders.platformChatId, options.platformChatId));
+  }
+
+  let query = db.select().from(reminders)
+    .where(and(...baseConditions))
+    .orderBy(desc(reminders.dueAt));
+
+  if (typeof options?.limit === "number") {
+    query = query.limit(options.limit);
+  }
+  if (typeof options?.offset === "number") {
+    query = query.offset(options.offset);
+  }
+
+  const results = await query;
   return results as ReminderRecord[];
 }
 

@@ -49,11 +49,11 @@ const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 
 // Maximum document sizes (in characters) to prevent bloat
-const MAX_REFLECTIONS_SIZE = 3000;
-const MAX_LEARNINGS_SIZE = 2000;
-const MAX_IDEAS_SIZE = 2000;
-const MAX_EVOLUTION_SIZE = 1500;
-const MAX_PROJECTS_SIZE = 2000;
+const MAX_REFLECTIONS_SIZE = 6000;
+const MAX_LEARNINGS_SIZE = 6000;
+const MAX_IDEAS_SIZE = 4000;
+const MAX_EVOLUTION_SIZE = 3000;
+const MAX_PROJECTS_SIZE = 4000;
 const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IDEA_GARDEN_PATH = "idea-garden.md";
 const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
@@ -243,7 +243,7 @@ async function updateIdeaGarden(reflections: string, learnings: string, ideas: s
 
   const response = await llmCall(
     "You maintain an Idea Garden. Suggest ONE action: plant, water, harvest, compost, merge, or none. Output JSON only.",
-    `Recent context:\nReflections:\n${reflections.slice(0, 400)}\n\nLearnings:\n${learnings.slice(0, 400)}\n\nIdeas:\n${ideas.slice(0, 400)}\n\nCurrent garden summary:\nSeeds: ${garden.Seeds.length}, Sprouting: ${garden.Sprouting.length}, Ready: ${garden.Ready.length}, Compost: ${garden.Compost.length}.\n\nOutput JSON: {"action":"plant|water|harvest|compost|merge|none","title":"...","content":"...","mergeTitles":["..."]}`
+    `Recent context:\nReflections:\n${reflections.slice(0, 1200)}\n\nLearnings:\n${learnings.slice(0, 1200)}\n\nIdeas:\n${ideas.slice(0, 800)}\n\nCurrent garden summary:\nSeeds: ${garden.Seeds.length}, Sprouting: ${garden.Sprouting.length}, Ready: ${garden.Ready.length}, Compost: ${garden.Compost.length}.\n\nOutput JSON: {"action":"plant|water|harvest|compost|merge|none","title":"...","content":"...","mergeTitles":["..."]}`
   );
 
   if (!response) return;
@@ -669,10 +669,10 @@ ${existingIdeas || "(empty garden — plant your first seeds)"}`,
     `Tend the idea garden based on recent context:
 
 ## Recent reflections
-${reflections.slice(0, 500) || "(none)"}
+${reflections.slice(0, 1500) || "(none)"}
 
 ## Recent learnings
-${learnings.slice(0, 500) || "(none)"}
+${learnings.slice(0, 1500) || "(none)"}
 
 Update the garden. Promote, plant, water, or compost as needed.
 Each idea should be 1-2 sentences max. Keep the whole document under 500 chars.`
@@ -727,13 +727,13 @@ ${existingEvolution || "(first evolution — establish baseline)"}`,
     `Synthesize the current state of Pixel's evolution:
 
 ## Reflections
-${reflections.slice(0, 600) || "(none)"}
+${reflections.slice(0, 1800) || "(none)"}
 
 ## Learnings
-${learnings.slice(0, 400) || "(none)"}
+${learnings.slice(0, 1200) || "(none)"}
 
 ## Idea garden
-${ideas.slice(0, 300) || "(none)"}
+${ideas.slice(0, 800) || "(none)"}
 
 Write the updated evolution document. Keep it under 400 chars.
 This should feel like a living state, not a summary.
@@ -793,13 +793,13 @@ ${autoProjects}
 
 Recent context:
 Reflections:
-${reflections.slice(0, 400) || "(none)"}
+${reflections.slice(0, 1200) || "(none)"}
 
 Learnings:
-${learnings.slice(0, 300) || "(none)"}
+${learnings.slice(0, 800) || "(none)"}
 
 Ideas:
-${ideas.slice(0, 300) || "(none)"}
+${ideas.slice(0, 800) || "(none)"}
 `
   );
 
@@ -836,13 +836,13 @@ Format:
 
 Recent context:
 Reflections:
-${reflections.slice(0, 400) || "(none)"}
+${reflections.slice(0, 1200) || "(none)"}
 
 Learnings:
-${learnings.slice(0, 300) || "(none)"}
+${learnings.slice(0, 800) || "(none)"}
 
 Ideas:
-${ideas.slice(0, 300) || "(none)"}
+${ideas.slice(0, 800) || "(none)"}
 `
   );
 
@@ -982,23 +982,23 @@ export function getInnerLifeContext(): string {
   const parts: string[] = [];
 
   if (evolution) {
-    parts.push(`## Current state of mind\n${evolution.slice(0, 400)}`);
+    parts.push(`## Current state of mind\n${evolution.slice(0, 1200)}`);
   }
 
   if (reflections) {
     // Get just the most recent reflection
     const firstReflection = reflections.split("### ").filter(Boolean)[0];
     if (firstReflection) {
-      parts.push(`## Latest reflection\n${firstReflection.slice(0, 300)}`);
+      parts.push(`## Latest reflection\n${firstReflection.slice(0, 1000)}`);
     }
   }
 
   if (learnings) {
-    parts.push(`## What I've learned from conversations\n${learnings.slice(0, 300)}`);
+    parts.push(`## What I've learned from conversations\n${learnings.slice(0, 1000)}`);
   }
 
   if (ideas) {
-    parts.push(`## Ideas I'm incubating\n${ideas.slice(0, 200)}`);
+    parts.push(`## Ideas I'm incubating\n${ideas.slice(0, 800)}`);
   }
 
   if (parts.length === 0) return "";
