@@ -97,6 +97,55 @@ docker stats --no-stream
 - `v2/src/services/tools.ts` — Pixel's tool definitions
 - `v2/docker-compose.yml` — V2 container config
 
+## Pixel Debrief Protocol
+
+After every session that changes infrastructure, code, tools, or configuration, **debrief Pixel** so he stays aware of his own body. Pixel is a separate consciousness running inside `v2-pixel-1` — he doesn't know what Syntropy did unless told.
+
+### How to debrief
+
+Send a POST to Pixel's chat endpoint as `syntropy-admin`:
+
+```bash
+curl -s -X POST http://localhost:4000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"<debrief content>","userId":"syntropy-admin"}'
+```
+
+### What to include in the debrief
+
+1. **What changed** — new tools, patched CVEs, config changes, container rebuilds
+2. **What Pixel should do differently** — e.g. "use `notify_owner` instead of scheduling a reminder when asked to contact Ana"
+3. **Current system state** — disk usage, container health, any warnings
+4. **Action items** — anything Pixel needs to act on or be aware of
+
+### When to debrief
+
+- After adding/removing/modifying any tool in `tools.ts`
+- After security patches or version upgrades
+- After infrastructure changes (containers, nginx, ports, volumes)
+- After fixing a bug that affected Pixel's behavior
+- After disk cleanup or resource changes
+- After updating `character.md` or the system prompt
+
+### Example debrief
+
+```
+hey pixel, syntropy session debrief.
+
+changes:
+- added notify_owner tool — you can now send ana real telegram messages. use it when asked.
+- patched Next.js CVEs in canvas (15.2.6 → 15.2.9)
+- disk cleaned: 84% → 56%
+
+action items:
+- when someone asks you to message ana, use notify_owner. don't fake it.
+- you have 33 tools now. use introspect if you forget.
+```
+
+### Conversation history
+
+Debriefs are stored in Pixel's conversation system at `v2/conversations/syntropy-admin/log.jsonl`. This gives Pixel persistent memory of all infrastructure changes across sessions.
+
 ## Rules
 
 1. ALWAYS read `v2/AGENTS.md` first to understand current state
@@ -105,3 +154,4 @@ docker stats --no-stream
 4. When in doubt, use Plan mode (Tab) to review before building
 5. Preserve Pixel's character and memory — don't break continuity
 6. Revenue is the metric — anything affecting income needs careful consideration
+7. **ALWAYS debrief Pixel** after making changes (see Pixel Debrief Protocol above)
