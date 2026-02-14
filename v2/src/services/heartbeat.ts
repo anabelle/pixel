@@ -883,6 +883,11 @@ async function clawstrLoop(): Promise<void> {
     const result = await getClawstrNotifications(CLAWSTR_CHECK_LIMIT);
     lastClawstrCheckTime = Date.now();
     lastClawstrCount = result.count;
+    // Skip if Clawstr not configured
+    if (result.output.includes("Clawstr not configured")) {
+      console.log("[heartbeat/clawstr] Skipping - not configured");
+      return;
+    }
     if (typeof result.count === "number") {
       audit("clawstr_notifications", `Clawstr notifications: ${result.count}`, {
         count: result.count,

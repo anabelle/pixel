@@ -6,6 +6,21 @@
 const hostPixelRoot = process.env.HOST_PIXEL_ROOT ?? "/home/pixel/pixel";
 const clawstrHostDir = `${hostPixelRoot}/data/clawstr`;
 
+// Check if Clawstr is configured
+let clawstrConfigured: boolean | null = null;
+
+function isClawstrConfigured(): boolean {
+  if (clawstrConfigured !== null) return clawstrConfigured;
+  try {
+    const fs = require('fs');
+    clawstrConfigured = fs.existsSync(`${clawstrHostDir}/config.json`);
+    return clawstrConfigured;
+  } catch {
+    clawstrConfigured = false;
+    return false;
+  }
+}
+
 async function runClawstrCommand(args: string[], timeoutMs = 60_000): Promise<string> {
   const proc = Bun.spawn([
     "docker",
@@ -65,11 +80,17 @@ function parseNotificationCount(output: string): number | null {
 }
 
 export async function getClawstrNotifications(limit = 20): Promise<{ output: string; count: number | null }> {
+  if (!isClawstrConfigured()) {
+    return { output: "Clawstr not configured. Run `clawstr init` first.", count: null };
+  }
   const output = await runClawstrCommand(["notifications", "--limit", String(limit)]);
   return { output, count: parseNotificationCount(output) };
 }
 
 export async function getClawstrFeed(subclaw?: string, limit = 15): Promise<string> {
+  if (!isClawstrConfigured()) {
+    return "Clawstr not configured. Run `clawstr init` first.";
+  }
   const args = subclaw
     ? ["show", subclaw, "--limit", String(limit)]
     : ["recent", "--limit", String(limit)];
@@ -77,22 +98,37 @@ export async function getClawstrFeed(subclaw?: string, limit = 15): Promise<stri
 }
 
 export async function getClawstrPost(eventRef: string): Promise<string> {
+  if (!isClawstrConfigured()) {
+    return "Clawstr not configured. Run `clawstr init` first.";
+  }
   return runClawstrCommand(["show", eventRef]);
 }
 
 export async function getClawstrSearch(query: string, limit = 15): Promise<string> {
+  if (!isClawstrConfigured()) {
+    return "Clawstr not configured. Run `clawstr init` first.";
+  }
   return runClawstrCommand(["search", query, "--limit", String(limit)]);
 }
 
 export async function postClawstr(subclaw: string, content: string): Promise<string> {
+  if (!isClawstrConfigured()) {
+    throw new Error("Clawstr not configured. Run `clawstr init` first.");
+  }
   return runClawstrCommand(["post", subclaw, content]);
 }
 
 export async function replyClawstr(eventRef: string, content: string): Promise<string> {
+  if (!isClawstrConfigured()) {
+    throw new Error("Clawstr not configured. Run `clawstr init` first.");
+  }
   return runClawstrCommand(["reply", eventRef, content]);
 }
 
 export async function upvoteClawstr(eventRef: string): Promise<string> {
+  if (!isClawstrConfigured()) {
+    throw new Error("Clawstr not configured. Run `clawstr init` first.");
+  }
   return runClawstrCommand(["upvote", eventRef]);
 }
 
