@@ -7,6 +7,18 @@ import { sendWhatsAppMessage } from "../connectors/whatsapp.js";
 import { sendNostrDm } from "../connectors/nostr.js";
 import { join } from "path";
 
+// Late-bound reference to promptWithHistory to avoid circular import
+// (agent.ts imports from jobs.ts via tools, jobs.ts needs agent.ts to wake Pixel up)
+let _promptWithHistory: ((options: any, message: string) => Promise<string>) | null = null;
+
+async function getPromptWithHistory() {
+  if (!_promptWithHistory) {
+    const mod = await import("../agent.js");
+    _promptWithHistory = mod.promptWithHistory;
+  }
+  return _promptWithHistory;
+}
+
 type JobStatus = "pending" | "running" | "completed" | "failed";
 
 export type JobEntry = {
@@ -34,6 +46,7 @@ export interface JobCallback {
   chatId: string;
   userId: string;
   label?: string;
+  internal?: boolean;
 }
 
 const JOBS_PATH = "/app/data/jobs.json";
@@ -169,6 +182,66 @@ function injectIntoInnerLife(job: JobEntry): void {
   });
 }
 
+/**
+ * Wake Pixel up with internal research results — same pattern as alarm/reminder system.
+ * Routes the research findings through promptWithHistory() so Pixel processes them
+ * with full context, tools, personality, and skills. Pixel can then decide to act
+ * on the findings (post about them, store insights, start new research, etc.)
+ */
+async function wakeUpPixelWithResults(job: JobEntry): Promise<void> {
+  if (!job.output || job.status !== "completed") return;
+
+  const label = job.callbackLabel ?? "autonomous research";
+  // Truncate output for the wake-up prompt (keep it digestible)
+  const maxOutputLen = 3000;
+  const outputSnippet = job.output.length > maxOutputLen
+    ? job.output.slice(0, maxOutputLen) + "\n\n[... truncated, full results saved to inner-life files and jobs-report.md]"
+    : job.output;
+
+  const wakeUpPrompt = [
+    `[INTERNAL RESEARCH COMPLETE — this is an internal notification, not a user message]`,
+    `Your autonomous research task "${label}" has finished.`,
+    `Here are the findings:`,
+    ``,
+    outputSnippet,
+    ``,
+    `The results have been saved to your inner-life files (learnings/ideas/reflections).`,
+    `Process these findings. You may:`,
+    `- Extract key insights worth remembering`,
+    `- Decide if something is worth posting about on Nostr`,
+    `- Trigger follow-up research if something is interesting`,
+    `- Update your skills or knowledge if relevant`,
+    `- Use notify_owner to tell Ana if something is exciting or urgent`,
+    `- Use syntropy_notify to flag infrastructure/technical findings for Syntropy`,
+    `- Simply acknowledge and move on if the findings aren't actionable`,
+    ``,
+    `Respond naturally. If nothing actionable, reply with [SILENT].`,
+  ].join("\n");
+
+  try {
+    const promptFn = await getPromptWithHistory();
+    const response = await promptFn(
+      { userId: "pixel-self", platform: "internal", chatId: "" },
+      wakeUpPrompt
+    );
+
+    // Log what Pixel decided to do
+    const isSilent = response?.includes("[SILENT]");
+    audit("tool_use", `Internal research wake-up delivered to Pixel (label="${label}", silent=${isSilent})`, {
+      id: job.id,
+      responseLength: response?.length ?? 0,
+    });
+
+    if (!isSilent && response) {
+      console.log(`[jobs] Pixel reacted to internal research "${label}": ${response.slice(0, 200)}...`);
+    }
+  } catch (err: any) {
+    // Non-fatal: the results are already in inner-life files, waking Pixel is a bonus
+    console.error(`[jobs] Failed to wake Pixel with research results: ${err.message}`);
+    audit("tool_use", `Failed to wake Pixel with internal research results: ${err.message}`, { id: job.id });
+  }
+}
+
 function appendReport(text: string): void {
   try {
     writeFileSync(JOB_REPORT_PATH, text.trim() + "\n\n", { flag: "a" });
@@ -191,17 +264,20 @@ export function enqueueJob(prompt: string, toolsAllowed?: string[], callback?: J
     status: "pending",
     createdAt: Date.now(),
     toolsAllowed,
-    ...(callback && {
+    ...(callback?.internal && { internal: true }),
+    ...(callback && !callback.internal && {
       callbackPlatform: callback.platform,
       callbackChatId: callback.chatId,
       callbackUserId: callback.userId,
       callbackLabel: callback.label,
     }),
+    // Internal jobs still need the label for content classification in injectIntoInnerLife
+    ...(callback?.internal && callback.label && { callbackLabel: callback.label }),
   };
   jobs.push(entry);
   saveJobs(jobs);
   logJob(entry);
-  audit("tool_use", `Job queued: ${entry.id}`, { id: entry.id });
+  audit("tool_use", `Job queued: ${entry.id}${entry.internal ? " (internal)" : ""}`, { id: entry.id, internal: !!entry.internal });
   return entry;
 }
 
@@ -223,43 +299,95 @@ export function getRecentJobs(limit = 10): JobEntry[] {
 }
 
 async function deliverJobResult(job: JobEntry): Promise<void> {
-  // Internal jobs: for Pixel's autonomous learning, no user notification
+  // Internal jobs: wake Pixel up with the findings (alarm-style)
   if (job.internal) {
-    audit("tool_use", `Internal job completed (no notification): ${job.id}`, { id: job.id });
+    if (job.status === "completed") {
+      await wakeUpPixelWithResults(job);
+    }
+    audit("tool_use", `Internal job processed: ${job.id}`, { id: job.id });
     return;
   }
 
-  // External jobs: deliver results to user
+  // External jobs: route through promptWithHistory so Pixel delivers results in-character
   if (!job.callbackPlatform || !job.callbackChatId) return;
 
   const label = job.callbackLabel ?? "investigación";
   const output = job.status === "completed"
     ? (job.output ?? "(sin resultados)")
     : `error en la investigación: ${job.error ?? "desconocido"}`;
-  // Truncate for chat delivery (Telegram max ~4096 chars)
-  const truncated = output.length > 3500
-    ? output.slice(0, 3500) + "\n\n[... resultado truncado, completo guardado en jobs-report.md]"
+  // Truncate for context (keep it digestible for the LLM)
+  const maxLen = 3000;
+  const truncated = output.length > maxLen
+    ? output.slice(0, maxLen) + "\n\n[... resultado truncado, completo guardado en jobs-report.md]"
     : output;
 
-  const message = `resultados de ${label}:\n\n${truncated}`;
-
+  // Try to deliver via promptWithHistory so Pixel responds naturally and remembers the exchange
+  let delivered = false;
   try {
+    const promptFn = await getPromptWithHistory();
+    const researchPrompt = [
+      `[RESEARCH COMPLETE — internal, do NOT show this tag to the user]`,
+      `Your background research task "${label}" has finished.`,
+      `Here are the raw findings:`,
+      ``,
+      truncated,
+      ``,
+      `Deliver these results to the user in your own voice. Be concise but thorough.`,
+      `Highlight the most interesting or actionable findings.`,
+      `If the research failed, explain what happened briefly.`,
+    ].join("\n");
+
+    const userId = job.callbackUserId ?? `${job.callbackPlatform}-${job.callbackChatId}`;
+    const naturalResponse = await promptFn(
+      { userId, platform: job.callbackPlatform, chatId: job.callbackChatId },
+      researchPrompt
+    );
+
+    // Strip any leaked tags
+    let message = naturalResponse?.replace(/\[RESEARCH COMPLETE[^\]]*\]/gi, "").trim();
+    if (!message || message.includes("[SILENT]")) {
+      // Fallback to raw output if LLM produced nothing
+      message = `resultados de ${label}:\n\n${truncated}`;
+    }
+
     switch (job.callbackPlatform) {
       case "telegram":
-        await sendTelegramMessage(job.callbackChatId, message);
+        delivered = await sendTelegramMessage(job.callbackChatId, message);
         break;
       case "whatsapp":
-        await sendWhatsAppMessage(job.callbackChatId, message);
+        delivered = await sendWhatsAppMessage(job.callbackChatId, message);
         break;
       case "nostr":
       case "nostr-dm":
-        await sendNostrDm(job.callbackChatId, message);
+        delivered = await sendNostrDm(job.callbackChatId, message);
         break;
     }
-    audit("tool_use", `Job result delivered to ${job.callbackPlatform}:${job.callbackChatId}`, { id: job.id });
   } catch (err: any) {
-    audit("tool_use", `Failed to deliver job result: ${err.message}`, { id: job.id });
+    console.error(`[jobs] promptWithHistory failed for job result delivery, falling back to raw: ${err.message}`);
   }
+
+  // Fallback: if promptWithHistory failed, send raw output directly
+  if (!delivered) {
+    const rawMessage = `resultados de ${label}:\n\n${truncated}`;
+    try {
+      switch (job.callbackPlatform) {
+        case "telegram":
+          await sendTelegramMessage(job.callbackChatId, rawMessage);
+          break;
+        case "whatsapp":
+          await sendWhatsAppMessage(job.callbackChatId, rawMessage);
+          break;
+        case "nostr":
+        case "nostr-dm":
+          await sendNostrDm(job.callbackChatId, rawMessage);
+          break;
+      }
+    } catch (err: any) {
+      audit("tool_use", `Failed to deliver job result (fallback): ${err.message}`, { id: job.id });
+    }
+  }
+
+  audit("tool_use", `Job result delivered to ${job.callbackPlatform}:${job.callbackChatId} (natural=${delivered})`, { id: job.id });
 }
 
 async function runNextJob(): Promise<void> {

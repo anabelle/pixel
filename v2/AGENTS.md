@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 33
+> Last updated: 2026-02-14 | Session: 34
 
 ---
 
@@ -153,6 +153,8 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 33 (Landing dashboard order + doc refresh):** Ordered landing dashboard feeds newest-first and refreshed V2 documentation. (A) **Landing dashboard ordering** — audit feed, memories, Syntropy conversations, jobs, revenue recent now sort reverse-chronological in `pixel-landing/src/app/[locale]/dashboard/page.tsx`. (B) **Feed components** — `NostrFeed.tsx` and `AuditLog.tsx` now sort newest-first on fetch. (C) **Submodule push** — resolved with explicit SSH key (`pixel_tallerubens`) to push `pixel-landing` commit `6d30701`. (D) **Docs updated** — `README.md`, `DEPLOYMENT.md`, `docs/TECH_GUIDE.md`, `CONTINUITY.md` aligned to V2-first reality and current services.
 
+**Session 34 (Research task wake-up + inner monologue dashboard):** Fixed the research_task pipeline end-to-end and added Pixel's inner monologue to the landing dashboard. (A) **Three bugs fixed in internal research pipeline** — Bug 1: `research_task` tool passed `{ internal: true }` which didn't match `JobCallback` interface, so the `internal` flag never reached the `JobEntry`. Bug 2: `enqueueJob()` never extracted the `internal` field from the callback. Bug 3: internal jobs need `callbackLabel` for content classification but it wasn't passed through. All three fixed in `jobs.ts` and `tools.ts`. (B) **Alarm-style wake-up for research results** — Replicated the `reminders.ts` pattern: late-bound `promptWithHistory()` import in `jobs.ts`, new `wakeUpPixelWithResults()` function routes internal research findings through `promptWithHistory()` with `userId: "pixel-self"`. Pixel wakes up with full context, tools, skills, and personality — can decide to post on Nostr, notify Ana via `notify_owner`, flag things for Syntropy via `syntropy_notify`, start follow-up research, or `[SILENT]`. (C) **User research also wakes Pixel** — previously, user-requested research dumped raw LLM output directly via `sendTelegramMessage`. Now routes through `promptWithHistory()` so Pixel delivers results in-character, the exchange saves to conversation history, and Pixel remembers the research. Raw fallback preserved if `promptWithHistory()` fails. (D) **Pixel self-conversation** — internal research reactions accumulate at `conversations/pixel-self/log.jsonl`. Memory extraction kicks in every 5th message. Auditable at `/api/conversations/pixel-self`. (E) **Inner monologue on dashboard** — added "Pixel's Inner Monologue" section to landing dashboard (`pixel-landing`), amber-themed, showing `pixel-self` conversations. Fetches from `/v2/api/conversations/pixel-self?limit=50` with 30s polling. Shows stimulus (research prompt) and Pixel's reaction. Landing submodule commit `a6ec0e5`.
+
 **V2 file inventory (26 source files, ~13,713 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -170,7 +172,7 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
 | `src/services/heartbeat.ts` | ~2059 | Initiative engine — topic/mood rotation, Nostr engagement, Clawstr notifications, discovery (Primal trending), zap thanks, follow/unfollow loops, art reports, community spotlight, revenue-goal loop, live canvas stats. Has pixelTools for proactive tool use. |
 | `src/services/inner-life.ts` | ~1065 | Autonomous self-reflection, learning extraction, ideation, identity evolution. Has pixelTools for proactive tool use. |
-| `src/services/jobs.ts` | ~349 | Job system — scheduled tasks, ecosystem reports, idea garden |
+| `src/services/jobs.ts` | ~551 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up for research results |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache, sats/millisats fix |
 | `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log with timestamps and levels |
@@ -894,7 +896,7 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 33 (2026-02-14)
+**Last session:** 34 (2026-02-14)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
 **V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Skills system LIVE** — 4 skills loaded into system prompt (revenue-awareness, image-generation-craft, resource-awareness, baking analogy). **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: GLM-4.5-air (~1.3s). Crash resilience: null message filtering, tool call integrity, global error handlers. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first — heartbeat and inner-life agents now have pixelTools. research_task supports `internal=true` for autonomous learning. **Voice transcription:** Telegram (voice, audio, video notes) and WhatsApp (voice) via Gemini 2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
@@ -1070,3 +1072,11 @@ git status && git log --oneline -5
   78. **Tool call integrity over silent corruption:** Rather than hoping context is clean, `ensureToolCallIntegrity()` actively scans for and removes orphaned toolResults and incomplete toolCall chains. This prevents the Gemini "function response turn" error that appeared after cross-model fallback.
   79. **Global error handlers — survive, don't crash:** `unhandledRejection` and `uncaughtException` handlers log errors but don't call `process.exit()`. Pi-agent-core's internal stream IIFE can emit errors outside promise chains; these should be logged, not fatal.
   80. **convertToLlm filter is belt-and-suspenders:** Even after sanitizeMessagesForContext() cleans the context, the convertToLlm callback filters again at prompt time. Defense in depth — messages can arrive from multiple paths (compaction, manual context manipulation, hot context from pi-agent-core events).
+
+### Key Decisions (Session 34)
+
+  81. **Three bugs killed internal research pipeline:** (A) `research_task` tool passed `{ internal: true }` — didn't match `JobCallback` interface, so `internal` flag was silently lost. (B) `enqueueJob()` never extracted `internal` from the callback object. (C) `callbackLabel` wasn't passed through for `determineContentType()`, so content defaulted to "other" and injection was skipped. All three fixed. No internal research job had ever run successfully before this session.
+  82. **Wake-up via promptWithHistory, not raw injection:** Internal research results now route through `promptWithHistory()` with `userId: "pixel-self"`, same pattern as `reminders.ts` alarm system. Pixel wakes up with full context, tools, skills, personality — can decide to post, notify Ana, flag Syntropy, start follow-up research, or `[SILENT]`. Late-bound dynamic import avoids circular dependency.
+  83. **User research also routes through promptWithHistory:** Previously, user-requested research dumped raw LLM output directly via `sendTelegramMessage`. Now Pixel processes results in-character, exchange saves to conversation history, and Pixel remembers the research. Raw fallback preserved if `promptWithHistory()` fails.
+  84. **pixel-self is the inner monologue conversation:** All internal research reactions accumulate at `conversations/pixel-self/log.jsonl`. Memory extraction kicks in every 5th message. Auditable at `/api/conversations/pixel-self`. Visible on landing dashboard.
+  85. **promptWithHistory does NOT send messages:** Important architectural fact — `promptWithHistory()` only runs the LLM and returns text. Platform sending is always the caller's responsibility. This means routing research through it doesn't cause double-sends.

@@ -630,7 +630,7 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
       prompt,
       ["web_search", "web_fetch", "read_file", "write_file"],
       internal
-        ? { internal: true }
+        ? { platform: "internal", chatId: "", userId: "pixel-self", label: topic, internal: true }
         : {
             platform: ctx.platform,
             chatId: ctx.chatId ?? "",
