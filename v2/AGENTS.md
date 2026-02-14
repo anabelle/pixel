@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 31
+> Last updated: 2026-02-14 | Session: 32
 
 ---
 
@@ -149,16 +149,18 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 31 (Infrastructure cleanup):** Housekeeping session. (A) **Pushed TTS commit** — `601f7fd` was committed but not pushed; now on remote. (B) **`hungry_morse` resolved** — rogue container from previous session no longer exists (exited or removed between sessions). (C) **Disk cleanup: 71% → 59%** — pruned 8.66GB Docker build cache (`docker builder prune -f`), compressed V1 backup from 1.9GB to 162MB (`gzip`). Total ~9.7GB freed. (D) **Resource status** — 6 containers healthy, swap still elevated (3.6/4.0GB, normal for 3.8GB RAM box), no sudo for journal vacuum (1.3GB /var/log/journal inaccessible). (E) **AGENTS.md updated** — TTS feature added to Session 30 entry, file inventory updated, Session 31 entry added.
 
+**Session 32 (Skills system + crash resilience):** Fixed critical skills-not-loaded bug and hardened context handling. (A) **Skills loading fixed** — `loadSkills()` function added to `agent.ts`, reads all `.md` files from `v2/skills/` and injects into system prompt under `## Your skills (self-created knowledge)` after inner life context. Skills created by `maybeCreateSkill()` now actually take effect. (B) **3 high-value curated skills written** — `revenue-awareness.md` (natural canvas/L402/DVM promotion with value-for-value framing), `image-generation-craft.md` (prompt engineering, platform-aware delivery, artistic judgment for generate_image), `resource-awareness.md` (concise responses, batch autonomous work, graceful rate-limit degradation). 4 total with existing baking analogy. (C) **m.role crash fix** — `sanitizeMessagesForContext()` now filters null/undefined entries from messages array before processing, preventing the `TypeError: undefined is not an object (evaluating 'm.role')` crash that caused ~10 container restarts in 38 minutes. (D) **Tool call integrity** — `ensureToolCallIntegrity()` removes orphaned `toolResult` messages and incomplete `toolCall` chains that break Gemini cross-model fallback with "function response turn" errors. (E) **convertToLlm safety** — all Agent instances (promptWithHistory, retry, createPixelAgent, backgroundLlmCall) now filter messages to only valid roles (user/assistant/toolResult), preventing provider errors from malformed context. (F) **backgroundLlmCall() refactor** — shared utility with automatic model fallback replaces 3 duplicate Agent instantiation patterns in memory extraction, group summary, and context compaction. (G) **Tool-boundary-aware trimming** — `sliceAtCleanBoundary()` and `findCleanSplitIndex()` in `conversations.ts` prevent splitting toolCall/toolResult pairs during context trimming and compaction. (H) **Global error handlers** — `unhandledRejection` and `uncaughtException` handlers in `index.ts` prevent crash loops from pi-agent-core internal stream errors. (I) **WhatsApp pairing code** — switched from QR scanning to `requestPairingCode()` for Docker headless environments. (J) **.gitignore updated** — curated skills tracked in git; auto-generated date-stamped skills (`skill-20*.md`) ignored. Commit: `187b229`.
+
 **V2 file inventory (26 source files, ~13,713 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~884 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, /api/job, /api/jobs, DB auto-init, user tracking, outreach startup |
-| `src/agent.ts` | ~923 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring, Syntropy context for userId syntropy/syntropy-admin |
-| `src/conversations.ts` | ~280 | JSONL persistence, context compaction (summarize old messages via LLM) |
+| `src/index.ts` | ~948 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, /api/job, /api/jobs, DB auto-init, user tracking, outreach startup, global error handlers |
+| `src/agent.ts` | ~1227 | Pi agent wrapper, promptWithHistory(), extractText(), loadSkills(), backgroundLlmCall(), sanitizeMessagesForContext() with tool integrity, context compaction, periodic memory extraction, tools wiring, Syntropy context for userId syntropy/syntropy-admin |
+| `src/conversations.ts` | ~329 | JSONL persistence, context compaction (summarize old messages via LLM), tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~816 | grammY bot with persistent memory, image/vision support, group lore, notify_owner, voice/audio/video_note transcription, TTS voice replies |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
-| `src/connectors/whatsapp.ts` | ~239 | Baileys bot with pairing code auth, voice message transcription, TTS voice replies |
+| `src/connectors/whatsapp.ts` | ~284 | Baileys bot with pairing code auth, voice message transcription, TTS voice replies |
 | `src/services/audit.ts` | ~257 | Audit trail — tool use, revenue, errors, structured JSONL logging |
 | `src/services/clawstr.ts` | ~129 | Clawstr (Stacker News) API integration — feed, post, reply, notifications |
 | `src/services/cost-monitor.ts` | ~246 | LLM cost tracking and budget monitoring |
@@ -890,9 +892,9 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 30 (2026-02-14)
+**Last session:** 32 (2026-02-14)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: GLM-4.5-air (~1.3s). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first — heartbeat and inner-life agents now have pixelTools. research_task supports `internal=true` for autonomous learning. **Voice transcription:** Telegram (voice, audio, video notes) and WhatsApp (voice) via Gemini 2.0 Flash.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Skills system LIVE** — 4 skills loaded into system prompt (revenue-awareness, image-generation-craft, resource-awareness, baking analogy). **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: GLM-4.5-air (~1.3s). Crash resilience: null message filtering, tool call integrity, global error handlers. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first — heartbeat and inner-life agents now have pixelTools. research_task supports `internal=true` for autonomous learning. **Voice transcription:** Telegram (voice, audio, video notes) and WhatsApp (voice) via Gemini 2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** 60% (31GB free)
 **RAM:** 2.7GB used / 3.8GB total
@@ -1057,4 +1059,13 @@ git status && git log --oneline -5
 
   73. **Docker build cache is the silent disk hog:** 13.34GB build cache accumulated from frequent rebuilds. `docker builder prune -f` is safe and should be run periodically. Added to operational awareness.
   74. **Backup compression:** Large SQL dumps should be gzipped immediately. The V1→V2 migration backup compressed 12:1 (1.9GB → 162MB).
+
+### Key Decisions (Session 32)
+
+  75. **Skills in buildSystemPrompt(), not getInnerLifeContext():** Skills are a separate concern from inner-life reflections. Injected after inner life but before long-term memory in the prompt hierarchy: character → inner life → skills → long-term memory → user memory → group summary → platform context.
+  76. **Curated skills tracked in git, auto-generated ignored:** `.gitignore` changed from blanket `skills/` to `skills/skill-20*.md`. Human-written skills (revenue-awareness, image-generation-craft, resource-awareness) are version-controlled; Pixel's autonomous `maybeCreateSkill()` outputs (date-stamped) are runtime-only.
+  77. **backgroundLlmCall() as shared utility:** Three separate Agent instantiation patterns (memory extraction, group summary, context compaction) consolidated into one `backgroundLlmCall(systemPrompt, userMessage)` function with automatic SimpleModel → Gemini fallback. Reduces code duplication by ~80 lines.
+  78. **Tool call integrity over silent corruption:** Rather than hoping context is clean, `ensureToolCallIntegrity()` actively scans for and removes orphaned toolResults and incomplete toolCall chains. This prevents the Gemini "function response turn" error that appeared after cross-model fallback.
+  79. **Global error handlers — survive, don't crash:** `unhandledRejection` and `uncaughtException` handlers log errors but don't call `process.exit()`. Pi-agent-core's internal stream IIFE can emit errors outside promise chains; these should be logged, not fatal.
+  80. **convertToLlm filter is belt-and-suspenders:** Even after sanitizeMessagesForContext() cleans the context, the convertToLlm callback filters again at prompt time. Defense in depth — messages can arrive from multiple paths (compaction, manual context manipulation, hot context from pi-agent-core events).
 
