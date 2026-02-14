@@ -150,22 +150,21 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
   } as any;
 }
 
-/** Get the AI model for conversations — GLM-4.7 (reasoning, ~4.5s) */
+/** Get the AI model for conversations — temporarily Gemini 2.5 Flash for stability (Z.AI 429 crisis: 82% failure)
+ * TODO: Re-evaluate Z.AI GLM-4.7 after rate limit investigation */
 function getPixelModel() {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
-  if (provider === "zai") {
-    return makeZaiModel(modelId, true);
-  }
-  return getModel(provider as any, modelId);
+  // TEMPORARY: Switch to Gemini 2.5 Flash due to Z.AI 429 crisis
+  // Original: const provider = process.env.AI_PROVIDER ?? "google";
+  // Original: const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
+  // Original: if (provider === "zai") { return makeZaiModel(modelId, true); }
+  return getModel("google" as any, "gemini-2.5-flash");
 }
 
 /** Get the fast model for background tasks — GLM-4.5-air (~1.3s, no reasoning overhead) */
 function getSimpleModel() {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "zai") {
-    return makeZaiModel("glm-4.5-air", false);
-  }
+  // TEMPORARY: Also switch background to Gemini 2.0 Flash for consistency
+  // const provider = process.env.AI_PROVIDER ?? "google";
+  // if (provider === "zai") { return makeZaiModel("glm-4.5-air", false); }
   return getModel("google" as any, "gemini-2.0-flash");
 }
 
@@ -184,61 +183,6 @@ function getFallbackModel(level: number = 1) {
     case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
     default: return getModel("google" as any, "gemini-2.0-flash");      // always works
   }
-}
-
-/**
- * Run a one-shot LLM call for background tasks (compaction, memory, summaries)
- * with automatic fallback. Tries getSimpleModel() first, cascades to Gemini on failure.
- * Returns the response text or empty string on total failure.
- */
-async function backgroundLlmCall(systemPrompt: string, userMessage: string): Promise<string> {
-  const models = [getSimpleModel(), getModel("google" as any, "gemini-2.0-flash")];
-  
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
-    try {
-      const agent = new Agent({
-        initialState: {
-          systemPrompt,
-          model,
-          thinkingLevel: "minimal" as const,
-          tools: [],
-        },
-        getApiKey: async (provider: string) => resolveApiKey(provider),
-        convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
-      });
-
-      let responseText = "";
-      let hadError = false;
-      agent.subscribe((event: any) => {
-        if (event.type === "message_end" && event.message?.role === "assistant") {
-          if (event.message.stopReason === "error") {
-            hadError = true;
-          } else {
-            const text = extractText(event.message);
-            if (text) responseText = text;
-          }
-        }
-      });
-
-      await Promise.race([
-        agent.prompt(userMessage),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 60000)),
-      ]);
-
-      if (responseText && !hadError) return responseText;
-      if (hadError && i < models.length - 1) {
-        console.log(`[agent] Background LLM error on ${model.id}, falling back to ${models[i + 1].id}`);
-        continue;
-      }
-    } catch (err: any) {
-      if (i < models.length - 1) {
-        console.log(`[agent] Background LLM failed on ${model.id}: ${err.message?.substring(0, 100)} — falling back`);
-        continue;
-      }
-    }
-  }
-  return "";
 }
 
 /** Vision-capable model — Google Gemini (Z.AI doesn't support vision on Coding Lite) */
@@ -888,7 +832,13 @@ export async function promptWithHistory(
 
   // Append to log
   if (responseText) {
-    appendToLog(userId, message, responseText, platform);
+    // Don't log [SILENT] responses - they clutter conversation logs
+    const shouldLog = responseText.trim() !== "[SILENT]";
+    if (shouldLog) {
+      appendToLog(userId, message, responseText, platform);
+    } else {
+      console.log(`[agent] Skipping [SILENT] response for ${userId}`);
+    }
     
     // Track cost for user conversations (using actual model that responded)
     const inputTokens = estimateTokens(message) + estimateTokens(systemPrompt);
@@ -961,7 +911,7 @@ ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMem
 
 Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`;
     const promptText = `Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 8000)}`;
-    const memoryText = await backgroundLlmCall(sysPrompt, promptText);
+    const memoryText = await backgroundLlmCall({ systemPrompt: sysPrompt, userPrompt: promptText, label: "memory_extraction" });
 
     if (memoryText && memoryText.trim().length > 10) {
       saveMemory(userId, memoryText.trim());
@@ -1040,8 +990,7 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
   if (!recent.trim()) return;
 
   try {
-    const summaryText = await backgroundLlmCall(
-      `You summarize group chat lore. Output a concise bullet list (4-8 bullets). Focus on:
+    const systemPrompt = `You summarize group chat lore. Output a concise bullet list (4-8 bullets). Focus on:
 - recurring topics
 - key people and their roles
 - decisions or plans
@@ -1049,14 +998,19 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 
 Keep under 1200 characters. Be accurate. No speculation.
 
-${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
-      `Update the group summary using this recent context:\n\n${recent.slice(0, 8000)}`
-    );
+${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`;
 
-    if (summaryText && summaryText.trim().length > 20) {
-      saveGroupSummary(userId, summaryText.trim());
-      console.log(`[agent] Group summary saved for ${userId} (${summaryText.length} chars)`);
-      audit("memory_extraction", `Group summary saved for ${userId} (${summaryText.length} chars)`, { userId, summaryLength: summaryText.length });
+    const groupSummaryText = await backgroundLlmCall({
+      systemPrompt,
+      userPrompt: `Update group summary using this recent context:\n\n${recent.slice(0, 8000)}`,
+      label: "group_summary",
+      timeoutMs: 45_000,
+    });
+
+    if (groupSummaryText && groupSummaryText.trim().length > 20) {
+      saveGroupSummary(userId, groupSummaryText.trim());
+      console.log(`[agent] Group summary saved for ${userId} (${groupSummaryText.length} chars)`);
+      audit("memory_extraction", `Group summary saved for ${userId} (${groupSummaryText.length} chars)`, { userId, summaryLength: groupSummaryText.length });
     }
   } catch (err: any) {
     console.error(`[agent] Group summary LLM call failed:`, err.message);
@@ -1080,30 +1034,35 @@ async function compactContext(userId: string, platform: string): Promise<void> {
   const conversationText = toSummarize
     .map((msg: any) => {
       const role = msg.role === "user" ? "User" : "Pixel";
-      return `${role}: ${extractText(msg)}`;
+      const text = extractText(msg);
+      // Skip [SILENT] responses entirely
+      if (text.trim() === "[SILENT]") return null;
+      return `${role}: ${text}`;
     })
-    .filter((line: string) => line.length > 6) // Skip empty messages
+    .filter((line: string | null): line is string => line !== null && line.length > 6) // Skip null and very short messages
     .join("\n");
 
   if (!conversationText.trim()) {
-    // Nothing meaningful to summarize — just trim
-    saveCompactedContext(userId, "(No prior conversation content)", toKeep);
+    // Nothing meaningful to summarize — skip compaction this cycle
+    console.log(`[agent] Compaction skipped for ${userId} — conversation text empty after filtering (too many [SILENT] or short messages).`);
     return;
   }
 
   console.log(`[agent] Compacting context for ${userId}: summarizing ${toSummarize.length} messages`);
 
   try {
-    const summaryText = await backgroundLlmCall(
-      `You are a conversation summarizer. Summarize the following conversation into 3-5 concise bullet points. Focus on:
+    const summaryText = await backgroundLlmCall({
+      systemPrompt: `You are a conversation summarizer. Summarize the following conversation into 3-5 concise bullet points. Focus on:
 - Key topics discussed
 - Important facts about the user (name, preferences, requests)
 - Any commitments or follow-ups mentioned
 - The general tone and relationship
 
 Be concise. This summary will be used as context for future conversations.`,
-      `Summarize this conversation:\n\n${conversationText.slice(0, 16000)}`
-    );
+      userPrompt: `Summarize this conversation:\n\n${conversationText.slice(0, 16000)}`,
+      label: "compaction",
+      timeoutMs: 60_000,
+    });
 
     if (summaryText && summaryText.length > 20) {
       saveCompactedContext(userId, summaryText, toKeep);
