@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 34
+> Last updated: 2026-02-14 | Session: 35
 
 ---
 
@@ -45,6 +45,8 @@ Pixel is a **living digital artist and AI assistant** that exists across multipl
 ---
 
 ## 2. SESSION HISTORY {#session-history}
+
+### Session 35 (Clawstr graceful skip):** Fixed Clawstr errors by adding graceful skip for unconfigured Clawstr CLI. Changes: (A) **Configuration check** — `isClawstrConfigured()` function in `clawstr.ts` checks for `config.json` existence in `v2/data/clawstr/`. (B) **Graceful returns** — All Clawstr export functions (`getClawstrNotifications`, `getClawstrFeed`, `getClawstrPost`, `getClawstrSearch`, `postClawstr`, `replyClawstr`, `upvoteClawstr`) now check configuration and either return a helpful message ("Clawstr not configured. Run `clawstr init` first.") or throw an error for write operations. (C) **Heartbeat skip** — Heartbeat loop in `heartbeat.ts` detects "Clawstr not configured" message and returns early without logging an error, preventing repeated npm notice errors in digests. (D) **Root cause** — Clawstr CLI was throwing "No identity found" errors because `config.json` was missing. The fix prevents heartbeat from attempting to run Clawstr commands when not configured. Clawstr tools remain functional if a Stacker News account is set up in the future. Commit: `f4e1307`.
 
 ### Sessions 1-7: Infrastructure Fixes (V1, ALL COMMITTED)
 
@@ -896,7 +898,7 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 34 (2026-02-14)
+**Last session:** 35 (2026-02-14)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
 **V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Skills system LIVE** — 4 skills loaded into system prompt (revenue-awareness, image-generation-craft, resource-awareness, baking analogy). **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: GLM-4.5-air (~1.3s). Crash resilience: null message filtering, tool call integrity, global error handlers. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first — heartbeat and inner-life agents now have pixelTools. research_task supports `internal=true` for autonomous learning. **Voice transcription:** Telegram (voice, audio, video notes) and WhatsApp (voice) via Gemini 2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
@@ -1085,3 +1087,9 @@ git status && git log --oneline -5
   88. **determineContentType() needs generous matching + internal fallback:** The content classifier for inner-life injection was too narrow (only "research", "trends", "competition"). Broadened keywords and added fallback: internal jobs default to "learning" type when no pattern matches. Research should never silently vanish into "other".
   89. **Raise context limits for 128K models:** Increased the size caps for memory extraction, group summaries, compaction input, inner-life document storage, research wake-up prompts, and inner-life context injection. This reduces unnecessary truncation and takes advantage of GLM-4.7’s large context window. Tool-output caps remain for safety.
   90. **Alarm visibility fixes:** `list_alarms` now supports status filters (include fired/cancelled), pagination, and optional chatId filter. Added `list_all_alarms` to aggregate DM + indexed group alarms. Telegram `user_id` normalization prevents malformed IDs from creating “ghost” reminders.
+
+### Key Decisions (Session 35)
+
+  91. **Graceful degradation over repeated errors:** Clawstr CLI checks were failing every 120 minutes with "No identity found" because `config.json` was missing. Instead of repeatedly logging errors in digests, the system now detects unconfigured Clawstr once and skips all future checks silently until configured. This reduces log noise and keeps monitoring focused on real issues.
+  92. **Configuration check as first defense:** `isClawstrConfigured()` checks for file existence before any Docker command execution. This prevents spawning Node containers for commands that will definitely fail, saving resources and reducing surface area for errors.
+  93. **Read-only graceful, write-only strict:** Read-only Clawstr functions (`getClawstrNotifications`, `getClawstrFeed`, `getClawstrSearch`, `getClawstrPost`) return a helpful message when not configured. Write functions (`postClawstr`, `replyClawstr`, `upvoteClawstr`) throw an error to prevent silent failures when a user explicitly tries to use a missing integration.
