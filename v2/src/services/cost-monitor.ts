@@ -2,6 +2,10 @@
  * Cost Monitor - Track AI model usage and estimate costs
  * Helps optimize spending across model tiers
  * PERSISTS to disk so data survives reboots
+ *
+ * Models tracked:
+ * - Gemini: Free tier + paid tiers (per-call pricing)
+ * - GLM: Flat-rate Coding Lite plan ($84/yr, effectively $0 per call)
  */
 
 import { audit } from "./audit.js";
@@ -18,10 +22,17 @@ interface CostEntry {
 
 // Pricing per 1M tokens (from Google AI pricing Feb 2026)
 const PRICING: Record<string, { input: number; output: number; free: boolean }> = {
+  // Gemini models
   'gemini-2.0-flash': { input: 0, output: 0, free: true },  // Free tier
   'gemini-2.0-flash-lite': { input: 0.07, output: 0.30, free: false },
   'gemini-2.5-flash': { input: 0.30, output: 2.50, free: false },
   'gemini-3-flash-preview': { input: 0.50, output: 3.00, free: false },  // Estimated
+  // GLM models (flat-rate Coding Lite plan - $84/yr, effectively $0 per call)
+  'glm-4.5': { input: 0, output: 0, free: true },
+  'glm-4.5-air': { input: 0, output: 0, free: true },
+  'glm-4.6': { input: 0, output: 0, free: true },
+  'glm-4.7': { input: 0, output: 0, free: true },
+  'glm-5': { input: 0, output: 0, free: true },
 };
 
 const DATA_DIR = process.env.DATA_DIR ?? '/app/data';
@@ -79,11 +90,12 @@ class CostMonitor {
   }
   
   recordUsage(model: string, inputTokens: number, outputTokens: number, task: CostEntry['task']) {
-    // Normalize model name
+    // Normalize model name (Gemini only - GLM models pass through unchanged)
     const normalizedModel = model.includes('gemini-3') ? 'gemini-3-flash-preview' :
                            model.includes('gemini-2.5') ? 'gemini-2.5-flash' :
                            model.includes('gemini-2.0-flash-lite') ? 'gemini-2.0-flash-lite' :
-                           model.includes('gemini-2.0') ? 'gemini-2.0-flash' : model;
+                           model.includes('gemini-2.0') ? 'gemini-2.0-flash' :
+                           model.startsWith('glm-') ? model : model;  // GLM models: pass through unchanged
     
     this.entries.push({
       model: normalizedModel,
