@@ -32,6 +32,7 @@ import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr, isSelfPost } from "./clawstr.js";
 import { extractImageUrls, fetchImages } from "./vision.js";
 import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
+import { pixelTools } from "./tools.js";
 
 // ============================================================
 // Configuration
@@ -608,7 +609,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
       systemPrompt,
       model: getSimpleModel(),
       thinkingLevel: "off",
-      tools: [],
+      tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
   });

@@ -31,6 +31,7 @@ import { getUserStats } from "./users.js";
 import { audit } from "./audit.js";
 import { enqueueJob } from "./jobs.js";
 import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } from "./memory.js";
+import { pixelTools } from "./tools.js";
 
 
 // ============================================================
@@ -375,7 +376,7 @@ async function llmCall(systemPrompt: string, userPrompt: string): Promise<string
       systemPrompt,
       model: getSimpleModel(),
       thinkingLevel: "off",
-      tools: [],
+      tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
   });
