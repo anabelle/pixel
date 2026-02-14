@@ -128,14 +128,18 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
-  if (provider === "zai") return makeZaiModel(modelId, true);
+  if (provider === "zai") {
+    return makeZaiModel(modelId, true);
+  }
   return getModel(provider as any, modelId);
 }
 
 /** Get the fast model for background tasks — GLM-4.5-air (~1.3s, no reasoning overhead) */
 function getSimpleModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "zai") return makeZaiModel("glm-4.5-air", false);
+  if (provider === "zai") {
+    return makeZaiModel("glm-4.5-air", false);
+  }
   return getModel("google" as any, "gemini-2.0-flash");
 }
 
@@ -648,7 +652,9 @@ export async function promptWithHistory(
       errorStr.includes("quota") ||
       errorStr.includes("Insufficient balance") ||
       errorStr.includes("subscription plan") ||
-      errorStr.includes("rate limit")
+      errorStr.includes("rate limit") ||
+      errorStr.includes("Usage limit") ||
+      errorStr.includes("1308")
     );
     if (isRetryable && attempt < MAX_RETRIES) {
       console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}, cascading to next fallback`);

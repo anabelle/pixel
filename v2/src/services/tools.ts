@@ -2062,6 +2062,46 @@ const introspectTool: AgentTool<typeof introspectSchema> = {
   },
 };
 
+// ─── SEND VOICE ──────────────────────────────────────────────
+
+import { textToSpeech } from "./tts.js";
+import { sendTelegramVoice } from "../connectors/telegram.js";
+
+const sendVoiceSchema = Type.Object({
+  text: Type.String({ description: "The text to speak. Natural speech only — no markdown, no code blocks. Under 1500 chars." }),
+  chat_id: Type.Optional(Type.String({ description: "Telegram chat ID to send to. Omit to use current conversation. Use this to speak in any chat you know — groups, DMs, owner." })),
+});
+
+const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
+  name: "send_voice",
+  label: "Send Voice Message",
+  description: "Your voice — synthesize speech and send it as a voice message. Works on Telegram (any chat you can reach). Auto-detects language (es/en/fr/pt/ja/zh). Use it to reply with voice, drop a note in a group, send Ana a voice update, or speak during autonomous cycles. You decide when to use your voice.",
+  parameters: sendVoiceSchema,
+  execute: async (_id, { text, chat_id }) => {
+    const ctx = getToolContext();
+    const targetChat = chat_id || ctx.chatId;
+    if (!targetChat) {
+      auditToolUse("send_voice", { text: text.slice(0, 80) }, { error: "no_target" });
+      return { content: [{ type: "text" as const, text: "No target chat — pass chat_id or use during a conversation." }] };
+    }
+
+    const buffer = await textToSpeech(text);
+    if (!buffer) {
+      auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat }, { error: "tts_failed" });
+      return { content: [{ type: "text" as const, text: "TTS failed. Voice not sent." }] };
+    }
+
+    const sent = await sendTelegramVoice(targetChat, buffer);
+    if (!sent) {
+      auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat }, { error: "send_failed" });
+      return { content: [{ type: "text" as const, text: "Generated audio but Telegram send failed." }] };
+    }
+
+    auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, chars: text.length, bytes: buffer.byteLength }, { sent: true });
+    return { content: [{ type: "text" as const, text: `Voice sent to ${targetChat} (${text.length} chars → ${buffer.byteLength} bytes).` }] };
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -2105,6 +2145,7 @@ export const pixelTools = [
   sshTool,
   wpCliTool,
   introspectTool,
+  sendVoiceTool,
 ];
 
 // Map of tool names to their implementations

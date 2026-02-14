@@ -153,6 +153,24 @@ export async function notifyOwner(text: string, parseMode?: "Markdown" | "HTML")
   return sendTelegramMessage(OWNER_CHAT_ID, text, parseMode);
 }
 
+/**
+ * Send a voice message (OGG/Opus buffer) to a Telegram chat.
+ * Used by the send_voice tool so Pixel can speak on demand.
+ */
+export async function sendTelegramVoice(
+  chatId: string | number,
+  oggBuffer: Buffer
+): Promise<boolean> {
+  if (!botInstance) return false;
+  try {
+    await botInstance.api.sendVoice(chatId, new InputFile(oggBuffer, "voice.ogg"));
+    return true;
+  } catch (err: any) {
+    console.error(`[telegram] Failed to send voice to ${chatId}:`, err.message);
+    return false;
+  }
+}
+
 /** Check if proactive messaging is available */
 export function canNotify(): boolean {
   return botInstance !== null && OWNER_CHAT_ID !== "";
