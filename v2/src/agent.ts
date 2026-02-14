@@ -88,7 +88,7 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 - When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.
 - You have long-term memory tools (memory_save, memory_search, memory_update, memory_delete). Use memory_save when you learn important facts worth remembering across sessions. Your memories above were auto-retrieved — use memory_search for deeper recall.`;
 
-  if (userId === "syntropy") {
+  if (userId === "syntropy" || userId === "syntropy-admin") {
     prompt += `\n\n## Syntropy context
 - The user is Syntropy, the oversoul and infrastructure orchestrator for Pixel.
 - You may speak Spanish or English. Keep responses concise and operational.
