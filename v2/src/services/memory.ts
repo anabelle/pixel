@@ -323,6 +323,7 @@ export async function memorySearch(
   if (!db || !rawSql) throw new Error("Memory service not initialized");
 
   const { userId, platform, type, topK = DEFAULT_TOP_K, includeExpired = false } = options;
+  const safeTopK = Math.max(1, Math.min(topK, 200));
 
   // Generate query embedding (RETRIEVAL_QUERY taskType for search)
   const queryEmbedding = await generateEmbedding(query, "RETRIEVAL_QUERY");
@@ -352,7 +353,7 @@ export async function memorySearch(
     FROM scored
     WHERE vector_score >= ${SIMILARITY_THRESHOLD}
     ORDER BY final_score DESC
-    LIMIT ${topK}
+    LIMIT ${safeTopK}
   `;
 
   // Increment access count for retrieved memories
@@ -472,7 +473,7 @@ export async function getRelevantMemories(
     if (conversationHint) {
       const relevantFacts = await memorySearch(conversationHint, {
         userId,
-        topK: MAX_PROMPT_MEMORIES - parts.length,
+        topK: Math.max(0, MAX_PROMPT_MEMORIES - parts.length),
       });
 
       // Filter out memories we already included
@@ -552,7 +553,7 @@ export async function listMemories(options: {
     platform,
   } = options;
 
-  const safeLimit = Math.min(Math.max(limit, 1), 200);
+  const safeLimit = Math.max(1, Math.min(limit ?? DEFAULT_TOP_K, 200));
 
   const rows = await rawSql`
     SELECT id, content, type, user_id, platform, source, access_count, metadata, valid_until, created_at, updated_at
