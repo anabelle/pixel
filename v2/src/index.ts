@@ -26,6 +26,7 @@ import { l402 } from "./services/l402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
+import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
 import { startJobs, enqueueJob, getRecentJobs, stopJobs, markRunningJobsFailed } from "./services/jobs.js";
 import { costMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
@@ -153,6 +154,7 @@ app.get("/health", (c) => {
     heartbeat: getHeartbeatStatus(),
     innerLife: getInnerLifeStatus(),
     digest: getDigestStatus(),
+    outreach: getOutreachStatus(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -508,6 +510,36 @@ app.get("/api/skills", (c) => {
   });
 });
 
+/** Pixel's recent Nostr posts (public) */
+app.get("/api/posts", (c) => {
+  const limitRaw = parseInt(c.req.query("limit") ?? "20", 10);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 20, 1), 50);
+  const postsPath = join(DATA_DIR, "nostr-posts.jsonl");
+
+  if (!existsSync(postsPath)) {
+    return c.json({ posts: [], count: 0 });
+  }
+
+  try {
+    const lines = readFileSync(postsPath, "utf-8").split("\n").filter(Boolean);
+    const parsed = lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { ts: number; content: string; type: string };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { ts: number; content: string; type: string } => !!entry);
+
+    // Return newest first, capped to limit
+    const posts = parsed.slice(-limit).reverse();
+    return c.json({ posts, count: posts.length, total: parsed.length });
+  } catch {
+    return c.json({ posts: [], count: 0 });
+  }
+});
+
 /** Trending Nostr signals from heartbeat */
 app.get("/api/trends", (c) => {
   const trends = readJsonFile<Record<string, unknown>>(join(DATA_DIR, "nostr-trends.json"));
@@ -789,6 +821,9 @@ async function boot() {
   // Start digest/notification service
   startDigest();
 
+  // Start proactive outreach (owner pings)
+  startOutreach();
+
   // Start job runner
   startJobs();
 
@@ -822,6 +857,7 @@ function gracefulShutdown(signal: string): void {
   stopJobs();
   stopHeartbeat();
   stopDigest();
+  stopOutreach();
 
   // Mark any in-flight jobs as failed so they don't get stuck
   try {

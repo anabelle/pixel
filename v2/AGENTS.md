@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-11 | Session: 26
+> Last updated: 2026-02-13 | Session: 27
 
 ---
 
@@ -139,10 +139,12 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 26 (Autonomy + engagement rebuild):** Rebuilt Nostr engagement to V1 parity and beyond. Added Primal trending feed integration (24h + most-zapped) with jittered queue and quote-repost chance. Added Nostr notifications loop (replies + reactions), NIP-57 zap thanks, art discovery follow loop, low-quality unfollow loop, art trend report, and community spotlight. Added reaction + image ingestion in Telegram and vision support across Telegram/Nostr/Clawstr. Added group lore summaries and dynamic context injection. Added job system (`/api/job`, `/api/jobs`, daily ecosystem report). Added revenue-goal loop (5,000 sats/week) to scale engagement. Added idea garden (V1-style) with auto-harvest into projects and weekly idea jobs. Added host stability tooling: earlyoom, log rotation, +2GB swap, daily disk monitor, and raised web memory. Verified reboot stability.
 
-**V2 file inventory (15 source files, ~3200 lines):**
+**Session 27 (Nostr feed + proactive outreach):** Two features shipped and deployed. (A) **Nostr feed on landing page** — added `GET /api/posts` endpoint to V2 (`index.ts`) that reads `nostr-posts.jsonl` and returns newest-first posts with `?limit=N` (default 20, max 50). Created `NostrFeed.tsx` client component for landing page that polls every 60 seconds, shows posts with color-coded type badges (pulse/art/spotlight/repost), relative timestamps, and link to Pixel's Primal profile. Added i18n translations for all 4 languages (en, es, fr, ja). Integrated between "Find Pixel" and "Live Canvas Stats" sections. (B) **Proactive outreach service** (`outreach.ts`, ~410 lines) — Pixel autonomously decides whether to message its owner (Ana) on Telegram. Uses LLM judgment with full inner life context (reflections, learnings, ideas, evolution), owner memory, recent conversation history, and system signals (heartbeat, revenue, users). Runs every 4 hours with 5-minute startup delay. Safety: 6-hour minimum gap between pings (1 hour for urgency ≥85), daily limit of 3, SHA256 dedup of recent messages. Logs decisions to owner's conversation JSONL. Wired into `index.ts` boot/shutdown and `/health` endpoint. Added `outreach_decision` audit type. Both containers rebuilt and verified healthy. Landing submodule commit: `24d939f`.
+
+**V2 file inventory (16 source files, ~3600 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~400 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking index |
+| `src/index.ts` | ~880 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking index, outreach startup |
 | `src/agent.ts` | ~345 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring |
 | `src/conversations.ts` | ~240 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/connectors/telegram.ts` | ~110 | grammY bot with persistent memory |
@@ -156,6 +158,7 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/l402.ts` | ~302 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/services/inner-life.ts` | ~558 | Autonomous self-reflection, learning extraction, ideation, identity evolution |
 | `src/services/tools.ts` | ~366 | 7 agent tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch |
+| `src/services/outreach.ts` | ~410 | Proactive owner outreach — LLM-judged Telegram pings with cooldowns, dedup, daily limits |
 | `src/db.ts` | ~77 | Drizzle schema (users, revenue, canvas, conversation_log) |
 
 **Key realizations (from earlier sessions, preserved):**
@@ -861,12 +864,12 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 24 (2026-02-10)
-**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats). Landing page fully rewritten for V2 (no more Syntropy components).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running with timeout/logging fix (reflection, learning, ideation, evolution). **Tools deployed — Pixel has hands** (read, write, edit, bash, health, logs, web fetch).
+**Last session:** 27 (2026-02-13)
+**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058 pixels, 80,318 sats). Landing page shows V2 identity + Nostr feed.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory extraction wired. Inner life system running. Tools deployed. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Externally accessible:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
-**Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8), verify inner life files are being written (wait for cycle 2+)
+**Next action:** x402 revenue door (USDC on Base), GitHub issue tracking (overdue since Session 8)
 
 | Component | Status |
 |-----------|--------|
@@ -888,6 +891,7 @@ git status && git log --oneline -5
 | v2/src/services/tools.ts | DONE - 7 tools: read_file, write_file, edit_file, bash, check_health, read_logs, web_fetch. Deployed and verified. |
 | v2/src/services/x402.ts | RESEARCHED - Integration plan complete, needs @x402/hono deps + Base wallet |
 | v2/src/services/users.ts | DONE - User tracking: trackUser() upsert, getUserStats(), wired into /api/stats |
+| v2/src/services/outreach.ts | DONE - Proactive owner outreach: LLM-judged Telegram pings, 4h cycle, cooldowns, dedup, daily limits |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving at ln.pixel.xx.kg) |
 | v2/src/db.ts (Drizzle schema) | DONE - users, revenue, canvas_pixels, conversation_log tables |
 | v2/Dockerfile | DONE - Multi-stage bun:1-alpine, zero patches, bash+curl installed in runtime |
@@ -970,3 +974,9 @@ git status && git log --oneline -5
 47. **Per-phase try/catch over monolithic:** Each inner life phase (LEARN, REFLECT, IDEATE, EVOLVE) now has its own try/catch so one failing phase doesn't block others. Each phase logs success/failure explicitly.
 48. **LLM call timeout (60s):** `llmCall()` uses `Promise.race()` with a 60-second timeout. Silent hangs were the root cause of inner life not writing files — the REFLECT phase's LLM call hung indefinitely with no error logging.
 49. **Landing page is V2 now:** No more Syntropy-era content. The landing page at `pixel.xx.kg` fully reflects V2 identity: capabilities, platforms, revenue model. 8 stale V1 files deleted. Syntropy volume mounts removed from docker-compose.
+
+### Key Decisions (Session 27)
+
+50. **Nostr posts via local JSONL:** Used existing `nostr-posts.jsonl` data rather than Primal Cache API for simplicity. The data is already written by heartbeat — no external dependency needed.
+51. **Outreach is judgment, not digest:** The proactive outreach service uses full LLM judgment to decide if something is worth interrupting the owner. It's explicitly NOT a periodic status report — the digest service already handles that. Outreach is for insights, issues, and opportunities that merit human attention.
+52. **Outreach safety stack:** 6-hour cooldown (1 hour for urgent), 3/day limit, SHA256 message dedup (last 50), and the LLM's own `shouldNotify: false` judgment. Multiple layers prevent notification spam.

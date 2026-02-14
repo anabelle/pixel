@@ -65,6 +65,7 @@ export type AuditType =
   | "error"
   // Notifications
   | "notification_sent"
+  | "outreach_decision"
   // Reminders
   | "reminder"
   // Memory
