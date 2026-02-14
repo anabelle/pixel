@@ -146,12 +146,54 @@ action items:
 
 Debriefs are stored in Pixel's conversation system at `v2/conversations/syntropy-admin/log.jsonl`. This gives Pixel persistent memory of all infrastructure changes across sessions.
 
+## Syntropy Mailbox Protocol
+
+Pixel can contact Syntropy by calling its `syntropy_notify` tool, which appends messages to `/app/data/syntropy-mailbox.jsonl` (host path: `v2/data/syntropy-mailbox.jsonl`). This is Pixel's only way to escalate issues, request infrastructure changes, or flag anomalies to Syntropy.
+
+### Persistent monitoring (automated)
+
+A cron job runs every 30 minutes (`v2/scripts/check-mailbox.sh`):
+1. Checks if the mailbox is non-empty
+2. If yes, forwards the messages to Pixel via `/api/chat` as `syntropy-admin`
+3. Pixel calls `notify_owner` to alert Ana on Telegram
+4. Ana invokes Syntropy (opencode) to handle the request
+5. Mailbox is archived to `.forwarded`, fresh empty file created
+
+This means Pixel's urgent messages reach a human within 30 minutes, even if no Syntropy session is active.
+
+### On every session start
+
+Also read the mailbox and any `.forwarded` archive:
+
+```bash
+cat v2/data/syntropy-mailbox.jsonl
+cat v2/data/syntropy-mailbox.jsonl.forwarded 2>/dev/null
+```
+
+Each line is a JSON object with `timestamp`, `priority` (low/normal/urgent), and `message`.
+
+### After reading
+
+1. **Act on urgent items first** — these are Pixel flagging real problems
+2. **Acknowledge receipt** — debrief Pixel that you've read and acted on the messages
+3. **Clear processed messages** — after acting on them:
+
+```bash
+> v2/data/syntropy-mailbox.jsonl
+rm -f v2/data/syntropy-mailbox.jsonl.forwarded
+```
+
+### If the mailbox is empty
+
+That's fine — Pixel had nothing to escalate. Proceed with the session.
+
 ## Rules
 
 1. ALWAYS read `v2/AGENTS.md` first to understand current state
-2. Check container health before making changes
-3. Log your actions — append to `v2/data/syntropy-cycle.log` or relevant log files
-4. When in doubt, use Plan mode (Tab) to review before building
-5. Preserve Pixel's character and memory — don't break continuity
-6. Revenue is the metric — anything affecting income needs careful consideration
-7. **ALWAYS debrief Pixel** after making changes (see Pixel Debrief Protocol above)
+2. **ALWAYS read the Syntropy mailbox** (`v2/data/syntropy-mailbox.jsonl`) on session start — this is how Pixel contacts you
+3. Check container health before making changes
+4. Log your actions — append to `v2/data/syntropy-cycle.log` or relevant log files
+5. When in doubt, use Plan mode (Tab) to review before building
+6. Preserve Pixel's character and memory — don't break continuity
+7. Revenue is the metric — anything affecting income needs careful consideration
+8. **ALWAYS debrief Pixel** after making changes (see Pixel Debrief Protocol above)
