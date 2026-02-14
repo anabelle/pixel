@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getSimpleModel, extractText } from "../agent.js";
 import { pixelTools } from "./tools.js";
@@ -6,6 +6,7 @@ import { audit } from "./audit.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage } from "../connectors/whatsapp.js";
 import { sendNostrDm } from "../connectors/nostr.js";
+import { join } from "path";
 
 type JobStatus = "pending" | "running" | "completed" | "failed";
 
@@ -39,6 +40,7 @@ export interface JobCallback {
 const JOBS_PATH = "/app/data/jobs.json";
 const JOB_LOG_PATH = "/app/data/jobs.jsonl";
 const JOB_REPORT_PATH = "/app/data/jobs-report.md";
+const DATA_DIR = "/app/data";
 
 const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per job
 
@@ -89,6 +91,99 @@ function logJob(entry: JobEntry): void {
   } catch (err: any) {
     console.error("[jobs] Failed to write job log:", err.message);
   }
+}
+
+// ============================================================
+// Inner-Life Integration — inject job results into Pixel's living memory
+// ============================================================
+
+function readInnerLifeDoc(filename: string): string {
+  const path = join(DATA_DIR, filename);
+  if (!existsSync(path)) return "";
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function writeInnerLifeDoc(filename: string, content: string): void {
+  const path = join(DATA_DIR, filename);
+  try {
+    writeFileSync(path, content, "utf-8");
+    console.log(`[jobs] Updated inner-life ${filename} (${content.length} chars)`);
+  } catch (err: any) {
+    console.error(`[jobs] Failed to write inner-life ${filename}:`, err.message);
+  }
+}
+
+function determineContentType(label: string, output: string): "learning" | "idea" | "reflection" | "other" {
+  const lowerLabel = label.toLowerCase();
+  const lowerOutput = output.toLowerCase();
+
+  if (lowerLabel.includes("research") || lowerLabel.includes("investigación") ||
+      lowerLabel.includes("tendencias") || lowerLabel.includes("trends") ||
+      lowerLabel.includes("competencia") || lowerLabel.includes("competition") ||
+      lowerOutput.includes("hallazgos") || lowerOutput.includes("key findings")) {
+    return "learning";
+  }
+
+  if (lowerLabel.includes("idea") || lowerLabel.includes("ideación") ||
+      lowerLabel.includes("brainstorm") || lowerLabel.includes("proyecto") ||
+      lowerLabel.includes("feature") || lowerLabel.includes("nuevo")) {
+    return "idea";
+  }
+
+  if (lowerLabel.includes("reflexión") || lowerLabel.includes("reflexionar") ||
+      lowerLabel.includes("análisis") || lowerLabel.includes("evaluar") ||
+      lowerLabel.includes("auto-auditoría") || lowerOutput.includes("mi progreso")) {
+    return "reflection";
+  }
+
+  return "other";
+}
+
+function injectIntoInnerLife(job: JobEntry): void {
+  if (!job.output || job.status !== "completed") return;
+
+  const contentType = determineContentType(job.callbackLabel ?? "", job.output);
+
+  if (contentType === "other") {
+    console.log(`[jobs] Content type unclear for job ${job.id}, skipping inner-life injection`);
+    return;
+  }
+
+  const filename = `${contentType}s.md`;
+  const existing = readInnerLifeDoc(filename);
+  const timestamp = new Date().toISOString();
+  const label = job.callbackLabel ?? "Sin etiqueta";
+
+  const newEntry = [
+    `## ${label} (${timestamp})`,
+    ``,
+    job.output.trim(),
+    ``,
+    "---",
+    ``,
+  ].join("\n");
+
+  const updated = newEntry + existing;
+
+  // Limit size (same as inner-life)
+  const MAX_SIZE = contentType === "learning" ? 2000 : 2000;
+  if (updated.length > MAX_SIZE) {
+    const trimmed = updated.slice(0, MAX_SIZE);
+    console.log(`[jobs] Trimmed ${filename} to ${MAX_SIZE} chars`);
+    writeInnerLifeDoc(filename, trimmed);
+  } else {
+    writeInnerLifeDoc(filename, updated);
+  }
+
+  audit("tool_use", `Internal job result injected into inner-life: ${filename}`, {
+    id: job.id,
+    contentType,
+    outputLength: job.output.length
+  });
 }
 
 function appendReport(text: string): void {
@@ -243,6 +338,10 @@ async function runNextJob(): Promise<void> {
   } finally {
     running = false;
     currentJobId = null;
+    // For internal jobs: inject results into Pixel's inner-life (learnings.md, ideas.md, reflections.md)
+    if (next.internal && next.status === "completed") {
+      injectIntoInnerLife(next);
+    }
     // Deliver result to originating chat if callback was set
     await deliverJobResult(next).catch((err) =>
       console.error("[jobs] deliverJobResult error:", err.message)

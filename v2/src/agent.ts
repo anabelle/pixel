@@ -508,10 +508,16 @@ export async function promptWithHistory(
   
   const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 
-  // Select model: DM override uses getDmModel(), background uses getSimpleModel(), default uses getPixelModel()
-  const selectedModel = options.modelOverride === "dm" ? getDmModel()
+  // Select model: vision-capable model when images present, DM override, background, or default
+  const hasImages = images && images.length > 0;
+  const selectedModel = hasImages ? getVisionModel()
+    : options.modelOverride === "dm" ? getDmModel()
     : options.modelOverride === "background" ? getSimpleModel()
     : getPixelModel();
+
+  if (hasImages) {
+    console.log(`[agent] Vision request from ${userId} — using Gemini for image analysis`);
+  }
 
   const agent = new Agent({
     initialState: {
@@ -956,4 +962,4 @@ export async function createPixelAgent(options: PixelAgentOptions): Promise<Agen
   return agent;
 }
 
-export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel };
+export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVisionModel };
