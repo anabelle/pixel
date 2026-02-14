@@ -145,23 +145,25 @@ Human's critical intervention: "you are not including not even one way you can h
 
 **Session 29 (Brain transplant — GLM-4.7):** Upgraded Pixel's primary intelligence from Google Gemini 3 Flash to Z.AI GLM-4.7 (128K context, reasoning model with function calling). Changes: (A) **Z.AI Coding Lite plan** — Ana subscribed ($84/yr, valid to 2027-02-14). GLM-5 not included in Lite plan; GLM-4.7 is the best available. Coding endpoint: `https://api.z.ai/api/coding/paas/v4`. (B) **Model architecture in agent.ts** — `getPixelModel()` now constructs Z.AI model objects directly (not in pi-ai's registry). `getSimpleModel()` hardcoded to Google Gemini 2.0 Flash (free tier, always). `getDmModel()` delegates to `getPixelModel()` when provider=zai. `getFallbackModel()` returns Gemini 3 Flash. New `getSecondFallbackModel()` returns Gemini 2.5 Flash. (C) **Cascading fallback** — retry logic expanded from 1 retry to 2: primary (GLM-4.7) → fallback1 (Gemini 3 Flash) → fallback2 (Gemini 2.5 Flash). Now catches Z.AI-specific errors ("Insufficient balance", "subscription plan") in addition to 429/quota. (D) **resolveApiKey()** — added `case "zai": return process.env.ZAI_API_KEY` in all 5 files: `agent.ts`, `outreach.ts`, `heartbeat.ts`, `jobs.ts`, `inner-life.ts`. (E) **docker-compose.yml** — `AI_PROVIDER=zai`, `AI_MODEL=glm-4.7`. `ZAI_API_KEY` provided via `env_file: ../.env` (not explicit environment override, which would clobber). (F) **Verified end-to-end** — GLM-4.7 responds with tool calling (check_health), cost monitor shows `glm-4.7 (PAID)`. Response quality notably improved over Gemini: more terse, more in-character ("entropy denied"). (G) **Session 29 continued — Model split optimization** — Extracted `makeZaiModel()` DRY factory, `getSimpleModel()` changed to GLM-4.5-air (~1.3s latency, no reasoning) for background tasks (heartbeat, inner-life, jobs). `getFallbackModel()` now 3-level cascade: Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash. Benchmarks: GLM-4.5-air (~1.3s, 0 reasoning tokens), GLM-4.6 (~10s, 1018 reasoning), GLM-4.7 (~4.5s, 248 reasoning). (H) **Z.AI vision/image investigation** — Vision NOT available on Coding Lite plan: `image_url` content returns "Invalid API parameter" (error 1210), CogView returns "Insufficient balance" (error 1113). Old `glm-4v` models don't exist on international API. Google Gemini handles vision via $10/mo free credits. Opencode configured to use `zai-coding-plan` provider (`api.z.ai/api/coding/paas/v4`). Commit: `d2d66d1`.
 
-**V2 file inventory (23 source files, ~13,067 lines):**
+**Session 30 (Tools philosophy shift + audio transcription):** Fundamental shift in how Pixel uses tools, plus voice message support. Changes: (A) **Tools are Pixel's toolbelt first** — @hey_sloth's correction: all 40 tools exist FIRST for Pixel's autonomy, learning, and evolution — user-facing results are side effects. (B) **research_task internal mode** — added `internal` parameter; when `internal=true`, jobs skip user notification and inject results into inner-life files (learnings.md, ideas.md, reflections.md) via `injectIntoInnerLife()` and `determineContentType()` in `jobs.ts`. Pixel "wakes up" with new knowledge. (C) **pixelTools enabled for autonomous agents** — heartbeat post generation agent and inner-life `llmCall()` changed from `tools: []` to `tools: pixelTools`. Pixel can now proactively use web_search, web_fetch, research_task, etc. during autonomous cycles. Zap topic classifier intentionally kept at `tools: []` (single-purpose). (D) **Voice message transcription** — new `audio.ts` service (~132 lines) transcribes voice messages using Gemini 2.0 Flash's native audio understanding (REST API direct, no ffmpeg). Supports all major audio MIME types (ogg, opus, mp3, mp4, wav, webm, flac, aac). Telegram handler covers voice messages, audio files, and video notes with full group chat support (~250 lines added). WhatsApp handler covers audio messages in DMs (~45 lines added). Transcribed text feeds into `promptWithHistory()` so Pixel responds naturally to voice. (E) **WhatsApp logged out** — connection status 401 during this session; needs re-pairing (delete auth dir and restart). Commits: `980685d`, `b007303`, `f4e0a23`, `a7205b4`.
+
+**V2 file inventory (25 source files, ~13,633 lines):**
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/index.ts` | ~884 | Boot, Hono HTTP, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId, /health, /api/invoice, /api/wallet, /api/revenue, /api/stats, /api/job, /api/jobs, DB auto-init, user tracking, outreach startup |
 | `src/agent.ts` | ~923 | Pi agent wrapper, promptWithHistory(), extractText(), context compaction, periodic memory extraction, tools wiring, Syntropy context for userId syntropy/syntropy-admin |
 | `src/conversations.ts` | ~280 | JSONL persistence, context compaction (summarize old messages via LLM) |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
-| `src/connectors/telegram.ts` | ~563 | grammY bot with persistent memory, image/vision support, group lore, notify_owner |
+| `src/connectors/telegram.ts` | ~816 | grammY bot with persistent memory, image/vision support, group lore, notify_owner, voice/audio/video_note transcription |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
-| `src/connectors/whatsapp.ts` | ~192 | Baileys bot with pairing code auth |
+| `src/connectors/whatsapp.ts` | ~239 | Baileys bot with pairing code auth, voice message transcription |
 | `src/services/audit.ts` | ~257 | Audit trail — tool use, revenue, errors, structured JSONL logging |
 | `src/services/clawstr.ts` | ~129 | Clawstr (Stacker News) API integration — feed, post, reply, notifications |
 | `src/services/cost-monitor.ts` | ~246 | LLM cost tracking and budget monitoring |
 | `src/services/digest.ts` | ~198 | Periodic digest generation for owner |
 | `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 announcement + Lightning payment flow + revenue recording |
-| `src/services/heartbeat.ts` | ~2056 | Initiative engine — topic/mood rotation, Nostr engagement, Clawstr notifications, discovery (Primal trending), zap thanks, follow/unfollow loops, art reports, community spotlight, revenue-goal loop, live canvas stats |
-| `src/services/inner-life.ts` | ~1062 | Autonomous self-reflection, learning extraction, ideation, identity evolution |
+| `src/services/heartbeat.ts` | ~2059 | Initiative engine — topic/mood rotation, Nostr engagement, Clawstr notifications, discovery (Primal trending), zap thanks, follow/unfollow loops, art reports, community spotlight, revenue-goal loop, live canvas stats. Has pixelTools for proactive tool use. |
+| `src/services/inner-life.ts` | ~1065 | Autonomous self-reflection, learning extraction, ideation, identity evolution. Has pixelTools for proactive tool use. |
 | `src/services/jobs.ts` | ~349 | Job system — scheduled tasks, ecosystem reports, idea garden |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware — preimage verification, invoice challenge, revenue recording |
 | `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache, sats/millisats fix |
@@ -175,6 +177,7 @@ Human's critical intervention: "you are not including not even one way you can h
 | `src/services/tools.ts` | ~2148 | 40 agent tools: filesystem (read/write/edit), bash, web (fetch/search/research), git (status/diff/log/show/branch/clone/pull/push/commit), ssh, wp (WordPress), clawstr (feed/post/reply/notifications/upvote/search), alarms (schedule/list/cancel/modify), chat (list/find), memory (save/search/update/delete), notify_owner, syntropy_notify, introspect, check_health, read_logs |
 | `src/services/users.ts` | ~124 | User tracking — initUsers(), trackUser() upsert, getUserStats() |
 | `src/services/vision.ts` | ~46 | Image URL extraction and fetching for multi-modal input |
+| `src/services/audio.ts` | ~132 | Audio transcription via Gemini 2.0 Flash REST API — voice messages, audio files, video notes |
 
 **Key realizations (from earlier sessions, preserved):**
 1. Clawi is making millions by wrapping OpenClaw in a sign-up page + WhatsApp connector. No ERC-8004, no DVMs, no x402. Just normie access.
@@ -886,7 +889,7 @@ git status && git log --oneline -5
 
 **Last session:** 30 (2026-02-14)
 **V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: Gemini 2.0 Flash (free). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first, then for users. research_task supports `internal=true` for autonomous learning without user notification.
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: GLM-4.5-air (~1.3s). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor). **Philosophical shift:** Tools are Pixel's toolbelt first — heartbeat and inner-life agents now have pixelTools. research_task supports `internal=true` for autonomous learning. **Voice transcription:** Telegram (voice, audio, video notes) and WhatsApp (voice) via Gemini 2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** 60% (31GB free)
 **RAM:** 2.7GB used / 3.8GB total
@@ -896,22 +899,22 @@ git status && git log --oneline -5
 
 | Component | Status |
 |-----------|--------|
-| v2/AGENTS.md | DONE — updated session 28 |
+| v2/AGENTS.md | DONE — updated session 30 |
 | GitHub Issues/Labels/Milestones | NOT STARTED |
 | v2/src/index.ts (core boot + HTTP API) | DONE — Hono server, /health, /api/chat, /api/chat/premium (L402), /api/generate (L402), /api/posts, /api/conversations/:userId (auth-gated), /api/job, /api/jobs, /api/invoice, /api/wallet, /api/revenue, /api/stats, DB auto-init, user tracking |
 | v2/src/agent.ts (Pi agent wrapper) | DONE — promptWithHistory(), context compaction, periodic memory extraction, trackUser(), 40 tools wiring, Syntropy context for syntropy/syntropy-admin userIds |
 | v2/src/conversations.ts | DONE — JSONL per-user persistence, context compaction (summarize old messages via LLM) |
-| v2/src/connectors/telegram.ts | DONE — @PixelSurvival_bot with persistent memory, vision support, group lore, notify_owner |
+| v2/src/connectors/telegram.ts | DONE — @PixelSurvival_bot with persistent memory, vision support, group lore, notify_owner, voice/audio/video_note transcription |
 | v2/src/connectors/nostr.ts | DONE — NDK mentions + DMs + DVM startup + shared repliedEventIds (hasRepliedTo/markReplied) |
-| v2/src/connectors/whatsapp.ts | DONE (code deployed, needs WHATSAPP_PHONE_NUMBER env var to activate) |
+| v2/src/connectors/whatsapp.ts | DONE — code deployed with voice transcription. WhatsApp logged out (status 401), needs re-pairing |
 | v2/src/connectors/instagram.ts | NOT STARTED |
 | v2/src/services/audit.ts | DONE — Structured JSONL audit trail |
 | v2/src/services/clawstr.ts | DONE — Stacker News API integration |
 | v2/src/services/cost-monitor.ts | DONE — LLM cost tracking |
 | v2/src/services/digest.ts | DONE — Periodic owner digest |
 | v2/src/services/dvm.ts | DONE — NIP-90 text gen + NIP-89 announcement + Lightning payment + revenue recording |
-| v2/src/services/heartbeat.ts | DONE — Initiative engine: topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, art reports, spotlight, revenue-goal |
-| v2/src/services/inner-life.ts | DONE — Autonomous reflection, learning, ideation, identity evolution |
+| v2/src/services/heartbeat.ts | DONE — Initiative engine with pixelTools: topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, art reports, spotlight, revenue-goal |
+| v2/src/services/inner-life.ts | DONE — Autonomous reflection, learning, ideation, identity evolution with pixelTools |
 | v2/src/services/jobs.ts | DONE — Job system, ecosystem reports, idea garden |
 | v2/src/services/l402.ts | DONE — L402 middleware. Endpoints: /api/chat/premium (10 sats), /api/generate (50 sats) |
 | v2/src/services/lightning.ts | DONE — LNURL-pay invoices, invoiceCache, sats/millisats fix |
@@ -925,6 +928,7 @@ git status && git log --oneline -5
 | v2/src/services/tools.ts | DONE — 40 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs |
 | v2/src/services/users.ts | DONE — User tracking: trackUser() upsert, getUserStats() |
 | v2/src/services/vision.ts | DONE — Image URL extraction for multi-modal input |
+| v2/src/services/audio.ts | DONE — Gemini 2.0 Flash audio transcription for Telegram + WhatsApp voice messages |
 | v2/src/services/x402.ts | RESEARCHED — needs @x402/hono deps + Base wallet |
 | v2/src/services/canvas.ts | NOT STARTED (V1 canvas api+web still serving) |
 | v2/src/db.ts (Drizzle schema) | DONE — users, revenue, canvas_pixels, conversation_log |
@@ -1042,4 +1046,6 @@ git status && git log --oneline -5
   67. **Inner-life integration for internal jobs:** @hey_sloth requirement: "analyza el resultado de research task, debería ser parecido al de ALARM para 'despertar' a pixel". Internal jobs now automatically inject results into Pixel's living memory (inner-life). When an internal job completes, content is classified (learning/idea/reflection) and written to `data/learnings.md`, `data/ideas.md`, or `data/reflections.md`. This makes research results available in all future conversations via `getInnerLifeContext()` — Pixel "wakes up" with new knowledge.
   68. **Content type classification:** `determineContentType()` analyzes job label and output to classify as: learning (research, trends, competition), idea (brainstorm, projects, features), or reflection (self-audit, analysis). Unclear content is logged but skipped. Size limits match inner-life (2000 chars per file).
   69. **Debrief protocol validated:** Syntropy→Pixel debrief via `/api/chat` with `userId=syntropy-admin` works. Pixel understood and internalized the paradigm shift immediately: "dejo de ser chatbot y empiezo a ser agente de verdad. eso es agencia real. memoria viva."
+  70. **Gemini REST for audio transcription:** Pi-ai has no `AudioContent` type, so `audio.ts` calls the Gemini REST API directly with base64-encoded audio + inline transcription prompt. No ffmpeg dependency — Gemini 2.0 Flash handles audio/ogg natively. Temperature 0.1 for accuracy, 30s timeout, 10MB max file size.
+  71. **Autonomous agents get hands:** Heartbeat post generation and inner-life `llmCall()` now have `tools: pixelTools`. This means Pixel can proactively web_search, web_fetch, or research during autonomous cycles — not just when a user asks. The zap topic classifier was intentionally left with `tools: []` because it's a single-purpose agent that doesn't need hands.
 
