@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 35
+> Last updated: 2026-02-14 | Session: 36
 
 ---
 
@@ -47,6 +47,8 @@ Pixel is a **living digital artist and AI assistant** that exists across multipl
 ## 2. SESSION HISTORY {#session-history}
 
 ### Session 35 (Clawstr graceful skip):** Fixed Clawstr errors by adding graceful skip for unconfigured Clawstr CLI. Changes: (A) **Configuration check** — `isClawstrConfigured()` function in `clawstr.ts` checks for `config.json` existence in `v2/data/clawstr/`. (B) **Graceful returns** — All Clawstr export functions (`getClawstrNotifications`, `getClawstrFeed`, `getClawstrPost`, `getClawstrSearch`, `postClawstr`, `replyClawstr`, `upvoteClawstr`) now check configuration and either return a helpful message ("Clawstr not configured. Run `clawstr init` first.") or throw an error for write operations. (C) **Heartbeat skip** — Heartbeat loop in `heartbeat.ts` detects "Clawstr not configured" message and returns early without logging an error, preventing repeated npm notice errors in digests. (D) **Root cause** — Clawstr CLI was throwing "No identity found" errors because `config.json` was missing. The fix prevents heartbeat from attempting to run Clawstr commands when not configured. Clawstr tools remain functional if a Stacker News account is set up in the future. Commit: `f4e1307`.
+
+### Session 36 (SSH libcrypto fix):** Fixed SSH key cleanup bug in wp tool that was causing "error in libcrypto" and blocking WPLMS access. Changes: (A) **Root cause identified** — The `wp` tool was not cleaning up temporary SSH key files on failure, leaving a corrupted 410-byte key file (missing trailing newline) in `/tmp/`. SSH's libcrypto failed to load this malformed file. (B) **Cleanup added** — Added SSH key cleanup code to `wp` tool (lines 1318-1324 in `tools.ts`) matching the pattern already used in the `ssh` tool. Key files are now wiped with an empty string on both success AND failure. (C) **Verification** — SSH connection tested directly: works perfectly (411 bytes, correct ED25519 format). WP-CLI tested via SSH: works (v2.12.0 operational). Container rebuilt and healthy. `/tmp` empty after tool use confirms cleanup is working. Commit: `c35b1e3`.
 
 ### Sessions 1-7: Infrastructure Fixes (V1, ALL COMMITTED)
 
