@@ -38,6 +38,11 @@ export function initReminders(database: PostgresJsDatabase<typeof schema>): void
 // No grace period — fire only when due_at <= now
 // (Previously 1 hour, which caused alarms to fire immediately)
 
+// In-memory set of reminder IDs currently being fired — prevents the same
+// scheduler tick's Promise.allSettled from double-claiming, AND prevents
+// overlapping ticks from racing on the same ID before the DB claim lands.
+const firingInProgress = new Set<number>();
+
 export interface ReminderInput {
   userId: string;
   platform: string;
@@ -248,6 +253,44 @@ function computeNextDueAt(lastDueAt: Date, now: Date, pattern: string): Date | n
  */
 async function fireReminder(reminder: ReminderRecord): Promise<void> {
   const now = new Date();
+
+  // ── Optimistic lock: prevent double-firing from overlapping scheduler ticks ──
+  // 1. In-memory guard (instant, covers same-tick parallel calls)
+  if (firingInProgress.has(reminder.id)) {
+    audit("reminder", `Reminder ${reminder.id} already being fired (in-memory guard), skipping`);
+    return;
+  }
+  firingInProgress.add(reminder.id);
+
+  try {
+    // 2. Atomic DB claim: set lastFiredAt = now WHERE the reminder still matches
+    //    the scheduler query conditions. If another tick already claimed it,
+    //    rowCount will be 0 and we bail out.
+    const claimed = await db!.update(reminders)
+      .set({ lastFiredAt: now })
+      .where(and(
+        eq(reminders.id, reminder.id),
+        eq(reminders.status, "active"),
+        or(
+          isNull(reminders.lastFiredAt),
+          sql`${reminders.lastFiredAt} < ${reminders.dueAt}`
+        )
+      ))
+      .returning({ id: reminders.id });
+
+    if (claimed.length === 0) {
+      audit("reminder", `Reminder ${reminder.id} already claimed by another tick (DB guard), skipping`);
+      return;
+    }
+
+    await fireReminderCore(reminder, now);
+  } finally {
+    firingInProgress.delete(reminder.id);
+  }
+}
+
+/** Core firing logic — called only after the optimistic lock succeeds */
+async function fireReminderCore(reminder: ReminderRecord, now: Date): Promise<void> {
   audit("reminder", `Firing reminder ${reminder.id}: "${reminder.rawMessage}"`);
 
   // Build a prompt that the LLM will turn into a friendly notification
@@ -335,10 +378,8 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
     audit("reminder", `Failed to send reminder ${reminder.id}: ${err.message}`);
   }
 
-  // Update reminder state
-  const updates: Record<string, unknown> = {
-    lastFiredAt: now,
-  };
+  // Update reminder state (lastFiredAt already set by the optimistic lock claim)
+  const updates: Record<string, unknown> = {};
 
   if (reminder.firesRemaining !== null && reminder.firesRemaining !== undefined) {
     const nextRemaining = reminder.firesRemaining - 1;
@@ -363,9 +404,11 @@ async function fireReminder(reminder: ReminderRecord): Promise<void> {
     updates.status = "fired";
   }
 
-  await db!.update(reminders)
-    .set(updates)
-    .where(eq(reminders.id, reminder.id));
+  if (Object.keys(updates).length > 0) {
+    await db!.update(reminders)
+      .set(updates)
+      .where(eq(reminders.id, reminder.id));
+  }
 
   audit("reminder", `Reminder ${reminder.id} fired (sent=${sent})`);
 }
