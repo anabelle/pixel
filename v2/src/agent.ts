@@ -108,53 +108,51 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
   return prompt;
 }
 
-/** Get the AI model based on environment config (intelligent tier for conversations) */
+/** Construct a Z.AI model object (not in pi-ai's registry) */
+function makeZaiModel(modelId: string, reasoning: boolean = false) {
+  return {
+    id: modelId,
+    name: modelId.toUpperCase(),
+    api: "openai-completions" as const,
+    provider: "zai",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    reasoning,
+    input: ["text"] as const,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // flat rate plan
+    contextWindow: 128000,
+    maxTokens: 16384,
+  } as any;
+}
+
+/** Get the AI model for conversations — GLM-4.7 (reasoning, ~4.5s) */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
-  // Z.AI models aren't in pi-ai's registry — construct model object directly
-  if (provider === "zai") {
-    return {
-      id: modelId,
-      name: modelId.toUpperCase(),
-      api: "openai-completions" as const,
-      provider: "zai",
-      baseUrl: "https://api.z.ai/api/coding/paas/v4",
-      reasoning: true,
-      input: ["text"] as const,
-      cost: { input: 2, output: 8, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000,
-      maxTokens: 16384,
-    } as any;
-  }
+  if (provider === "zai") return makeZaiModel(modelId, true);
   return getModel(provider as any, modelId);
 }
 
-/** Get the simple AI model (free tier for background tasks — always Google) */
+/** Get the fast model for background tasks — GLM-4.5-air (~1.3s, no reasoning overhead) */
 function getSimpleModel() {
-  // Always use Google free tier for simple tasks regardless of AI_PROVIDER
+  const provider = process.env.AI_PROVIDER ?? "google";
+  if (provider === "zai") return makeZaiModel("glm-4.5-air", false);
   return getModel("google" as any, "gemini-2.0-flash");
 }
 
-/** Get the DM-specific model (uses main AI_PROVIDER) */
+/** Get the DM-specific model — same as conversations */
 function getDmModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "zai") {
-    // For DMs, use same Z.AI model as main
-    return getPixelModel();
-  }
+  if (provider === "zai") return getPixelModel();
   return getModel(provider as any, DM_MODEL_ID);
 }
 
-/** Get the fallback model for 429/quota errors — cascading: Gemini 3 Flash → 2.5 Flash */
-function getFallbackModel() {
-  // Always fall back to Google free tier (reliable, no billing issues)
-  return getModel("google" as any, "gemini-3-flash-preview");
-}
-
-/** Get the second-level fallback (Gemini 2.5 Flash) */
-function getSecondFallbackModel() {
-  return getModel("google" as any, "gemini-2.5-flash");
+/** Fallback cascade — Google models ($10/mo free credits) */
+function getFallbackModel(level: number = 1) {
+  switch (level) {
+    case 1: return getModel("google" as any, "gemini-3-flash-preview");
+    case 2: return getModel("google" as any, "gemini-2.5-flash");
+    default: return getModel("google" as any, "gemini-2.0-flash");
+  }
 }
 
 /**
@@ -168,7 +166,7 @@ async function handleSchedulingIntent(
   message: string,
   chatId?: string
 ): Promise<{ handled: boolean; response?: string }> {
-  const model = getSimpleModel(); // Use free tier for intent detection
+  const model = getSimpleModel();
   const now = new Date();
 
   const intentPrompt = `You are Pixel. Decide if the user is asking to schedule, list, cancel, or modify reminders.
@@ -553,7 +551,8 @@ export async function promptWithHistory(
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
-  const MAX_RETRIES = 2; // Two retries: fallback1 (Gemini 3 Flash) then fallback2 (Gemini 2.5 Flash)
+  // GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash
+  const MAX_RETRIES = 3;
   let responseText = "";
   let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
 
@@ -565,9 +564,9 @@ export async function promptWithHistory(
     const responseChunks: string[] = [];
     let llmError: string | null = null;
 
-    // On retry, switch to fallback model (cascade: attempt 1 = Gemini 3 Flash, attempt 2 = Gemini 2.5 Flash)
+    // On retry, cascade through fallback models
     const isRetryWithFallback = attempt > 0;
-    const retryModel = attempt === 2 ? getSecondFallbackModel() : (isRetryWithFallback ? getFallbackModel() : selectedModel);
+    const retryModel = isRetryWithFallback ? getFallbackModel(attempt) : selectedModel;
 
     // Fresh agent for retries (pi-agent-core doesn't support re-prompting after error)
     const attemptAgent = attempt === 0 ? agent : new Agent({
@@ -730,7 +729,7 @@ async function extractAndSaveMemory(userId: string, messages: any[]): Promise<vo
 ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMemory}` : "No existing memory — create fresh."}
 
 Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`,
-      model: getSimpleModel(), // Use free tier for background tasks
+      model: getSimpleModel(),
       thinkingLevel: "minimal",
       tools: [],
     },
@@ -835,7 +834,7 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 Keep under 1200 characters. Be accurate. No speculation.
 
 ${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
-      model: getSimpleModel(), // Use free tier for background tasks
+      model: getSimpleModel(),
       thinkingLevel: "minimal",
       tools: [],
     },
@@ -902,7 +901,7 @@ async function compactContext(userId: string, platform: string): Promise<void> {
 - The general tone and relationship
 
 Be concise. This summary will be used as context for future conversations.`,
-      model: getSimpleModel(), // Use free tier for background tasks
+      model: getSimpleModel(),
       thinkingLevel: "minimal",
       tools: [],
     },
