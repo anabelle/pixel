@@ -17,13 +17,13 @@ import { join } from "path";
 const DATA_DIR = process.env.DATA_DIR ?? "./conversations";
 
 // Maximum messages to keep in context (prevents unbounded growth)
-const MAX_CONTEXT_MESSAGES = 50;
+const MAX_CONTEXT_MESSAGES = 100;
 
 // When context hits this threshold, compaction is triggered
-const COMPACTION_THRESHOLD = 40;
+const COMPACTION_THRESHOLD = 80;
 
 // After compaction, keep this many recent messages intact
-const KEEP_RECENT_MESSAGES = 20;
+const KEEP_RECENT_MESSAGES = 40;
 
 /** Ensure the user's conversation directory exists */
 function ensureUserDir(userId: string): string {
