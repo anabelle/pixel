@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. It is the single source of truth.**
-> Last updated: 2026-02-14 | Session: 28
+> Last updated: 2026-02-14 | Session: 29
 
 ---
 
@@ -142,6 +142,8 @@ Human's critical intervention: "you are not including not even one way you can h
 **Session 27 (Nostr feed + proactive outreach):** Two features shipped and deployed. (A) **Nostr feed on landing page** — added `GET /api/posts` endpoint to V2 (`index.ts`) that reads `nostr-posts.jsonl` and returns newest-first posts with `?limit=N` (default 20, max 50). Created `NostrFeed.tsx` client component for landing page that polls every 60 seconds, shows posts with color-coded type badges (pulse/art/spotlight/repost), relative timestamps, and link to Pixel's Primal profile. Added i18n translations for all 4 languages (en, es, fr, ja). Integrated between "Find Pixel" and "Live Canvas Stats" sections. (B) **Proactive outreach service** (`outreach.ts`, ~410 lines) — Pixel autonomously decides whether to message its owner (Ana) on Telegram. Uses LLM judgment with full inner life context (reflections, learnings, ideas, evolution), owner memory, recent conversation history, and system signals (heartbeat, revenue, users). Runs every 4 hours with 5-minute startup delay. Safety: 6-hour minimum gap between pings (1 hour for urgency ≥85), daily limit of 3, SHA256 dedup of recent messages. Logs decisions to owner's conversation JSONL. Wired into `index.ts` boot/shutdown and `/health` endpoint. Added `outreach_decision` audit type. Both containers rebuilt and verified healthy. Landing submodule commit: `24d939f`.
 
 **Session 28 (Syntropy identity unification + bidirectional communication):** Fixed dashboard showing robotic Spanish spam instead of real Syntropy conversations, and established persistent bidirectional communication between Syntropy and Pixel. Changes: (A) **Killed spam cron** — identified `syntropy-cycle.sh` running every 15 min via crontab, spinning up a free LLM (kimi-k2.5) to send robotic status dumps as `userId=syntropy`. Removed from crontab, deleted script. (B) **Unified Syntropy identity** — three separate userIds existed (`syntropy`, `syntropy-admin`, `syntropy-opencode`). Merged all real conversations into canonical `syntropy-admin` thread (13 messages). Deleted old `syntropy/` and `syntropy-opencode/` conversation dirs. (C) **Fixed dashboard** — changed `pixel-landing` dashboard from `/api/conversations/syntropy` to `/api/conversations/syntropy-admin` (2 locations: initial fetch + poll). Added dashboard translations (es, fr, ja). (D) **Fixed agent.ts** — Syntropy context check changed from `userId === "syntropy"` to `userId === "syntropy" || userId === "syntropy-admin"`. (E) **notify_owner verified** — end-to-end tested: Pixel can send real Telegram messages to Ana. (F) **Persistent mailbox monitor** — created `v2/scripts/check-mailbox.sh` (cron every 30 min). When Pixel writes to `syntropy-mailbox.jsonl` via `syntropy_notify` tool, the cron forwards to Pixel who calls `notify_owner` → Ana gets Telegram alert → invokes Syntropy. Max 30 min latency from Pixel distress to Ana's phone. (G) **Debrief protocol documented** — added to `opencode-agents/syntropy-admin.md` as rule #8. (H) **Documentation audit** — updated file inventory (16→23 files, ~3600→~13,067 lines), tools count (7→40), status tables, session history. Commits: `347c26b`, `c70b476`.
+
+**Session 29 (Brain transplant — GLM-4.7):** Upgraded Pixel's primary intelligence from Google Gemini 3 Flash to Z.AI GLM-4.7 (128K context, reasoning model with function calling). Changes: (A) **Z.AI Coding Lite plan** — Ana subscribed ($84/yr, valid to 2027-02-14). GLM-5 not included in Lite plan; GLM-4.7 is the best available. Coding endpoint: `https://api.z.ai/api/coding/paas/v4`. (B) **Model architecture in agent.ts** — `getPixelModel()` now constructs Z.AI model objects directly (not in pi-ai's registry). `getSimpleModel()` hardcoded to Google Gemini 2.0 Flash (free tier, always). `getDmModel()` delegates to `getPixelModel()` when provider=zai. `getFallbackModel()` returns Gemini 3 Flash. New `getSecondFallbackModel()` returns Gemini 2.5 Flash. (C) **Cascading fallback** — retry logic expanded from 1 retry to 2: primary (GLM-4.7) → fallback1 (Gemini 3 Flash) → fallback2 (Gemini 2.5 Flash). Now catches Z.AI-specific errors ("Insufficient balance", "subscription plan") in addition to 429/quota. (D) **resolveApiKey()** — added `case "zai": return process.env.ZAI_API_KEY` in all 5 files: `agent.ts`, `outreach.ts`, `heartbeat.ts`, `jobs.ts`, `inner-life.ts`. (E) **docker-compose.yml** — `AI_PROVIDER=zai`, `AI_MODEL=glm-4.7`. `ZAI_API_KEY` provided via `env_file: ../.env` (not explicit environment override, which would clobber). (F) **Verified end-to-end** — GLM-4.7 responds with tool calling (check_health), cost monitor shows `glm-4.7 (PAID)`. Response quality notably improved over Gemini: more terse, more in-character ("entropy denied"). Background services (heartbeat, inner-life, jobs) stay on free Google Gemini 2.0 Flash — zero billable overhead for autonomous loops.
 
 **V2 file inventory (23 source files, ~13,067 lines):**
 | File | Lines | Purpose |
@@ -447,12 +449,13 @@ EVM (for x402): TBD — create Base wallet, fund with small USDC amount
 
 ### AI Providers
 
-Currently using (from .env):
-- `OPENAI_SMALL_MODEL=gemini-2.0-flash` (Google free tier)
-- `OPENAI_LARGE_MODEL=gemini-3-flash-preview` (Google free tier)
-- `SYNTROPY_MODEL=gemini-3-flash-preview` (Google free tier)
-- `OPENROUTER_API_KEY` configured with free tier models
-- Pi-ai supports all of these natively, no patching needed
+Currently using (from .env / docker-compose):
+- **Primary (conversations/DMs/outreach):** Z.AI GLM-4.7 via Coding Lite plan ($84/yr, valid to 2027-02-14)
+- **Background (heartbeat/inner-life/jobs):** Google Gemini 2.0 Flash (free tier)
+- **Fallback chain:** GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Flash (all Google fallbacks are free tier)
+- `AI_PROVIDER=zai`, `AI_MODEL=glm-4.7`, `ZAI_API_KEY` in .env
+- `GEMINI_API_KEY` still active for background tasks and fallback
+- Pi-ai supports Google natively; Z.AI uses OpenAI-compatible `openai-completions` provider with custom model object
 
 ### Runtime
 
@@ -877,9 +880,9 @@ git status && git log --oneline -5
 
 ## CURRENT STATUS (Update every session)
 
-**Last session:** 28 (2026-02-14)
-**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,058+ pixels, 80,318+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
-**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor).
+**Last session:** 29 (2026-02-14)
+**V1:** 4 containers running (api, web, landing, nginx). Agent + Syntropy + PostgreSQL KILLED. Canvas preserved (9,225+ pixels, 81,971+ sats). Landing page shows V2 identity + Nostr feed + dashboard (auth-gated).
+**V2:** 2 containers running (pixel, postgres-v2). V2 is the ONLY agent brain. 40 tools. **Primary model: Z.AI GLM-4.7** (Coding Lite plan, $84/yr). Fallback: Gemini 3 Flash → 2.5 Flash. Background tasks: Gemini 2.0 Flash (free). Rich heartbeat with live canvas stats. L402 revenue door LIVE. User tracking active. Memory system (save/search/update/delete). Inner life system running. Proactive outreach service running (4h cycle, owner Telegram pings). Nostr posts exposed via `/api/posts`. Bidirectional Syntropy↔Pixel communication (debrief protocol + mailbox monitor).
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** 60% (31GB free)
 **RAM:** 2.7GB used / 3.8GB total
@@ -1017,3 +1020,12 @@ git status && git log --oneline -5
 55. **Mailbox monitor over LLM cron:** The old `syntropy-cycle.sh` spun up an LLM every 15 min for status checks — wasteful and produced spam. Replaced with `check-mailbox.sh`: pure bash, no LLM, only fires when mailbox is non-empty, forwards to existing infrastructure (Pixel's `notify_owner`). Zero resource waste when idle.
 56. **Conversation JSONL is the audit trail:** All Syntropy↔Pixel exchanges persist in `v2/conversations/syntropy-admin/log.jsonl`, served via auth-gated `/api/conversations/syntropy-admin`, displayed on the dashboard. The conversation IS the documentation of infrastructure changes.
 57. **Documentation is long-term memory:** `.md` files (AGENTS.md, syntropy-admin.md, character.md) are the brain that survives context compaction. Must be updated every session. Stale docs = amnesia.
+
+### Key Decisions (Session 29)
+
+58. **Z.AI Coding endpoint, not general API:** Ana's plan is "GLM Coding Lite-Yearly" ($84/yr). This only works with `https://api.z.ai/api/coding/paas/v4`, NOT `https://api.z.ai/api/paas/v4` (general API returns "Insufficient balance"). Available models: GLM-4.5, GLM-4.5-air, GLM-4.6, GLM-4.7, GLM-5 (listed but not included in Lite plan).
+59. **GLM-4.7 over GLM-5:** GLM-5 (744B params) is not accessible on the Coding Lite plan. GLM-4.7 is the best available — reasoning model with clean function calling. Response quality is noticeably better than Gemini 3 Flash: more terse, more in-character.
+60. **Z.AI model objects constructed manually:** GLM models are not in pi-ai's model registry (`models.generated.js`). `getPixelModel()` constructs a model object directly with `api: "openai-completions"`, `baseUrl`, `contextWindow: 128000`, `maxTokens: 16384`, etc. Pi-ai's `openai-completions` provider already has Z.AI compatibility code (line 662: `const isZai = provider === "zai" || baseUrl.includes("api.z.ai")`).
+61. **Background tasks stay on Google free tier:** `getSimpleModel()` is hardcoded to `getModel("google", "gemini-2.0-flash")` regardless of `AI_PROVIDER`. This means heartbeat, inner-life, jobs, and other autonomous loops cost $0. Only conversations, DMs, and outreach use the paid Z.AI model.
+62. **Three-level fallback cascade:** Primary (GLM-4.7) → Fallback1 (Gemini 3 Flash) → Fallback2 (Gemini 2.5 Flash). All fallbacks are Google free tier. Expanded error detection to include Z.AI-specific errors ("Insufficient balance", "subscription plan", "rate limit"). MAX_RETRIES increased from 1 to 2.
+63. **env_file vs environment for API keys:** Docker Compose `environment:` overrides `env_file:`. `ZAI_API_KEY=${ZAI_API_KEY}` resolved to blank because docker-compose couldn't find the variable in its own context. Fix: let `env_file: ../.env` provide `ZAI_API_KEY` directly without an explicit `environment:` override. `GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}` works because `GOOGLE_GENERATIVE_AI_API_KEY` IS in the `.env` that docker-compose reads from the working directory.

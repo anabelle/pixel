@@ -407,6 +407,8 @@ function pickTopic(): Topic {
 function resolveApiKey(provider?: string): string {
   const p = provider ?? process.env.AI_PROVIDER ?? "google";
   switch (p) {
+    case "zai":
+      return process.env.ZAI_API_KEY ?? "";
     case "openrouter":
       return process.env.OPENROUTER_API_KEY ?? "";
     case "google":

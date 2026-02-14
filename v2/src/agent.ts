@@ -112,26 +112,49 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
+  // Z.AI models aren't in pi-ai's registry — construct model object directly
+  if (provider === "zai") {
+    return {
+      id: modelId,
+      name: modelId.toUpperCase(),
+      api: "openai-completions" as const,
+      provider: "zai",
+      baseUrl: "https://api.z.ai/api/coding/paas/v4",
+      reasoning: true,
+      input: ["text"] as const,
+      cost: { input: 2, output: 8, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 16384,
+    } as any;
+  }
   return getModel(provider as any, modelId);
 }
 
-/** Get the simple AI model (free tier for background tasks) */
+/** Get the simple AI model (free tier for background tasks — always Google) */
 function getSimpleModel() {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  // Use gemini-2.0-flash for simple tasks (free tier)
-  return getModel(provider as any, "gemini-2.0-flash");
+  // Always use Google free tier for simple tasks regardless of AI_PROVIDER
+  return getModel("google" as any, "gemini-2.0-flash");
 }
 
-/** Get the DM-specific model (can differ from main) */
+/** Get the DM-specific model (uses main AI_PROVIDER) */
 function getDmModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
+  if (provider === "zai") {
+    // For DMs, use same Z.AI model as main
+    return getPixelModel();
+  }
   return getModel(provider as any, DM_MODEL_ID);
 }
 
-/** Get the fallback model for 429/quota errors (gemini-2.5-flash) */
+/** Get the fallback model for 429/quota errors — cascading: Gemini 3 Flash → 2.5 Flash */
 function getFallbackModel() {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  return getModel(provider as any, "gemini-2.5-flash");
+  // Always fall back to Google free tier (reliable, no billing issues)
+  return getModel("google" as any, "gemini-3-flash-preview");
+}
+
+/** Get the second-level fallback (Gemini 2.5 Flash) */
+function getSecondFallbackModel() {
+  return getModel("google" as any, "gemini-2.5-flash");
 }
 
 /**
@@ -364,6 +387,8 @@ Return JSON: {"index": number | null}`;
 function resolveApiKey(provider?: string): string {
   const p = provider ?? process.env.AI_PROVIDER ?? "google";
   switch (p) {
+    case "zai":
+      return process.env.ZAI_API_KEY ?? "";
     case "openrouter":
       return process.env.OPENROUTER_API_KEY ?? "";
     case "google":
@@ -527,8 +552,8 @@ export async function promptWithHistory(
     agent.replaceMessages(existingMessages);
   }
 
-  // Retry loop: on 429, immediately switch to fallback model (gemini-2.5-flash)
-  const MAX_RETRIES = 1; // One retry with fallback model
+  // Retry loop: on 429/provider error, cascade through fallback models
+  const MAX_RETRIES = 2; // Two retries: fallback1 (Gemini 3 Flash) then fallback2 (Gemini 2.5 Flash)
   let responseText = "";
   let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
 
@@ -540,9 +565,9 @@ export async function promptWithHistory(
     const responseChunks: string[] = [];
     let llmError: string | null = null;
 
-    // On retry, switch to fallback model
+    // On retry, switch to fallback model (cascade: attempt 1 = Gemini 3 Flash, attempt 2 = Gemini 2.5 Flash)
     const isRetryWithFallback = attempt > 0;
-    const retryModel = isRetryWithFallback ? getFallbackModel() : selectedModel;
+    const retryModel = attempt === 2 ? getSecondFallbackModel() : (isRetryWithFallback ? getFallbackModel() : selectedModel);
 
     // Fresh agent for retries (pi-agent-core doesn't support re-prompting after error)
     const attemptAgent = attempt === 0 ? agent : new Agent({
@@ -561,7 +586,7 @@ export async function promptWithHistory(
       if (retryMessages.length > 0) {
         attemptAgent.replaceMessages(retryMessages);
       }
-      console.log(`[agent] 429 fallback: switching to gemini-2.5-flash for ${userId}`);
+      console.log(`[agent] Fallback attempt ${attempt}: switching to ${retryModel.id} for ${userId}`);
     }
 
     attemptAgent.subscribe((event: any) => {
@@ -595,7 +620,7 @@ export async function promptWithHistory(
     // If we got a response, save context from this agent and break
     if (responseText) {
       if (isRetryWithFallback) {
-        usedModelId = "gemini-2.5-flash";
+        usedModelId = retryModel.id;
       }
       if (attemptAgent.state?.messages) {
         const noImages = stripImageBlocks(attemptAgent.state.messages as any[]);
@@ -605,11 +630,18 @@ export async function promptWithHistory(
       break;
     }
 
-    // Check if 429 — switch to fallback on next iteration
+    // Check if retryable error — 429, quota, or provider errors (Z.AI balance, etc.)
     const errorStr = llmError as string | null;
-    const is429 = errorStr && (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota"));
-    if (is429 && attempt < MAX_RETRIES) {
-      console.log(`[agent] 429 from primary model for ${userId}, switching to fallback model`);
+    const isRetryable = errorStr && (
+      errorStr.includes("429") ||
+      errorStr.includes("RESOURCE_EXHAUSTED") ||
+      errorStr.includes("quota") ||
+      errorStr.includes("Insufficient balance") ||
+      errorStr.includes("subscription plan") ||
+      errorStr.includes("rate limit")
+    );
+    if (isRetryable && attempt < MAX_RETRIES) {
+      console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}, cascading to next fallback`);
       continue;
     }
 

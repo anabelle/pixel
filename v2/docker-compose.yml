@@ -21,8 +21,8 @@ services:
       - DATABASE_URL=postgresql://pixel:pixel@postgres-v2:5432/pixel_v2
       - DATA_DIR=/app/conversations
       - CHARACTER_PATH=/app/character.md
-      - AI_PROVIDER=google
-      - AI_MODEL=gemini-3-flash-preview
+      - AI_PROVIDER=zai
+      - AI_MODEL=glm-4.7
       - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
     volumes:
