@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, renameSync } from "fs";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getSimpleModel, extractText } from "../agent.js";
 import { pixelTools } from "./tools.js";
@@ -19,6 +19,7 @@ export type JobEntry = {
   toolsAllowed?: string[];
   output?: string;
   error?: string;
+  retries?: number;
   // Callback fields for delivering results to users
   callbackPlatform?: string;
   callbackChatId?: string;
@@ -37,7 +38,10 @@ const JOBS_PATH = "/app/data/jobs.json";
 const JOB_LOG_PATH = "/app/data/jobs.jsonl";
 const JOB_REPORT_PATH = "/app/data/jobs-report.md";
 
+const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per job
+
 let running = false;
+let currentJobId: string | null = null;
 let jobTimer: ReturnType<typeof setTimeout> | null = null;
 
 function resolveApiKey(provider?: string): string {
@@ -67,7 +71,9 @@ function loadJobs(): JobEntry[] {
 
 function saveJobs(jobs: JobEntry[]): void {
   try {
-    writeFileSync(JOBS_PATH, JSON.stringify(jobs, null, 2), "utf-8");
+    const tmp = JOBS_PATH + ".tmp";
+    writeFileSync(tmp, JSON.stringify(jobs, null, 2), "utf-8");
+    renameSync(tmp, JOBS_PATH);
   } catch (err: any) {
     console.error("[jobs] Failed to save jobs:", err.message);
   }
@@ -174,6 +180,7 @@ async function runNextJob(): Promise<void> {
   if (!next) return;
 
   running = true;
+  currentJobId = next.id;
   next.status = "running";
   next.startedAt = Date.now();
   saveJobs(jobs);
@@ -204,7 +211,10 @@ async function runNextJob(): Promise<void> {
   });
 
   try {
-    await agent.prompt(next.prompt);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Job timed out after ${JOB_TIMEOUT_MS / 1000}s`)), JOB_TIMEOUT_MS)
+    );
+    await Promise.race([agent.prompt(next.prompt), timeoutPromise]);
     next.status = "completed";
     next.completedAt = Date.now();
     next.output = output || "(no output)";
@@ -221,6 +231,7 @@ async function runNextJob(): Promise<void> {
     audit("tool_use", `Job failed: ${next.id}`, { id: next.id, error: err.message });
   } finally {
     running = false;
+    currentJobId = null;
     // Deliver result to originating chat if callback was set
     await deliverJobResult(next).catch((err) =>
       console.error("[jobs] deliverJobResult error:", err.message)
@@ -244,8 +255,91 @@ function scheduleDailyJob(): void {
   }, delay);
 }
 
+const MAX_JOB_RETRIES = 2;
+const MAX_JOB_AGE_MS = 24 * 60 * 60 * 1000; // 24h — don't retry ancient jobs
+
+/** Reset any jobs stuck as "running" from a previous crash/reboot.
+ *  If the job is young enough and hasn't exhausted retries, re-queue it. */
+function recoverStaleJobs(): void {
+  const jobs = loadJobs();
+  let retried = 0;
+  let abandoned = 0;
+  const now = Date.now();
+
+  for (const job of jobs) {
+    if (job.status !== "running") continue;
+
+    const age = now - job.createdAt;
+    const attempts = job.retries ?? 0;
+
+    if (attempts < MAX_JOB_RETRIES && age < MAX_JOB_AGE_MS) {
+      // Re-queue for another attempt
+      job.status = "pending";
+      job.retries = attempts + 1;
+      delete job.startedAt;
+      delete job.completedAt;
+      delete job.error;
+      retried++;
+      logJob(job);
+      audit("tool_use", `Re-queued stale job on boot (attempt ${job.retries}/${MAX_JOB_RETRIES}): ${job.id}`, { id: job.id });
+    } else {
+      // Too old or too many retries — give up
+      job.status = "failed";
+      job.completedAt = now;
+      job.error = attempts >= MAX_JOB_RETRIES
+        ? `Exhausted ${MAX_JOB_RETRIES} retries after repeated crashes`
+        : `Job too old (${Math.round(age / 3600000)}h) to retry after crash`;
+      abandoned++;
+      logJob(job);
+      audit("tool_use", `Abandoned stale job on boot: ${job.id} — ${job.error}`, { id: job.id });
+    }
+  }
+
+  if (retried + abandoned > 0) {
+    saveJobs(jobs);
+    if (retried > 0) console.log(`[jobs] Re-queued ${retried} interrupted job(s) for retry`);
+    if (abandoned > 0) console.log(`[jobs] Abandoned ${abandoned} stale job(s) (max retries or too old)`);
+  }
+}
+
+/** Mark any currently running job for retry or failure (used during shutdown) */
+export function markRunningJobsFailed(reason: string): void {
+  const jobs = loadJobs();
+  const now = Date.now();
+  for (const job of jobs) {
+    if (job.status !== "running") continue;
+    const attempts = job.retries ?? 0;
+    const age = now - job.createdAt;
+
+    if (attempts < MAX_JOB_RETRIES && age < MAX_JOB_AGE_MS) {
+      job.status = "pending";
+      job.retries = attempts + 1;
+      delete job.startedAt;
+      delete job.completedAt;
+      delete job.error;
+      console.log(`[jobs] Re-queued ${job.id} for retry on next boot (attempt ${job.retries}/${MAX_JOB_RETRIES})`);
+    } else {
+      job.status = "failed";
+      job.completedAt = now;
+      job.error = reason;
+    }
+    logJob(job);
+  }
+  saveJobs(jobs);
+  running = false;
+  currentJobId = null;
+}
+
+export function stopJobs(): void {
+  if (jobTimer) {
+    clearTimeout(jobTimer);
+    jobTimer = null;
+  }
+}
+
 export function startJobs(): void {
   if (jobTimer) return;
+  recoverStaleJobs();
   scheduleDailyJob();
   const tick = async () => {
     await runNextJob();

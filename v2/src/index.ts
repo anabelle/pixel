@@ -21,12 +21,12 @@ import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { initUsers, getUserStats } from "./services/users.js";
-import { startHeartbeat, getHeartbeatStatus } from "./services/heartbeat.js";
+import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
 import { l402 } from "./services/l402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
-import { startDigest, alertOwner, getDigestStatus } from "./services/digest.js";
-import { startJobs, enqueueJob, getRecentJobs } from "./services/jobs.js";
+import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
+import { startJobs, enqueueJob, getRecentJobs, stopJobs, markRunningJobsFailed } from "./services/jobs.js";
 import { costMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
@@ -806,6 +806,39 @@ async function boot() {
   audit("boot", "Pixel V2 is alive — all services started");
   alertOwner("boot", "Pixel V2 just booted — all services started").catch(() => {});
 }
+
+// ============================================================
+// Graceful Shutdown
+// ============================================================
+
+let shuttingDown = false;
+
+function gracefulShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] Received ${signal}, shutting down gracefully...`);
+
+  // Stop accepting new work
+  stopJobs();
+  stopHeartbeat();
+  stopDigest();
+
+  // Mark any in-flight jobs as failed so they don't get stuck
+  try {
+    markRunningJobsFailed(`Process shutdown (${signal})`);
+  } catch (err: any) {
+    console.error("[shutdown] Failed to mark running jobs:", err.message);
+  }
+
+  audit("shutdown", `Graceful shutdown on ${signal}`);
+  console.log("[shutdown] Cleanup complete, exiting.");
+
+  // Give a moment for audit write, then exit
+  setTimeout(() => process.exit(0), 500);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 boot().catch((err) => {
   console.error("[boot] Fatal error:", err);
