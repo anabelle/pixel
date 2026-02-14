@@ -1312,6 +1312,15 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
       ]);
       const exitCode = await proc.exited;
 
+      // Cleanup key file
+      if (keyContent) {
+        const keyIdx = finalArgs.indexOf("-i");
+        if (keyIdx !== -1) {
+          const keyFile = finalArgs[keyIdx + 1];
+          await Bun.write(keyFile, "");
+        }
+      }
+
       if (exitCode !== 0) {
         auditToolUse("wp", { host: effectiveHost, command }, { exitCode, error: stderr });
         throw new Error(`WP-CLI failed: ${stderr}`);
