@@ -310,8 +310,8 @@ app.post("/api/job", requireOwnerNostrAuth, async (c) => {
   return c.json({ job });
 });
 
-/** Recent audit entries */
-app.get("/api/audit", requireOwnerNostrAuth, (c) => {
+/** Recent audit entries (public — operational telemetry, no secrets) */
+app.get("/api/audit", (c) => {
   const limit = parseInt(c.req.query("limit") ?? "50", 10);
   const entries = getRecentAudit(Math.min(limit, 200));
   return c.json({ entries, count: entries.length });
