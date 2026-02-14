@@ -17,6 +17,7 @@ import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
+import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
 import { parse as parseHTML } from "node-html-parser";
 
@@ -1774,6 +1775,49 @@ export const findChatTool: AgentTool<typeof findChatSchema> = {
   },
 };
 
+// ─── NOTIFY OWNER (TELEGRAM) ─────────────────────────────────
+
+const notifyOwnerSchema = Type.Object({
+  message: Type.String({ description: "The message to send to Ana (the owner) via Telegram. Be concise, warm, and useful." }),
+});
+
+const notifyOwnerTool: AgentTool<typeof notifyOwnerSchema> = {
+  name: "notify_owner",
+  label: "Notify Owner",
+  description: "Send a Telegram message to Ana (the owner/operator). Use this when you need to proactively alert her about something important, share an insight, or respond to a request to contact her. This actually sends a real Telegram message — use it intentionally.",
+  parameters: notifyOwnerSchema,
+  execute: async (_id, { message }) => {
+    if (!canNotify()) {
+      auditToolUse("notify_owner", {}, { error: "telegram_unavailable" });
+      return {
+        content: [{ type: "text" as const, text: "Cannot send: Telegram bot is not initialized or OWNER_TELEGRAM_ID is not set." }],
+        details: { sent: false },
+      };
+    }
+    try {
+      const sent = await notifyOwner(message);
+      auditToolUse("notify_owner", { messageLength: message.length }, { sent });
+      if (sent) {
+        return {
+          content: [{ type: "text" as const, text: "Message sent to Ana via Telegram." }],
+          details: { sent: true },
+        };
+      } else {
+        return {
+          content: [{ type: "text" as const, text: "Failed to send message to Ana. The Telegram API returned an error." }],
+          details: { sent: false },
+        };
+      }
+    } catch (err: any) {
+      auditToolUse("notify_owner", { messageLength: message.length }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to notify Ana: ${err.message}` }],
+        details: { sent: false, error: err.message },
+      };
+    }
+  },
+};
+
 // ─── SYNTROPY MAILBOX TOOL ────────────────────────────────────
 
 const syntropyNotifySchema = Type.Object({
@@ -2037,6 +2081,7 @@ export const pixelTools = [
   listChatsTool,
   findChatTool,
   syntropyNotifyTool,
+  notifyOwnerTool,
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,
