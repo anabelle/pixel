@@ -29,6 +29,92 @@ let sharedPubkey: string | null = null;
 // between the real-time mention subscription and the heartbeat engagement loop
 const repliedEventIds = new Set<string>();
 
+// ============================================================
+// Mute List (NIP-51 kind 10000)
+// ============================================================
+
+const muteList = new Set<string>();
+const MUTE_REFRESH_MS = 30 * 60 * 1000; // Refresh mute list every 30 minutes
+let lastMuteRefresh = 0;
+
+/** Load mute list from Nostr (kind 10000) */
+async function refreshMuteList(): Promise<void> {
+  if (!sharedNdk || !sharedPubkey) return;
+  try {
+    const events = await Promise.race([
+      sharedNdk.fetchEvents({ kinds: [10000], authors: [sharedPubkey], limit: 1 }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+    ]);
+    if (!events || (events instanceof Set && events.size === 0)) return;
+
+    const evt = events instanceof Set ? [...events][0] : null;
+    if (!evt) return;
+
+    const oldSize = muteList.size;
+    muteList.clear();
+    for (const tag of evt.tags) {
+      if (tag[0] === "p" && tag[1]) {
+        muteList.add(tag[1]);
+      }
+    }
+    lastMuteRefresh = Date.now();
+    if (muteList.size !== oldSize || muteList.size > 0) {
+      console.log(`[nostr] Mute list refreshed: ${muteList.size} pubkeys`);
+    }
+  } catch (err: any) {
+    console.error("[nostr] Failed to refresh mute list:", err.message);
+  }
+}
+
+/** Check if a pubkey is on the mute list */
+export function isMuted(pubkey: string): boolean {
+  // Trigger background refresh if stale
+  if (Date.now() - lastMuteRefresh > MUTE_REFRESH_MS) {
+    refreshMuteList().catch(() => {});
+    lastMuteRefresh = Date.now(); // Prevent multiple concurrent refreshes
+  }
+  return muteList.has(pubkey);
+}
+
+// ============================================================
+// Bot Detection — prevent endless reply loops
+// ============================================================
+
+// Track reply counts per pubkey in a rolling window
+const replyCountWindow = new Map<string, { count: number; windowStart: number }>();
+const BOT_WINDOW_MS = 60 * 60 * 1000; // 1-hour window
+const BOT_MAX_REPLIES_PER_WINDOW = 6; // Max replies to one pubkey per window
+const BOT_CONTENT_MIN_LENGTH = 5;
+
+/** Check if we should stop replying to this pubkey (bot loop detection) */
+export function isBotLoop(pubkey: string): boolean {
+  const now = Date.now();
+  const entry = replyCountWindow.get(pubkey);
+
+  if (!entry || now - entry.windowStart > BOT_WINDOW_MS) {
+    // New window
+    replyCountWindow.set(pubkey, { count: 1, windowStart: now });
+    return false;
+  }
+
+  entry.count++;
+  if (entry.count > BOT_MAX_REPLIES_PER_WINDOW) {
+    console.log(`[nostr] Bot loop detected: ${pubkey.slice(0, 8)}... (${entry.count} replies in window)`);
+    return true;
+  }
+
+  return false;
+}
+
+/** Check if content looks like bot-generated noise */
+function isBotContent(content: string): boolean {
+  if (!content || content.length < BOT_CONTENT_MIN_LENGTH) return true;
+  // Repetitive hashtag spam
+  const hashtags = (content.match(/#\w+/g) ?? []).length;
+  if (hashtags > 5 && hashtags > content.split(/\s+/).length * 0.5) return true;
+  return false;
+}
+
 /** Get the active Nostr instance (NDK + pubkey) for use by other services */
 export function getNostrInstance(): { ndk: NDK; pubkey: string } | null {
   if (!sharedNdk || !sharedPubkey) return null;
@@ -183,13 +269,18 @@ export async function startNostr(): Promise<void> {
 
   const mentionSub = ndk.subscribe(mentionFilter, { closeOnEose: false });
 
+  // Load mute list on startup
+  await refreshMuteList();
+
   mentionSub.on("event", async (event: NDKEvent) => {
     if (event.pubkey === pubkey) return;
     if (hasRepliedTo(event.id)) return; // Already replied (shared with heartbeat)
+    if (isMuted(event.pubkey)) return; // On mute list
     if (isThrottled(event.pubkey)) return;
+    if (isBotLoop(event.pubkey)) { markReplied(event.id); return; } // Bot loop protection
 
     const content = event.content;
-    if (!content) return;
+    if (!content || isBotContent(content)) return;
 
     console.log(`[nostr] Mention from ${event.pubkey.slice(0, 8)}...: ${content.slice(0, 80)}`);
 
@@ -247,7 +338,9 @@ export async function startNostr(): Promise<void> {
 
     dmSub.on("event", async (event: NDKEvent) => {
       if (event.pubkey === pubkey) return;
+      if (isMuted(event.pubkey)) return; // On mute list
       if (isThrottled(`dm-${event.pubkey}`)) return;
+      if (isBotLoop(`dm-${event.pubkey}`)) return; // Bot loop protection
 
       try {
         const decrypted = await signer.decrypt(

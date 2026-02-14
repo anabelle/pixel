@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance, hasRepliedTo, markReplied } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from "../connectors/nostr.js";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getSimpleModel, loadCharacter, extractText } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
@@ -753,6 +753,8 @@ async function checkAndReplyToMentions(): Promise<void> {
     for (const event of events) {
       if (event.pubkey === pubkey) continue; // Skip our own posts
       if (repliedTo.has(event.id)) continue; // Already replied
+      if (isMuted(event.pubkey)) continue; // On mute list
+      if (isBotLoop(event.pubkey)) continue; // Bot loop protection
       if (!event.content || event.content.length < 3) continue; // Skip empty
       unreplied.push(event);
     }
@@ -996,6 +998,7 @@ async function discoveryLoop(): Promise<void> {
     const candidates = all.filter((e) => {
       if (hasRepliedTo(e.id)) return false;
       if (discoveryRepliedIds.includes(e.id)) return false;
+      if (isMuted(e.pubkey)) return false;
       if (e.tags.some((t) => t[0] === "e")) return false; // skip replies
       if (e.content.length > 800) return false;
       return true;
@@ -1004,6 +1007,7 @@ async function discoveryLoop(): Promise<void> {
     const primalCandidates = primalEvents.filter((e) => {
       if (hasRepliedTo(e.id)) return false;
       if (discoveryRepliedIds.includes(e.id)) return false;
+      if (isMuted(e.pubkey)) return false;
       if (e.tags?.some((t: string[]) => t[0] === "e")) return false;
       if (!e.content || e.content.length > 800) return false;
       return true;
@@ -1048,7 +1052,7 @@ async function notificationLoop(): Promise<void> {
 
     if (!events) return;
 
-    const mentions = [...events].filter((e) => e.kind === 1 && e.pubkey !== pubkey);
+    const mentions = [...events].filter((e) => e.kind === 1 && e.pubkey !== pubkey && !isMuted(e.pubkey));
     const reactions = [...events].filter((e) => e.kind === 7 && e.pubkey !== pubkey);
 
     lastNotificationCheckTime = Date.now();
@@ -1063,6 +1067,7 @@ async function notificationLoop(): Promise<void> {
     for (const event of mentions) {
       if (replied >= maxReplies) break;
       if (hasRepliedTo(event.id)) continue;
+      if (isBotLoop(event.pubkey)) { markReplied(event.id); continue; }
       if (!event.content || event.content.length < 2) {
         markReplied(event.id);
         continue;
@@ -1141,6 +1146,7 @@ async function zapLoop(): Promise<void> {
 
       const sender = getZapSenderPubkey(event);
       if (sender && sender === pubkey) continue;
+      if (sender && isMuted(sender)) { zapThankedIds.push(event.id); continue; }
 
       const amountMsats = getZapAmountMsats(event);
       const thanks = generateThanksText(amountMsats);
@@ -1224,7 +1230,8 @@ async function followLoop(): Promise<void> {
     const candidates = [...trending24h, ...mostZapped4h]
       .filter((e) => e.pubkey && e.pubkey !== pubkey)
       .filter((e) => isArtPost(e.content ?? ""))
-      .filter((e) => !contacts.has(e.pubkey));
+      .filter((e) => !contacts.has(e.pubkey))
+      .filter((e) => !isMuted(e.pubkey));
 
     const maxFollows = scaled(FOLLOW_MAX, 3);
     let followed = 0;
@@ -1305,13 +1312,13 @@ async function artReportLoop(): Promise<void> {
 
     const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const relayEvents = await ndk.fetchEvents({ kinds: [1], since, limit: 200 });
-    const relayArt = [...relayEvents].filter((e) => e.pubkey !== pubkey && isArtPost(e.content ?? ""));
+    const relayArt = [...relayEvents].filter((e) => e.pubkey !== pubkey && !isMuted(e.pubkey) && isArtPost(e.content ?? ""));
 
     const [trending24h, mostZapped4h] = await Promise.all([
       fetchPrimalTrending24h(),
       fetchPrimalMostZapped4h(),
     ]);
-    const primalArt = [...trending24h, ...mostZapped4h].filter((e) => isArtPost(e.content ?? ""));
+    const primalArt = [...trending24h, ...mostZapped4h].filter((e) => !isMuted(e.pubkey) && isArtPost(e.content ?? ""));
 
     const samples = [...relayArt, ...primalArt].slice(0, 10).map((e) => e.content?.slice(0, 200)).filter(Boolean);
     if (samples.length < ART_REPORT_MIN_POSTS) {
@@ -1387,7 +1394,7 @@ async function spotlightLoop(): Promise<void> {
     }
 
     const trending = await fetchPrimalTrending24h();
-    const candidates = trending.filter((e) => e.pubkey !== pubkey && e.content && e.content.length > 40);
+    const candidates = trending.filter((e) => e.pubkey !== pubkey && !isMuted(e.pubkey) && e.content && e.content.length > 40);
     if (candidates.length === 0) {
       spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
       return;
@@ -1492,6 +1499,8 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   saveHeartbeatState();
 
   if (discoveryRepliedIds.includes(item.eventId) || hasRepliedTo(item.eventId)) return;
+  if (isMuted(item.pubkey)) { markDiscoveryReplied(item.eventId); return; }
+  if (isBotLoop(item.pubkey)) { markDiscoveryReplied(item.eventId); return; }
 
   const tagsHint = trendingTags.length > 0 ? `Trending topics: ${trendingTags.join(", ")}.` : "";
   const prompt = [
