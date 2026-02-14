@@ -11,4 +11,5 @@ external/
 bun.lock
 data/
 whatsapp-qr.txt
-skills/
+# Auto-generated skills (date-stamped) are ignored; curated skills are tracked
+skills/skill-20*.md

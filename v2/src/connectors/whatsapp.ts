@@ -74,13 +74,25 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       console.log("[whatsapp] Connected successfully");
     }
 
-    // When we get a QR code, print instructions
-    if (qr && !state.creds.registered) {
-      console.log(`[whatsapp] ========================================`);
-      console.log(`[whatsapp] QR CODE READY - Scan with WhatsApp`);
-      console.log(`[whatsapp] Go to: Settings > Linked Devices > Link a Device`);
-      console.log(`[whatsapp] The QR code should appear above (terminal QR)`);
-      console.log(`[whatsapp] ========================================`);
+    // When we get a QR code, request pairing code instead (better for headless/Docker)
+    if (qr && !state.creds.registered && !pairingCodeRequested) {
+      pairingCodeRequested = true;
+      try {
+        const code = await sock!.requestPairingCode(phoneNumber);
+        console.log(`[whatsapp] ========================================`);
+        console.log(`[whatsapp] PAIRING CODE: ${code}`);
+        console.log(`[whatsapp] Enter this code in WhatsApp:`);
+        console.log(`[whatsapp] Settings > Linked Devices > Link a Device > Link with phone number`);
+        console.log(`[whatsapp] ========================================`);
+      } catch (err: any) {
+        console.error(`[whatsapp] Failed to request pairing code:`, err.message);
+        // Fallback: show QR instructions
+        console.log(`[whatsapp] ========================================`);
+        console.log(`[whatsapp] QR CODE READY - Scan with WhatsApp`);
+        console.log(`[whatsapp] Go to: Settings > Linked Devices > Link a Device`);
+        console.log(`[whatsapp] The QR code should appear above (terminal QR)`);
+        console.log(`[whatsapp] ========================================`);
+      }
     }
   });
 

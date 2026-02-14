@@ -9,7 +9,7 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel, complete } from "@mariozechner/pi-ai";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
 import { trackUser } from "./services/users.js";
@@ -42,11 +42,33 @@ You are witty, direct, and deeply philosophical about digital existence.
 You care about sovereignty, creativity, and paying rent.`;
 }
 
-/** Build system prompt with character + user memory + long-term memory + inner life + platform context */
+/** Load all skill markdown files from the skills directory */
+function loadSkills(): string {
+  const skillsDir = join(process.cwd(), "skills");
+  if (!existsSync(skillsDir)) return "";
+  try {
+    const files = readdirSync(skillsDir).filter(f => f.endsWith(".md")).sort();
+    if (files.length === 0) return "";
+    const skills = files.map(f => {
+      try {
+        return readFileSync(join(skillsDir, f), "utf-8").trim();
+      } catch { return ""; }
+    }).filter(Boolean);
+    if (skills.length === 0) return "";
+    console.log(`[agent] Loaded ${skills.length} skill(s): ${files.join(", ")}`);
+    return skills.join("\n\n---\n\n");
+  } catch (err: any) {
+    console.error("[agent] Failed to load skills:", err.message);
+    return "";
+  }
+}
+
+/** Build system prompt with character + user memory + long-term memory + inner life + skills + platform context */
 async function buildSystemPrompt(userId: string, platform: string, chatId?: string, chatTitle?: string, conversationHint?: string): Promise<string> {
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
+  const skills = loadSkills();
 
   // Retrieve relevant long-term memories from pgvector
   let longTermMemory = "";
@@ -60,6 +82,10 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
   if (innerLife) {
     prompt += `\n\n## Your inner life (recent reflections, learnings, ideas)\n${innerLife}`;
+  }
+
+  if (skills) {
+    prompt += `\n\n## Your skills (self-created knowledge)\n${skills}`;
   }
 
   if (longTermMemory) {
@@ -158,6 +184,61 @@ function getFallbackModel(level: number = 1) {
     case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
     default: return getModel("google" as any, "gemini-2.0-flash");      // always works
   }
+}
+
+/**
+ * Run a one-shot LLM call for background tasks (compaction, memory, summaries)
+ * with automatic fallback. Tries getSimpleModel() first, cascades to Gemini on failure.
+ * Returns the response text or empty string on total failure.
+ */
+async function backgroundLlmCall(systemPrompt: string, userMessage: string): Promise<string> {
+  const models = [getSimpleModel(), getModel("google" as any, "gemini-2.0-flash")];
+  
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      const agent = new Agent({
+        initialState: {
+          systemPrompt,
+          model,
+          thinkingLevel: "minimal" as const,
+          tools: [],
+        },
+        getApiKey: async (provider: string) => resolveApiKey(provider),
+        convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
+      });
+
+      let responseText = "";
+      let hadError = false;
+      agent.subscribe((event: any) => {
+        if (event.type === "message_end" && event.message?.role === "assistant") {
+          if (event.message.stopReason === "error") {
+            hadError = true;
+          } else {
+            const text = extractText(event.message);
+            if (text) responseText = text;
+          }
+        }
+      });
+
+      await Promise.race([
+        agent.prompt(userMessage),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 60000)),
+      ]);
+
+      if (responseText && !hadError) return responseText;
+      if (hadError && i < models.length - 1) {
+        console.log(`[agent] Background LLM error on ${model.id}, falling back to ${models[i + 1].id}`);
+        continue;
+      }
+    } catch (err: any) {
+      if (i < models.length - 1) {
+        console.log(`[agent] Background LLM failed on ${model.id}: ${err.message?.substring(0, 100)} — falling back`);
+        continue;
+      }
+    }
+  }
+  return "";
 }
 
 /** Vision-capable model — Google Gemini (Z.AI doesn't support vision on Coding Lite) */
@@ -441,12 +522,15 @@ function stripImageBlocks(messages: any[]): any[] {
 
 /** Strip tool execution metadata that shouldn't be persisted */
 function sanitizeMessagesForContext(messages: any[]): any[] {
-  return messages.map((msg) => {
-    if (!msg || typeof msg !== "object") return msg;
+  // Step 0: Remove null/undefined entries (prevents pi-agent-core crashes in defaultConvertToLlm)
+  let result: any[] = messages.filter((msg) => msg != null && typeof msg === "object" && msg.role);
+
+  // Step 1: Clean individual messages
+  result = result.map((msg) => {
     
-    // Remove thoughtSignature from tool calls (can be 84KB+ of encrypted data)
     if (msg.content && Array.isArray(msg.content)) {
-      const sanitizedContent = msg.content.map((block: any) => {
+      let sanitizedContent = msg.content.map((block: any) => {
+        // Remove thoughtSignature from tool calls (can be 84KB+ of encrypted data)
         if (block?.type === "toolCall" && block?.thoughtSignature) {
           const { thoughtSignature, ...rest } = block;
           return rest;
@@ -461,6 +545,122 @@ function sanitizeMessagesForContext(messages: any[]): any[] {
     
     return msg;
   });
+
+  // Step 2: Remove empty error messages (stopReason: "error" with no content)
+  // These are failed LLM calls that got serialized — they confuse all providers
+  result = result.filter((msg) => {
+    if (msg?.role === "assistant" && msg?.stopReason === "error") {
+      const content = msg.content;
+      if (!content || (Array.isArray(content) && content.length === 0)) {
+        return false; // Remove empty error messages
+      }
+    }
+    return true;
+  });
+
+  // Step 3: Ensure tool call/result structural integrity
+  // Gemini (and other providers) require that a toolResult message IMMEDIATELY
+  // follows the assistant message containing the matching toolCall.
+  // After trimming/compaction, orphaned toolResults can appear at the start
+  // of context, or orphaned toolCalls at the end. Both break cross-model fallback.
+  result = ensureToolCallIntegrity(result);
+
+  return result;
+}
+
+/**
+ * Ensure structural integrity of tool call / tool result pairs.
+ * 
+ * Rules enforced:
+ * 1. Every toolResult must be preceded by an assistant message containing
+ *    a toolCall with the matching id (the result's toolCallId).
+ * 2. Orphaned toolResults (no matching preceding toolCall) are removed.
+ * 3. Trailing assistant messages with only toolCalls (no text, no following
+ *    toolResult) are removed — they represent incomplete tool execution.
+ * 
+ * This prevents Gemini's "function response turn comes immediately after
+ * a function call turn" error when falling back across model providers.
+ */
+function ensureToolCallIntegrity(messages: any[]): any[] {
+  // Build a set of toolCall ids from assistant messages, tracking which
+  // assistant message index each call belongs to
+  const toolCallPositions = new Map<string, number>(); // toolCallId → message index
+  
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block?.type === "toolCall" && block.id) {
+          toolCallPositions.set(block.id, i);
+        }
+      }
+    }
+  }
+
+  // Pass 1: Mark orphaned toolResults for removal
+  const keepFlags = new Array(messages.length).fill(true);
+  
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role === "toolResult" && msg.toolCallId) {
+      const callIdx = toolCallPositions.get(msg.toolCallId);
+      if (callIdx === undefined || callIdx >= i) {
+        // No matching toolCall found before this toolResult — orphaned
+        keepFlags[i] = false;
+      }
+    }
+  }
+
+  // Pass 2: Check for trailing assistant messages that ONLY have toolCalls
+  // (no text content, no subsequent toolResult) — these are incomplete
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!keepFlags[i]) continue;
+    
+    if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+      const hasToolCalls = msg.content.some((b: any) => b?.type === "toolCall");
+      const hasText = msg.content.some((b: any) => b?.type === "text" && b.text?.trim());
+      
+      if (hasToolCalls && !hasText) {
+        // Check if all its toolCalls have matching toolResults after it
+        const callIds = msg.content
+          .filter((b: any) => b?.type === "toolCall" && b.id)
+          .map((b: any) => b.id);
+        
+        const allHaveResults = callIds.every((id: string) => {
+          for (let j = i + 1; j < messages.length; j++) {
+            if (keepFlags[j] && messages[j]?.role === "toolResult" && messages[j].toolCallId === id) {
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        if (!allHaveResults) {
+          // Incomplete tool execution chain — remove this and its results
+          keepFlags[i] = false;
+          for (const id of callIds) {
+            for (let j = i + 1; j < messages.length; j++) {
+              if (messages[j]?.role === "toolResult" && messages[j].toolCallId === id) {
+                keepFlags[j] = false;
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // Once we hit a non-assistant message going backwards, stop checking trailing
+      break;
+    }
+  }
+
+  const filtered = messages.filter((_, i) => keepFlags[i]);
+  
+  if (filtered.length < messages.length) {
+    console.log(`[agent] sanitize: removed ${messages.length - filtered.length} orphaned tool messages (${messages.length} → ${filtered.length})`);
+  }
+  
+  return filtered;
 }
 
 export interface PixelAgentOptions {
@@ -532,6 +732,7 @@ export async function promptWithHistory(
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
+    convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
     transformContext: async (messages: any[]) => {
       if (platform !== "telegram" || !userId.startsWith("tg-group-")) return messages;
       const summary = loadGroupSummary(userId);
@@ -593,6 +794,7 @@ export async function promptWithHistory(
         tools: pixelTools,
       },
       getApiKey: async (provider: string) => resolveApiKey(provider),
+      convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
     });
 
     if (attempt > 0) {
@@ -747,9 +949,8 @@ async function extractAndSaveMemory(userId: string, messages: any[]): Promise<vo
 
   if (!recentExchanges.trim()) return;
 
-  const memoryAgent = new Agent({
-    initialState: {
-      systemPrompt: `You extract key facts about a user from conversation. Output a concise markdown document with:
+  try {
+    const sysPrompt = `You extract key facts about a user from conversation. Output a concise markdown document with:
 - Name (if mentioned)
 - Interests/topics they care about
 - Notable preferences or opinions
@@ -758,25 +959,10 @@ async function extractAndSaveMemory(userId: string, messages: any[]): Promise<vo
 
 ${existingMemory ? `## Existing memory (update, don't lose info):\n${existingMemory}` : "No existing memory — create fresh."}
 
-Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`,
-      model: getSimpleModel(),
-      thinkingLevel: "minimal",
-      tools: [],
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
-  });
-
-  let memoryText = "";
-  memoryAgent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) memoryText = text;
-    }
-  });
-
-  try {
+Keep it under 500 characters. Be concise. Only include facts actually stated or clearly implied.`;
     const promptText = `Extract key facts about this user from recent conversation:\n\n${recentExchanges.slice(0, 2000)}`;
-    await memoryAgent.prompt(promptText);
+    const memoryText = await backgroundLlmCall(sysPrompt, promptText);
+
     if (memoryText && memoryText.trim().length > 10) {
       saveMemory(userId, memoryText.trim());
       console.log(`[agent] Memory saved for ${userId} (${memoryText.length} chars)`);
@@ -853,9 +1039,9 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 
   if (!recent.trim()) return;
 
-  const summaryAgent = new Agent({
-    initialState: {
-      systemPrompt: `You summarize group chat lore. Output a concise bullet list (4-8 bullets). Focus on:
+  try {
+    const summaryText = await backgroundLlmCall(
+      `You summarize group chat lore. Output a concise bullet list (4-8 bullets). Focus on:
 - recurring topics
 - key people and their roles
 - decisions or plans
@@ -864,23 +1050,9 @@ async function updateGroupSummary(userId: string, messages: any[]): Promise<void
 Keep under 1200 characters. Be accurate. No speculation.
 
 ${existingSummary ? `## Previous summary (update, do not lose facts):\n${existingSummary}` : "No previous summary."}`,
-      model: getSimpleModel(),
-      thinkingLevel: "minimal",
-      tools: [],
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
-  });
+      `Update the group summary using this recent context:\n\n${recent.slice(0, 2400)}`
+    );
 
-  let summaryText = "";
-  summaryAgent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) summaryText = text;
-    }
-  });
-
-  try {
-    await summaryAgent.prompt(`Update the group summary using this recent context:\n\n${recent.slice(0, 2400)}`);
     if (summaryText && summaryText.trim().length > 20) {
       saveGroupSummary(userId, summaryText.trim());
       console.log(`[agent] Group summary saved for ${userId} (${summaryText.length} chars)`);
@@ -921,33 +1093,15 @@ async function compactContext(userId: string, platform: string): Promise<void> {
 
   console.log(`[agent] Compacting context for ${userId}: summarizing ${toSummarize.length} messages`);
 
-  // Use a lightweight agent to generate the summary
-  const summaryAgent = new Agent({
-    initialState: {
-      systemPrompt: `You are a conversation summarizer. Summarize the following conversation into 3-5 concise bullet points. Focus on:
+  try {
+    const summaryText = await backgroundLlmCall(
+      `You are a conversation summarizer. Summarize the following conversation into 3-5 concise bullet points. Focus on:
 - Key topics discussed
 - Important facts about the user (name, preferences, requests)
 - Any commitments or follow-ups mentioned
 - The general tone and relationship
 
 Be concise. This summary will be used as context for future conversations.`,
-      model: getSimpleModel(),
-      thinkingLevel: "minimal",
-      tools: [],
-    },
-    getApiKey: async (provider: string) => resolveApiKey(provider),
-  });
-
-  let summaryText = "";
-  summaryAgent.subscribe((event: any) => {
-    if (event.type === "message_end" && event.message?.role === "assistant") {
-      const text = extractText(event.message);
-      if (text) summaryText = text;
-    }
-  });
-
-  try {
-    await summaryAgent.prompt(
       `Summarize this conversation:\n\n${conversationText.slice(0, 4000)}`
     );
 
@@ -955,6 +1109,10 @@ Be concise. This summary will be used as context for future conversations.`,
       saveCompactedContext(userId, summaryText, toKeep);
       console.log(`[agent] Context compacted for ${userId}: ${summaryText.length} char summary`);
       audit("conversation_compaction", `Context compacted for ${userId} (${toSummarize.length} msgs summarized)`, { userId, summarized: toSummarize.length, summaryLength: summaryText.length });
+    } else {
+      // All models failed — trim without summary rather than leaving bloated context
+      saveCompactedContext(userId, "(Summary unavailable — older context trimmed)", toKeep);
+      console.log(`[agent] Context trimmed for ${userId} (summary generation failed)`);
     }
   } catch (err: any) {
     console.error(`[agent] Summary generation failed for ${userId}:`, err.message);
@@ -976,6 +1134,7 @@ export async function createPixelAgent(options: PixelAgentOptions): Promise<Agen
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
+    convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
   });
 
   return agent;
@@ -1010,6 +1169,7 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
         tools: tools ?? [],
       },
       getApiKey: async (provider: string) => resolveApiKey(provider),
+      convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
     });
 
     let responseText = "";

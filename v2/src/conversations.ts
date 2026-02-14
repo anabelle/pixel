@@ -52,7 +52,7 @@ export function loadContext(userId: string): any[] {
     const raw = readFileSync(contextPath, "utf-8");
     const messages = JSON.parse(raw);
     if (!Array.isArray(messages)) return [];
-    return messages.map((msg) => normalizeMessage(msg));
+    return messages.map((msg) => normalizeMessage(msg)).filter((msg) => msg != null && typeof msg === "object");
   } catch (err: any) {
     console.error(`[conversations] Failed to load context for ${userId}:`, err.message);
     return [];
@@ -74,16 +74,16 @@ function normalizeMessage(message: any): any {
 /**
  * Save the current LLM context for a user.
  * Trims to MAX_CONTEXT_MESSAGES to prevent unbounded growth.
- * Keeps the most recent messages.
+ * Keeps the most recent messages, respecting tool call/result boundaries.
  */
 export function saveContext(userId: string, messages: any[]): void {
   const dir = ensureUserDir(userId);
   const contextPath = join(dir, "context.json");
 
-  // Trim old messages but keep recent ones
+  // Trim old messages but keep recent ones, respecting tool boundaries
   let toSave = messages;
   if (messages.length > MAX_CONTEXT_MESSAGES) {
-    toSave = messages.slice(-MAX_CONTEXT_MESSAGES);
+    toSave = sliceAtCleanBoundary(messages, -MAX_CONTEXT_MESSAGES);
   }
 
   try {
@@ -229,6 +229,7 @@ export function needsCompaction(userId: string): boolean {
 /**
  * Get messages that should be summarized during compaction.
  * Returns the older messages (everything except the most recent KEEP_RECENT_MESSAGES).
+ * Respects tool call/result boundaries — won't split a toolCall from its toolResult.
  */
 export function getMessagesForCompaction(userId: string): {
   toSummarize: any[];
@@ -239,8 +240,10 @@ export function getMessagesForCompaction(userId: string): {
     return { toSummarize: [], toKeep: messages };
   }
 
-  const toKeep = messages.slice(-KEEP_RECENT_MESSAGES);
-  const toSummarize = messages.slice(0, messages.length - KEEP_RECENT_MESSAGES);
+  // Find a clean split point near KEEP_RECENT_MESSAGES from the end
+  const splitIdx = findCleanSplitIndex(messages, messages.length - KEEP_RECENT_MESSAGES);
+  const toKeep = messages.slice(splitIdx);
+  const toSummarize = messages.slice(0, splitIdx);
   return { toSummarize, toKeep };
 }
 
@@ -277,4 +280,50 @@ export function saveCompactedContext(
   } catch (err: any) {
     console.error(`[conversations] Failed to save compacted context for ${userId}:`, err.message);
   }
+}
+
+/**
+ * Find a clean split index near `targetIdx` that doesn't break tool call/result pairs.
+ * Walks forward from the target until we find a message that is NOT a toolResult
+ * and is NOT an assistant-with-only-toolCalls-and-no-text. This ensures the kept
+ * portion starts at a clean conversational boundary.
+ */
+function findCleanSplitIndex(messages: any[], targetIdx: number): number {
+  let idx = Math.max(0, Math.min(targetIdx, messages.length));
+  
+  // Walk forward to find a clean boundary (user message or assistant with text)
+  while (idx < messages.length) {
+    const msg = messages[idx];
+    if (!msg) { idx++; continue; }
+    
+    // toolResult — can't start here, orphaned without its toolCall
+    if (msg.role === "toolResult") { idx++; continue; }
+    
+    // assistant with only toolCalls (no text) — the toolResults after it need
+    // the preceding context, but this IS a valid start if it has text too
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      const hasText = msg.content.some((b: any) => b?.type === "text" && b.text?.trim());
+      const hasToolCalls = msg.content.some((b: any) => b?.type === "toolCall");
+      if (hasToolCalls && !hasText) {
+        // This is a tool-only assistant turn — valid start as long as its
+        // toolResults follow. This is fine, keep it.
+        break;
+      }
+    }
+    
+    // user message or assistant with text — clean boundary
+    break;
+  }
+  
+  return idx;
+}
+
+/**
+ * Slice messages from the end, respecting tool call/result boundaries.
+ * Like Array.slice(negativeOffset) but adjusts to avoid starting on a toolResult.
+ */
+function sliceAtCleanBoundary(messages: any[], negativeOffset: number): any[] {
+  const targetIdx = messages.length + negativeOffset; // Convert negative to positive
+  const cleanIdx = findCleanSplitIndex(messages, targetIdx);
+  return messages.slice(cleanIdx);
 }

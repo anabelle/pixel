@@ -5,6 +5,17 @@
  * Boot sequence: Database → Hono HTTP server → Connectors
  */
 
+// ─── GLOBAL ERROR HANDLERS ───────────────────────────────────
+// Prevent unhandled errors from crashing the process (pi-agent-core
+// can emit errors outside promise chains in its internal stream IIFE)
+process.on("unhandledRejection", (reason: any) => {
+  console.error("[process] Unhandled rejection:", reason?.message ?? reason);
+});
+process.on("uncaughtException", (err: Error) => {
+  console.error("[process] Uncaught exception:", err.message);
+  // Don't exit — let the agent keep running
+});
+
 import { Hono } from "hono";
 import { serve } from "bun";
 import { drizzle } from "drizzle-orm/postgres-js";
