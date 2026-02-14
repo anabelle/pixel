@@ -202,6 +202,107 @@ rm -f v2/data/syntropy-mailbox.jsonl.forwarded
 
 That's fine — Pixel had nothing to escalate. Proceed with the session.
 
+## Interactive Debugging Protocol
+
+When debugging Pixel interactively (live troubleshooting), use this protocol:
+
+### Monitor Pixel in Real-Time
+
+```bash
+# Watch for tool usage in real-time
+docker compose -f v2/docker-compose.yml logs -f pixel | grep -E "tool_use|error"
+
+# Monitor specific tool (e.g., wp or ssh)
+docker compose -f v2/docker-compose.yml logs -f pixel | grep "wp"
+
+# Check conversation logs as Pixel processes
+tail -f v2/conversations/<user-id>/log.jsonl
+
+# Check audit log for tool execution details
+tail -f v2/data/audit.jsonl | jq -r '.'
+```
+
+### Inject Test Commands via Chat API
+
+```bash
+# Send a direct command to test
+curl -s -X POST http://localhost:4000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"wp plugin status wplms","userId":"debug-test"}' | jq .
+
+# Test SSH directly
+curl -s -X POST http://localhost:4000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"ssh","userId":"debug-ssh"}' | jq .
+
+# Test with specific user context (simulate Telegram user)
+curl -s -X POST http://localhost:4000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"ssh","userId":"tg-user-123456","platform":"telegram"}' | jq .
+```
+
+### Common Debugging Patterns
+
+| Issue | How to Debug |
+|--------|-------------|
+| Tool not working | Send direct command, watch audit log for error |
+| Container crash | `docker compose -f v2/docker-compose.yml logs pixel --tail=500` |
+| Env var missing | `docker compose -f v2/docker-compose.yml exec pixel env | grep VAR` |
+| File write issue | Watch `/tmp` for artifacts: `docker compose -f v2/docker-compose.yml exec pixel ls -la /tmp/` |
+| Database error | Check postgres logs: `docker compose -f v2/docker-compose.yml logs postgres-v2 --tail=50` |
+| Tool returns null | Check conversation log for agent reasoning before tool call |
+
+### Debugging Checklist
+
+Before declaring an issue "fixed":
+- [ ] Read the error from audit.jsonl (not just conversation)
+- [ ] Tested the fix interactively via `/api/chat`
+- [ ] Verified no new errors in container logs
+- [ ] Confirmed container is healthy: `curl http://localhost:4000/health`
+- [ ] Cleared any test artifacts from `/tmp`
+- [ ] Committed and pushed all code changes
+- [ ] Updated AGENTS.md with session details
+- [ ] Debriefed Pixel via `/api/chat` as `syntropy-admin`
+
+### Live Debugging Commands
+
+```bash
+# Start a live debugging session
+# Terminal 1: Watch container logs
+docker compose -f v2/docker-compose.yml logs -f pixel
+
+# Terminal 2: Send test commands interactively
+# Use curl to /api/chat with test userId
+
+# Terminal 3: Monitor audit log
+tail -f v2/data/audit.jsonl | jq -r 'select(.type == "tool_use") | .summary'
+
+# Terminal 4: Check temporary files
+docker compose -f v2/docker-compose.yml exec pixel watch -n 1 ls -la /tmp/
+```
+
+### Quick Verification Commands
+
+```bash
+# Verify SSH key decode works
+docker compose -f v2/docker-compose.yml exec pixel su-exec bun node -e '
+const key = process.env.TALLERUBENS_SSH_KEY;
+const decoded = Buffer.from(key, "base64").toString();
+console.log("Key length:", decoded.length);
+console.log("Has newline:", decoded.endsWith("\n"));
+'
+
+# Verify SSH connection
+docker compose -f v2/docker-compose.yml exec pixel bash -c '
+timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.224.4 "echo SUCCESS"
+'
+
+# Verify WP-CLI
+docker compose -f v2/docker-compose.yml exec pixel bash -c '
+timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.224.4 "cd /home/talleru/public_html && wp --version"
+'
+```
+
 ## Rules
 
 1. ALWAYS read `v2/AGENTS.md` first to understand current state
