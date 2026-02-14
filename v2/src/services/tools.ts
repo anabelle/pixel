@@ -21,6 +21,10 @@ import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
 import { appendToLog } from "../conversations.js";
 import { parse as parseHTML } from "node-html-parser";
+import { generateImage } from "./image-gen.js";
+import { uploadToBlossom } from "./blossom.js";
+import { sendTelegramImage } from "../connectors/telegram.js";
+// NOTE: WhatsApp image sending is not wired for image tool yet
 
 // ─── READ FILE ────────────────────────────────────────────────
 
@@ -2109,6 +2113,62 @@ const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
   },
 };
 
+// ─── GENERATE IMAGE ───────────────────────────────────────────
+
+const generateImageSchema = Type.Object({
+  prompt: Type.String({ description: "Text prompt describing the image to generate" }),
+  ratio: Type.Optional(Type.String({ description: "Aspect ratio (e.g. 1:1, 16:9, 9:16). Default: 1:1" })),
+  model: Type.Optional(Type.Union([Type.Literal("pro"), Type.Literal("flash")], { description: "Image model tier" })),
+  size: Type.Optional(Type.Union([Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")], { description: "Image size (pro only)" })),
+  platform: Type.Optional(Type.Union([Type.Literal("telegram"), Type.Literal("nostr")], { description: "Send to a platform directly (default: current platform)" })),
+  chat_id: Type.Optional(Type.String({ description: "Target chat id (Telegram). Optional if tool is called in conversation." })),
+  upload: Type.Optional(Type.Boolean({ description: "Upload to Blossom and return URL" })),
+  caption: Type.Optional(Type.String({ description: "Optional caption when sending" })),
+});
+
+const generateImageTool: AgentTool<typeof generateImageSchema> = {
+  name: "generate_image",
+  label: "Generate Image",
+  description: "Create an image from a prompt. If platform is provided, send it directly. Otherwise returns local file path.",
+  parameters: generateImageSchema,
+  execute: async (_id, { prompt, ratio, model, size, platform, chat_id, upload, caption }) => {
+    const ctx = getToolContext();
+    const targetPlatform = (platform ?? ctx.platform) as string | undefined;
+    const targetChat = chat_id ?? ctx.chatId;
+
+    try {
+      const result = await generateImage(prompt, { ratio, model: model as any, size: size as any });
+      const responseLines = [
+        `Image generated (${result.mimeType}, ${result.buffer.byteLength} bytes).`,
+        `Model: ${result.modelUsed}`,
+      ];
+      if (result.path) responseLines.push(`Path: ${result.path}`);
+
+      // Optionally send to platform
+      if (targetPlatform === "telegram" && targetChat) {
+        const sent = await sendTelegramImage(targetChat, result.buffer, caption);
+        if (sent) {
+          auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "telegram", chat_id: String(targetChat) }, { sent: true });
+          return { content: [{ type: "text" as const, text: `Image sent to Telegram chat ${targetChat}.` }] };
+        }
+      }
+
+      if (targetPlatform === "nostr" || upload) {
+        const urlResult = await uploadToBlossom(result.buffer, result.mimeType);
+        responseLines.push(`URL: ${urlResult.url}`);
+        auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "nostr" }, { url: urlResult.url });
+        return { content: [{ type: "text" as const, text: responseLines.join("\n") }], details: { url: urlResult.url } };
+      }
+
+      auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size }, { path: result.path ?? null, bytes: result.buffer.byteLength });
+      return { content: [{ type: "text" as const, text: responseLines.join("\n") }], details: { path: result.path } };
+    } catch (err: any) {
+      auditToolUse("generate_image", { prompt: prompt?.slice(0, 80), ratio, model, size }, { error: err?.message });
+      return { content: [{ type: "text" as const, text: `Image generation failed: ${err?.message ?? "unknown error"}` }] };
+    }
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -2153,6 +2213,7 @@ export const pixelTools = [
   wpCliTool,
   introspectTool,
   sendVoiceTool,
+  generateImageTool,
 ];
 
 // Map of tool names to their implementations
@@ -2171,6 +2232,7 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   memory_update: memoryUpdateTool,
   memory_delete: memoryDeleteTool,
   introspect: introspectTool,
+  generate_image: generateImageTool,
 };
 
 /**

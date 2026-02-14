@@ -13,6 +13,8 @@ import postgres from "postgres";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { promptWithHistory, extractText } from "./agent.js";
+import { generateImage } from "./services/image-gen.js";
+import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
@@ -166,7 +168,7 @@ app.get("/.well-known/agent-card.json", (c) => {
     description: "Living digital artist. Creates art, writes code, survives on Lightning micropayments.",
     version: "2.0.0",
     protocols: ["nostr", "lightning", "l402", "x402"],
-    capabilities: ["text-generation", "conversation"],
+    capabilities: ["text-generation", "conversation", "image-generation"],
     endpoints: {
       chat: "/api/chat",
       "chat-premium": "/api/chat/premium",
@@ -185,6 +187,7 @@ app.get("/.well-known/agent-card.json", (c) => {
       l402: {
         "chat-premium": { sats: 10, description: "Priority chat response" },
         generate: { sats: 50, description: "AI text generation" },
+        "generate-image": { sats: 80, description: "AI image generation" },
       },
     },
   });
@@ -681,6 +684,56 @@ app.post(
       });
     } catch (error: any) {
       console.error("[generate] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
+/** Image generation — L402-gated at 80 sats per request */
+app.post(
+  "/api/generate/image",
+  l402({
+    sats: 80,
+    description: "Pixel AI image generation",
+    onPayment: (info) => {
+      console.log(`[l402] Image generation paid: ${info.amountSats} sats`);
+    },
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { prompt, model, ratio, size, upload = true, userId = "anonymous" } = body ?? {};
+
+      if (!prompt || typeof prompt !== "string") {
+        return c.json({ error: "prompt is required" }, 400);
+      }
+
+      const image = await generateImage(prompt, { model, ratio, size });
+
+      let url: string | null = null;
+      if (upload) {
+        const uploaded = await uploadToBlossom(image.buffer, image.mimeType);
+        url = uploaded.url;
+      }
+
+      const l402Info = (c as any).get("l402") as { paymentHash?: string; amountSats?: number } | undefined;
+
+      return c.json({
+        prompt,
+        model: image.modelUsed,
+        mimeType: image.mimeType,
+        bytes: image.buffer.byteLength,
+        path: image.path ?? null,
+        url,
+        payment: {
+          paymentHash: l402Info?.paymentHash,
+          amountSats: l402Info?.amountSats,
+        },
+        timestamp: new Date().toISOString(),
+        userId,
+      });
+    } catch (error: any) {
+      console.error("[generate/image] Error:", error);
       return c.json({ error: error.message ?? "Internal error" }, 500);
     }
   }

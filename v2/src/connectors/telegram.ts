@@ -171,6 +171,22 @@ export async function sendTelegramVoice(
   }
 }
 
+/** Send an image (buffer) to a Telegram chat */
+export async function sendTelegramImage(
+  chatId: string | number,
+  imageBuffer: Buffer,
+  caption?: string
+): Promise<boolean> {
+  if (!botInstance) return false;
+  try {
+    await botInstance.api.sendPhoto(chatId, new InputFile(imageBuffer, "pixel.png"), caption ? { caption } : undefined);
+    return true;
+  } catch (err: any) {
+    console.error(`[telegram] Failed to send image to ${chatId}:`, err.message);
+    return false;
+  }
+}
+
 /** Check if proactive messaging is available */
 export function canNotify(): boolean {
   return botInstance !== null && OWNER_CHAT_ID !== "";
