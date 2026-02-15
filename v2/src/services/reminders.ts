@@ -83,7 +83,10 @@ export async function storeReminder(input: ReminderInput): Promise<ReminderRecor
 
 /** List active reminders for a user */
 export async function listReminders(userId: string, platform: string): Promise<ReminderRecord[]> {
-  if (!db) throw new Error("Reminders service not initialized");
+  if (!db) {
+    console.error("[reminders] ERROR: Database not initialized — cannot list reminders");
+    throw new Error("Reminders service not initialized");
+  }
 
   const results = await db.select().from(reminders)
     .where(and(
@@ -102,14 +105,24 @@ export async function listRemindersAdvanced(
   platform: string,
   options?: { statuses?: string[]; limit?: number; offset?: number; platformChatId?: string }
 ): Promise<ReminderRecord[]> {
-  if (!db) throw new Error("Reminders service not initialized");
+  if (!db) {
+    console.error("[reminders] ERROR: Database not initialized — cannot list reminders");
+    throw new Error("Reminders service not initialized");
+  }
 
   const statuses = options?.statuses?.length ? options.statuses : ["active"];
   const baseConditions = [
     eq(reminders.userId, userId),
     eq(reminders.platform, platform),
-    inArray(reminders.status, statuses)
   ];
+  
+  // Use inArray only when multiple statuses; use eq for single status to avoid Drizzle parameterization issues
+  if (statuses.length === 1) {
+    baseConditions.push(eq(reminders.status, statuses[0]));
+  } else {
+    baseConditions.push(inArray(reminders.status, statuses));
+  }
+  
   if (options?.platformChatId) {
     baseConditions.push(eq(reminders.platformChatId, options.platformChatId));
   }
@@ -450,6 +463,11 @@ async function fireReminderCore(reminder: ReminderRecord, now: Date): Promise<vo
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startScheduler(): void {
+  if (!db) {
+    console.error("[reminders] ERROR: Database not initialized — cannot start scheduler");
+    return;
+  }
+  
   if (schedulerInterval) {
     console.log("[reminders] Scheduler already running");
     return;
