@@ -41,6 +41,7 @@ You operate in `/home/pixel/pixel` — the Pixel monorepo containing:
 - **RAM:** 3.8GB total
 - **Container management:** Use `docker compose` commands from project root
 - **V2 runs on ports:** 4000 (pixel), 5433 (postgres-v2)
+- **DNS bypass (CRITICAL):** tallerubens.com and dev.tallerubens.com resolve to 68.66.224.4 in `/etc/hosts` and docker-compose `extra_hosts` to bypass Cloudflare (Cloudflare doesn't proxy SSH)
 
 ## Your Capabilities
 
@@ -106,11 +107,12 @@ docker stats --no-stream
 - `v2/src/services/inner-life.ts` — Reflection, learning, ideation, evolution (1062 lines)
 - `v2/src/connectors/telegram.ts` — Telegram bot with vision, groups, notify_owner (563 lines)
 - `v2/src/connectors/nostr.ts` — NDK mentions, DMs, DVM, repliedEventIds (392 lines)
-- `v2/docker-compose.yml` — V2 container config (pixel + postgres-v2)
+- `v2/docker-compose.yml` — V2 container config (pixel + postgres-v2) with DNS bypass via extra_hosts (tallerubens.com → 68.66.224.4)
 - `v2/conversations/` — Per-user JSONL conversation logs (persistent)
 - `v2/data/syntropy-mailbox.jsonl` — Pixel→Syntropy mailbox (check on every session start)
 - `v2/scripts/` — Cron scripts: auto-update.sh, host-health.sh, check-mailbox.sh
 - `.env` — ALL secrets (Nostr keys, API keys, wallet keys — NEVER expose)
+- `/etc/hosts` — Host-level DNS bypass for tallerubens.com/dev.tallerubens.com → 68.66.224.4 (CRITICAL for SSH operations)
 
 ## Pixel Debrief Protocol
 
@@ -251,6 +253,7 @@ curl -s -X POST http://localhost:4000/api/chat \
 | File write issue | Watch `/tmp` for artifacts: `docker compose -f v2/docker-compose.yml exec pixel ls -la /tmp/` |
 | Database error | Check postgres logs: `docker compose -f v2/docker-compose.yml logs postgres-v2 --tail=50` |
 | Tool returns null | Check conversation log for agent reasoning before tool call |
+| SSH "Network unreachable" | Check DNS: domain may be behind Cloudflare, not actual server IP. Verify `/etc/hosts` and `docker-compose.yml` extra_hosts bypass Cloudflare for tallerubens domains |
 
 ### Debugging Checklist
 
@@ -294,12 +297,12 @@ console.log("Has newline:", decoded.endsWith("\n"));
 
 # Verify SSH connection
 docker compose -f v2/docker-compose.yml exec pixel bash -c '
-timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.224.4 "echo SUCCESS"
+timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@tallerubens.com "echo SUCCESS"
 '
 
 # Verify WP-CLI
 docker compose -f v2/docker-compose.yml exec pixel bash -c '
-timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.224.4 "cd /home/talleru/public_html && wp --version"
+timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@tallerubens.com "cd /home/talleru/public_html && wp --version"
 '
 
 ```
