@@ -646,14 +646,8 @@ export async function promptWithHistory(
     chatId = userId.replace("nostr-dm-", "").replace("nostr-", "");
   }
   
-  // Check for scheduling intent FIRST, before normal conversation
-  const schedulingResult = await handleSchedulingIntent(userId, platform, message, chatId);
-  if (schedulingResult.handled) {
-    // Also track this interaction in the conversation log
-    appendToLog(userId, message, schedulingResult.response || "", platform);
-    trackUser(userId, platform).catch(() => {});
-    return schedulingResult.response || "Done.";
-  }
+  // Scheduling is handled by the main agent via schedule_alarm/list_alarms/cancel_alarm/modify_alarm tools.
+  // No pre-filter — GLM-4.7 is smart enough to detect intent and use tools directly.
   
   const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 

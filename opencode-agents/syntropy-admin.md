@@ -190,3 +190,29 @@ ls v2/conversations/ | wc -l
 3. Clean stale artifacts
 4. Commit and push
 5. Debrief Pixel
+
+---
+
+## Lessons Learned (Session 41)
+
+### Dispatch Archive Safety
+- `syntropy-dispatch.sh` copies mailbox → `.forwarded` before processing, then empties original
+- On failure, messages must be **restored to mailbox** (not just preserved in `.forwarded`) — cron only checks the mailbox
+- `${DISPATCH_EXIT:-1}` default handles crash case where variable never got set — defaults to failure, restores messages
+- bash `trap` **replaces** previous trap for same signal — can't stack two `trap ... EXIT` calls, merge into one function
+- `set -euo pipefail` will crash on unbound variables — always use `${VAR:-default}` for vars that may not be set at trap time
+
+### Scheduling Pre-filter Was Breaking Pixel
+- `handleSchedulingIntent()` ran Gemini 2.0 Flash on EVERY message before GLM-4.7 saw it
+- Gemini 2.0 Flash misclassified normal messages as scheduling requests (Spanish words like "mañana", "ahora mismo" triggered false positives)
+- Result: Pixel responded with "when should I remind you?" instead of real answers — appeared dumb
+- Fix: removed the pre-filter entirely. GLM-4.7 handles scheduling natively via `schedule_alarm`/`list_alarms`/`cancel_alarm`/`modify_alarm` tools
+- Lesson: **never gate smart models behind dumb classifiers** — let the primary model use its tools
+
+### Thinking Level Safety
+- pi-agent-core thinking levels: `"off" | "minimal" | "low" | "medium" | "high" | "xhigh"`
+- Z.AI GLM-4.7: thinking is binary (on/off) regardless of level — "high" = same as "minimal", just enables it
+- Gemini 2.5 Flash: "high" = 24,576 thinking budget tokens — burns through free tier quotas faster
+- Models with `reasoning: false` (GLM-4.5-air, Gemini 2.0 Flash): thinking level **silently ignored** — safe
+- Current config is correct: "high" for conversations (GLM-4.7), "off" for background tasks (GLM-4.5-air)
+- `backgroundLlmCall()` correctly uses `thinkingLevel: "off"` — never change this
