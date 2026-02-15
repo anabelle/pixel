@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-15 | Session: 43
+> Last updated: 2026-02-15 | Session: 44
 
 ---
 
@@ -92,7 +92,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache |
 | `src/services/digest.ts` | ~198 | Periodic digest + instant alert system for owner |
 | `src/services/nostr-auth.ts` | ~169 | NIP-98 HTTP auth for dashboard |
-| `src/services/clawstr.ts` | ~165 | Stacker News API (graceful skip if unconfigured) |
+| `src/services/clawstr.ts` | ~168 | Clawstr CLI wrapper — docker-in-docker, config at `/app/data/.clawstr` (mounted from `data/clawstr`), 6h check cycle |
 | `src/services/image-gen.ts` | ~145 | Gemini image generation service |
 | `src/services/revenue.ts` | ~141 | PostgreSQL revenue tracking |
 | `src/services/primal.ts` | ~136 | Primal Cache API for trending Nostr posts |
@@ -178,6 +178,8 @@ Same Pixel, same brain, different payment doors:
 - **Context compaction at 40 messages.** Summarizes older messages beyond recent 20.
 - **Memory extraction every 5th message per user.** Extracts facts → `memory.md`.
 - **Shared repliedEventIds** between nostr.ts and heartbeat.ts prevents double-replies.
+- **Clawstr is secondary to Nostr.** 6h check cycle, max 1 reply per cycle, 4h cooldown. Token budget goes to Nostr engagement first.
+- **Clawstr config path:** `isClawstrConfigured()` checks `/app/data/.clawstr/config.json` (container mount from `data/clawstr/`) AND `${HOST_PIXEL_ROOT}/data/clawstr/config.json`. Docker-in-docker CLI uses host path for volume mount.
 - **research_task internal mode** — results inject into inner-life files + wake Pixel via promptWithHistory as `pixel-self`.
 - **backgroundLlmCall()** — shared utility with automatic model fallback, replaces 3 duplicate patterns.
 - **Tool call integrity** — `ensureToolCallIntegrity()` removes orphaned toolResults and incomplete toolCall chains.
