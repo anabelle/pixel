@@ -1415,7 +1415,7 @@ const scheduleAlarmSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
   platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID for delivering the alarm. Auto-filled from context if not provided." })),
-  raw_message: Type.String({ description: "What this alarm is FOR — the intent/reason, not the raw user text. E.g. 'Research ghost deflection techniques — user asked for help with boundary setting' or 'Ana asked to call Marta next Saturday'. For self-set alarms, explain WHY you set it." }),
+  raw_message: Type.String({ description: "For USER alarms: include BOTH the original user text AND the intent. Format: 'User said: \"<their words>\" — Intent: <what they want to be reminded about>'. E.g. 'User said: \"recuérdame llamar a Marta el sábado\" — Intent: call Marta on Saturday'. For SELF-SET alarms (no user request): write a note to your future self explaining the intent and what to do when it fires. E.g. 'Research ghost deflection techniques for boundary-setting conversation with Ana' or 'Check if the Nostr DVM has received any jobs today'." }),
   due_at: Type.Optional(Type.String({ description: "ISO datetime to fire (use this OR relative_time, not both)" })),
   relative_time: Type.Optional(Type.String({ description: "Relative time from now, e.g. '10 seconds', '5 minutes', '2 hours', '1 day'. Server computes exact time. PREFERRED over due_at for short-term alarms." })),
   repeat_pattern: Type.Optional(Type.String({ description: "Optional repeat pattern (freeform)" })),
