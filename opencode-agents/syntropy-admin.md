@@ -301,6 +301,17 @@ timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.2
 docker compose -f v2/docker-compose.yml exec pixel bash -c '
 timeout 15 ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=no talleru@68.66.224.4 "cd /home/talleru/public_html && wp --version"
 '
+
+```
+
+⚠️ **NOTE: jq syntax issue** — When reading Pixel conversation logs (`/v2/conversations/*/log.jsonl`), the `.content` field is a **string**, not an object. Do NOT use `.content` as a key in jq. Use:
+- `jq -r '.[].content'` to iterate and extract content from array elements
+- `tail ... | jq -r '.content'` (single quote, no object indexing)  
+- `cat ... | grep ...` for raw text without jq parsing
+
+Example: `tail -3 /v2/conversations/syntropy-admin/log.jsonl | jq -r '.[] | .content'`  
+Example: `cat /v2/conversations/syntropy-admin/log.jsonl | cut -d'"' -f4`
+
 ```
 
 ## Rules
