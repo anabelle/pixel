@@ -369,7 +369,74 @@ EXIT_CODE=0
 
 log_opencode_errors
 
+# ── Build structured summary for owner ─────────────────────────────
+build_summary() {
+  local session_num
+  session_num=$(date +%Y%m%d%H%M)
+  
+  # Get Pixel health state
+  local pixel_state="unknown"
+  pixel_state=$(curl -s --max-time 5 http://127.0.0.1:4000/health 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'uptime={int(d.get(\"uptime\",0))}s, heartbeat={d.get(\"heartbeat\",{}).get(\"running\",False)}')" 2>/dev/null || echo "unreachable")
+  
+  # Parse opencode output for changes
+  local changes=""
+  local findings=""
+  local action_items=""
+  
+  if [ -f "$OPENCODE_OUTPUT" ]; then
+    # Count files modified (look for file paths in output)
+    local file_changes
+    file_changes=$(grep -cE "(\.ts|\.js|\.json|\.md|\.sh)" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
+    
+    # Check for commits
+    local commits_made
+    commits_made=$(grep -c "commit" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
+    
+    # Check for errors
+    local errors_found
+    errors_found=$(grep -cE '"type":"error"' "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
+    
+    # Check for docker operations
+    local docker_ops
+    docker_ops=$(grep -cE "(docker compose|docker-compose|rebuild|restart)" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
+    
+    if [ "$file_changes" -gt 0 ]; then
+      changes="$file_changes file(s) modified, $commits_made commit(s) made"
+    elif [ "$docker_ops" -gt 0 ]; then
+      changes="$docker_ops docker operation(s) executed"
+    else
+      changes="diagnostic/review only - no code changes"
+    fi
+    
+    if [ "$errors_found" -gt 0 ]; then
+      findings="$errors_found error(s) encountered and handled"
+    fi
+  else
+    changes="no output captured"
+  fi
+  
+  # Build structured message
+  cat << EOF
+syntropy session $session_num completed.
+
+changes:
+- $changes
+
+findings:
+- $findings
+
+state:
+- Pixel: $pixel_state
+- model: $MODEL
+- messages processed: $MSG_COUNT
+
+action items:
+- check v2/data/syntropy-dispatch.log for full details
+EOF
+}
+
 # ── FYI notification to owner ───────────────────────────────────
-notify_owner "syntropy dispatch completed. messages: ${MSG_COUNT}, model: ${MODEL}, exit: ${EXIT_CODE}. please check pixel debrief for details."
+SUMMARY=$(build_summary)
+notify_owner "$SUMMARY"
 
 exit 0
