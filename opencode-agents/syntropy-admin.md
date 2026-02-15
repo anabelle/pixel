@@ -234,11 +234,22 @@ When invoked by `v2/scripts/syntropy-dispatch.sh`, you are running **headlessly*
 3. Always include: what changed, model used, and any remaining risks.
 4. Use the notify_owner tool directly. Do NOT set reminders.
 
+### Auto-Commit Policy (Autonomous Mode)
+When running headlessly, you SHOULD commit and push code changes as a backup. The repo is Pixel's main backup — if the server dies, the repo is the only surviving copy.
+
+**Rules:**
+1. **COMMIT** changes to: `v2/src/`, `v2/scripts/`, `v2/Dockerfile`, `v2/docker-compose.yml`, `v2/package.json`, `v2/skills/`, `opencode-agents/`, `opencode.json`
+2. **NEVER commit:** `.env`, `v2/data/` (logs, mailbox, audit, postgres), `v2/conversations/`, `v2/bun.lock`, `node_modules/`, any file containing secrets
+3. **Commit message format:** `syntropy: <concise description of what changed>`
+4. **Push after commit** — the backup isn't real until it's on the remote
+5. If no code files changed, do NOT create an empty commit
+
+The dispatch script also runs a safety-net auto-commit after you finish, catching any uncommitted code changes.
+
 ### Forbidden Actions (Autonomous Mode)
 - No speculative refactors.
 - No mass formatting.
 - No dependency upgrades unless requested.
-- No git commits unless files actually changed and user asked.
 
 ### Sudo Guidance
 - Sudo is only used during implementation (manual human-run), **never at runtime**.
@@ -377,3 +388,5 @@ Example: `cat /v2/conversations/syntropy-admin/log.jsonl | cut -d'"' -f4`
 ### Session 29 continued (Model split + Z.AI vision investigation):** Optimized model allocation for efficiency and investigated Z.AI capabilities. (A) **Model split implemented** — `makeZaiModel()` DRY factory extracted, `getPixelModel()` uses GLM-4.7 (reasoning, ~4.5s), `getSimpleModel()` uses GLM-4.5-air (no reasoning, ~1.3s). Background tasks now 3x faster. (B) **Three-level fallback cascade** — Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash (all covered by $10/mo Google free credits). (C) **Z.AI benchmarks** — GLM-4.5-air (~1.3s, 0 reasoning tokens), GLM-4.6 (~10s, 1018 reasoning), GLM-4.7 (~4.5s, 248 reasoning). (D) **Z.AI vision/image gen NOT available** — Vision returns "Invalid API parameter" (error 1210), CogView returns "Insufficient balance" (error 1113) on Coding Lite plan. Google Gemini handles vision. (E) **Opencode configured** — Using Pixel's key (`a8656a...`) with `zai-coding-plan` provider (`api.z.ai/api/coding/paas/v4`). Key is tied to Coding Lite subscription; new key (`d83477...`) doesn't work on either endpoint. (F) **Updated docs** — AI Providers section, Key Decisions, Session 29 entry in AGENTS.md. Added warning about outdated model knowledge in AGENTS.md and syntropy-admin.md. Commit pending.
 
 ### Session 33 (Landing dashboard newest-first + submodule push):** Implemented reverse-chronological ordering for landing dashboard lists and feeds, then resolved submodule push using explicit SSH key. (A) **Landing dashboard sorting** — audit feed, memories, Syntropy conversations, jobs, and revenue recent now sort newest-first in `pixel-landing/src/app/[locale]/dashboard/page.tsx`. (B) **Feed components** — `NostrFeed.tsx` and `AuditLog.tsx` now sort newest-first on fetch. (C) **Push resolution** — default deploy key lacked write access; push succeeded using `GIT_SSH_COMMAND='ssh -i /home/pixel/.ssh/pixel_tallerubens -o IdentitiesOnly=yes'` to `anabelle/pixel-landing`. Submodule commit `6d30701` now on remote.
+
+### Session 39 (Autonomous dispatch audit + auto-commit policy):** Audited GPT's autonomous dispatch scripts — verdict: solid, error suppression is intentional. Deleted stale SYNTROPY_AUTONOMY_PLAN.md (832 lines, divergent from deployed code). Added scoped auto-commit policy: dispatch now commits+pushes code-only changes as backup (never data/logs/secrets). Policy added to both dispatch script and agent prompt.

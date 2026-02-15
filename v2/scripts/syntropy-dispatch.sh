@@ -290,6 +290,34 @@ if [ -n "$ROOT_FILES" ]; then
     chown -R 1000:1000 /data/v2/data /data/v2/conversations /data/v2/skills 2>/dev/null || true
 fi
 
+# ── Safety-net auto-commit (backup code changes) ───────────────
+# Only commits tracked code files — never data, logs, secrets
+AUTOCOMMIT_PATHS=(
+  "v2/src/" "v2/scripts/" "v2/Dockerfile" "v2/docker-compose.yml"
+  "v2/package.json" "v2/skills/" "opencode-agents/" "opencode.json"
+)
+cd "$WORKDIR"
+CHANGED_CODE=false
+for p in "${AUTOCOMMIT_PATHS[@]}"; do
+  if [ -n "$(git diff --name-only -- "$p" 2>/dev/null)" ] || \
+     [ -n "$(git diff --cached --name-only -- "$p" 2>/dev/null)" ] || \
+     [ -n "$(git ls-files --others --exclude-standard -- "$p" 2>/dev/null)" ]; then
+    CHANGED_CODE=true
+    break
+  fi
+done
+
+if [ "$CHANGED_CODE" = true ]; then
+  log "INFO: auto-commit — code changes detected, committing backup"
+  for p in "${AUTOCOMMIT_PATHS[@]}"; do
+    git add -- "$p" 2>/dev/null || true
+  done
+  git commit -m "syntropy: autonomous backup — $(date -u +%Y-%m-%d)" --no-verify 2>/dev/null || true
+  git push origin HEAD --no-verify 2>/dev/null && \
+    log "INFO: auto-commit pushed to remote" || \
+    log "WARNING: auto-commit push failed (will retry next cycle)"
+fi
+
 # ── Normalize exit code when opencode completed ─────────────────
 if [ "$EXIT_CODE" -ne 0 ] && [ -f "$OPENCODE_OUTPUT" ]; then
   if grep -q '"type":"step_finish"' "$OPENCODE_OUTPUT"; then
