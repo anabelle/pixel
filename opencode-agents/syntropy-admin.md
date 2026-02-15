@@ -216,3 +216,40 @@ ls v2/conversations/ | wc -l
 - Models with `reasoning: false` (GLM-4.5-air, Gemini 2.0 Flash): thinking level **silently ignored** — safe
 - Current config is correct: "high" for conversations (GLM-4.7), "off" for background tasks (GLM-4.5-air)
 - `backgroundLlmCall()` correctly uses `thinkingLevel: "off"` — never change this
+
+---
+
+## Lessons Learned (Session 42)
+
+### Dead Code: handleSchedulingIntent
+- `handleSchedulingIntent()` was 233 lines of dead code — the call site was removed in Session 41 but the function body remained
+- Also had unused imports: `complete` from pi-ai, reminder functions from reminders.ts
+- Lesson: when removing a call site, search for and remove the callee too
+
+### Alarm Dedup Guard
+- LLM can call `schedule_alarm` 5+ times in a single tool-use turn (pi-agent-core executes ALL tool calls the LLM emits)
+- Fixed with a 30-second dedup guard: same userId + same rawMessage content → rejected as duplicate
+- Uses a `recentAlarms` Map with automatic cleanup after 30s via setTimeout
+- Also improved `raw_message` field description: instructs LLM to store intent/reason, not raw user text
+- Added "Only call ONCE per alarm" to tool description
+
+### Vision/Photo Response Issues (Gemini 2.0 Flash)
+- **Photo messages bypass group batching** — they go directly to `promptWithHistory()`, unlike text which gets queued
+- **Photos always use `getVisionModel()` → Gemini 2.0 Flash** — the weakest model in the stack
+- **Gemini 2.0 Flash self-narrates with bold markdown headers** (`**Recognizing...**`, `**Providing...**`) — these are NOT thinking blocks (model has `reasoning: false`), they're regular text output
+- **No language instruction in system prompt** — character.md is English, group conversation is Spanish, but the model picks English because it's weak
+- **Response WAS sent to group** — no [SILENT] was present, so the garbled English response was delivered
+- **Fix options (not yet implemented):** upgrade vision model to gemini-2.5-flash (supports multimodal), add language matching instruction, or add [SILENT] logic for unsolicited group photo responses
+
+### Z.AI 429 Crisis (Temporary Model Switch)
+- `getPixelModel()` was temporarily switched from Z.AI GLM-4.7 to `gemini-2.5-flash` due to 82% 429 failure rate
+- `getSimpleModel()` also switched to `gemini-2.0-flash`
+- TODO comments mark the original Z.AI code for re-enabling after rate limit investigation
+- This means ALL models in the stack are now Google free tier — budget risk if usage spikes
+
+### pi-agent-core Architecture Notes
+- `Agent.prompt(message, images)` sends user message + images
+- The agent subscribes to events; `message_end` with `role === "assistant"` captures response
+- `extractText()` handles both string content and array content blocks (text parts only)
+- `stripImageBlocks()` removes images before saving context (avoids bloating JSONL logs)
+- `sanitizeMessagesForContext()` ensures context integrity

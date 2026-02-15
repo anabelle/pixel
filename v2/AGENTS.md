@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-15 | Session: 42
+> Last updated: 2026-02-15 | Session: 43
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 43 tools. Primary model: Z.AI GLM-4.7 (Coding Lite, $84/yr to 2027-02-14). Background: GLM-4.5-air. Fallback: Gemini 3→2.5→2.0 Flash (Google free tier).
+**V2:** 2 containers (pixel, postgres-v2). 43 tools. Primary model: ⚠️ TEMPORARILY Gemini 2.5 Flash (Z.AI GLM-4.7 has 82% 429 failure rate — investigate). Background: Gemini 2.0 Flash. Vision: Gemini 2.0 Flash. Fallback: Gemini 2.5 Pro→3 Flash→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -123,11 +123,11 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-4.7 via `https://api.z.ai/api/coding/paas/v4` (128K context, reasoning, ~4.5s)
-- **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.5-air (no reasoning, ~1.3s)
-- **Fallback chain:** Gemini 3 Flash → 2.5 Flash → 2.0 Flash (Google free tier)
-- **Vision/Audio:** Google Gemini (Z.AI Coding Lite is text-only)
-- Z.AI Coding Lite: $84/yr, valid to 2027-02-14. `AI_PROVIDER=zai`, `AI_MODEL=glm-4.7`
+- **Primary (conversations):** ⚠️ TEMPORARILY Gemini 2.5 Flash (Z.AI GLM-4.7 had 82% 429 rate — needs investigation). Code has TODO markers for re-enabling Z.AI.
+- **Background (heartbeat/inner-life/jobs):** Gemini 2.0 Flash (was Z.AI GLM-4.5-air, switched alongside primary)
+- **Fallback chain:** Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash (all Google free tier)
+- **Vision/Audio:** Gemini 2.0 Flash — ⚠️ KNOWN ISSUE: weak model self-narrates with bold headers, ignores conversation language in groups. Consider upgrading to 2.5 Flash.
+- Z.AI Coding Lite: $84/yr, valid to 2027-02-14. `AI_PROVIDER=zai`, `AI_MODEL=glm-4.7` (currently overridden in code)
 - Z.AI models constructed manually in `getPixelModel()` (not in pi-ai registry)
 - `resolveApiKey("zai")` returns `ZAI_API_KEY` — implemented in agent.ts, outreach.ts, heartbeat.ts, jobs.ts, inner-life.ts
 
