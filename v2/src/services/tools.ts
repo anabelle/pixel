@@ -12,6 +12,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, chmodSync } from "fs";
 import { join, dirname } from "path";
+import { createHash } from "crypto";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
@@ -1450,8 +1451,9 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
     // Auto-fill platform_chat_id from tool context if LLM didn't provide it
     const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
 
-    // Dedup: reject if same user+message was just scheduled
-    const dedupKey = `${normalizedUserId}:${platform}:${raw_message.slice(0, 80)}`;
+    // Dedup: reject if exact same alarm was just scheduled (use full message hash, not prefix)
+    const messageHash = createHash("sha256").update(raw_message).digest("hex").slice(0, 16);
+    const dedupKey = `${normalizedUserId}:${platform}:${messageHash}`;
     const now = Date.now();
     const lastCreated = recentAlarms.get(dedupKey);
     if (lastCreated && now - lastCreated < ALARM_DEDUP_WINDOW_MS) {
