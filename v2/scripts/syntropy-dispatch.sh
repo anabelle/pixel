@@ -46,6 +46,14 @@ cleanup() {
     fi
     rm -f "$PIDFILE"
     rm -f "$LOCKFILE"
+    # Archive: restore to mailbox on failure, delete on success
+    if [ -f "$MAILBOX.forwarded" ]; then
+      if [ "${DISPATCH_EXIT:-1}" -ne 0 ]; then
+        cat "$MAILBOX.forwarded" >> "$MAILBOX"
+        log "INFO: dispatch failed (exit ${DISPATCH_EXIT:-unknown}), messages restored to mailbox"
+      fi
+      rm -f "$MAILBOX.forwarded"
+    fi
   fi
 }
 
@@ -273,6 +281,8 @@ SYNTROPY_DISPATCH_MODEL="$MODEL" timeout "$MAX_RUNTIME" "$OPENCODE" run \
 OPENCODE_EXIT=$?
 echo "$OPENCODE_EXIT" > "$OPENCODE_STATUS"
 
+DISPATCH_EXIT=$OPENCODE_EXIT
+
 EXIT_CODE=$OPENCODE_EXIT
 
 log "INFO: opencode completed (exit $EXIT_CODE)"
@@ -322,6 +332,7 @@ fi
 if [ "$EXIT_CODE" -ne 0 ] && [ -f "$OPENCODE_OUTPUT" ]; then
   if grep -q '"type":"step_finish"' "$OPENCODE_OUTPUT"; then
     EXIT_CODE=0
+    DISPATCH_EXIT=0
   fi
 fi
 
