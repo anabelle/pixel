@@ -8,7 +8,7 @@
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 43 tools. Primary model: Z.AI GLM-4.7 → Gemini cascade on 429. Background: Z.AI GLM-4.5-air → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 2.5 Pro→3 Flash→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 43 tools. Primary model: Z.AI GLM-4.7 → Gemini cascade on 429. Background: Z.AI GLM-4.5-air → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -123,10 +123,10 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-4.7 first → auto-cascade on 429 to Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
+- **Primary (conversations):** Z.AI GLM-4.7 first → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
 - **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.5-air first → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
-- **Fallback chain:** Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash (all Google free tier)
+- **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
 - **Vision/Audio:** Gemini 2.5 Flash — reasoning-capable, good quality for photo analysis and voice transcription.
 - Z.AI Coding Lite: $84/yr, valid to 2027-02-14. 5-hour rolling rate limit. Used opportunistically for background tasks via cascade.
 - Z.AI models constructed manually in `makeZaiModel()` (not in pi-ai registry)
