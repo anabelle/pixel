@@ -7,6 +7,7 @@
 
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import { resolveGoogleApiKey } from "./google-key.js";
 
 const DEFAULT_MODEL: ImageModel = "pro";
 const IMAGE_TIMEOUT_MS = 45_000;
@@ -50,10 +51,7 @@ export async function generateImage(
   prompt: string,
   options: ImageGenOptions = {}
 ): Promise<ImageGenResult> {
-  const apiKey =
-    process.env.GEMINI_API_KEY ??
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
-    process.env.GOOGLE_API_KEY;
+  const apiKey = resolveGoogleApiKey();
 
   if (!apiKey) {
     throw new Error("No Gemini API key available for image generation");

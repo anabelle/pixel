@@ -19,6 +19,7 @@ import { getRelevantMemories } from "./services/memory.js";
 import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
+import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 const DM_MODEL_ID = process.env.DM_MODEL || process.env.AI_MODEL || "gemini-3-flash-preview";
@@ -199,7 +200,7 @@ export function resolveApiKey(provider?: string): string {
     case "openrouter":
       return process.env.OPENROUTER_API_KEY ?? "";
     case "google":
-      return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+      return resolveGoogleApiKey();
     case "anthropic":
       return process.env.ANTHROPIC_API_KEY ?? "";
     default:
@@ -551,6 +552,10 @@ export async function promptWithHistory(
       if (isRetryWithFallback) {
         usedModelId = retryModel.id;
       }
+      // Google call succeeded — reset to primary key for next calls
+      if (retryModel.provider === "google") {
+        resetGoogleKeyToPrimary();
+      }
       if (attemptAgent.state?.messages) {
         const noImages = stripImageBlocks(attemptAgent.state.messages as any[]);
         const sanitized = sanitizeMessagesForContext(noImages);
@@ -572,6 +577,10 @@ export async function promptWithHistory(
       errorStr.includes("1308")
     );
     if (isRetryable && attempt < MAX_RETRIES) {
+      // If Google quota hit, flip to fallback key for next attempts
+      if (retryModel.provider === "google") {
+        setGoogleKeyFallback();
+      }
       console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}: ${errorStr.substring(0, 150)} — cascading to fallback`);
       const nextModel = getFallbackModel(attempt + 1);
       costMonitor.recordError(
@@ -928,6 +937,10 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
       const inputTokens = estimateTokens(userPrompt) + estimateTokens(systemPrompt);
       const outputTokens = estimateTokens(responseText);
       costMonitor.recordUsage(model.id, inputTokens, outputTokens, label);
+      // Google call succeeded — reset to primary key
+      if (model.provider === "google") {
+        resetGoogleKeyToPrimary();
+      }
       return responseText;
     }
 
@@ -939,6 +952,10 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
         llmError.includes("1308") || llmError.includes("timeout")
       );
       if (isRetryable && attempt < models.length - 1) {
+        // Google quota hit — flip to fallback (billed) key
+        if (model.provider === "google") {
+          setGoogleKeyFallback();
+        }
         console.log(`[${label}] ${model.id} failed: ${llmError.substring(0, 120)} — falling back to ${models[attempt + 1].id}`);
         costMonitor.recordError(model.id, llmError, label as any, models[attempt + 1].id);
         continue;

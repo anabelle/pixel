@@ -8,6 +8,8 @@
  * Pi-ai has no AudioContent type, so we call the Gemini REST API directly.
  */
 
+import { resolveGoogleApiKey } from "./google-key.js";
+
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB (Gemini supports up to ~8.4 hours)
 const TRANSCRIPTION_TIMEOUT_MS = 30_000;
 
@@ -38,10 +40,7 @@ export async function transcribeAudio(
   buffer: Buffer,
   mimeType: string
 ): Promise<string | null> {
-  const apiKey =
-    process.env.GEMINI_API_KEY ??
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
-    process.env.GOOGLE_API_KEY;
+  const apiKey = resolveGoogleApiKey();
 
   if (!apiKey) {
     console.error("[audio] No Gemini API key available for transcription");

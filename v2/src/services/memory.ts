@@ -17,12 +17,12 @@ import { join } from "path";
 import { memories } from "../db.js";
 import type * as schema from "../db.js";
 import { audit } from "./audit.js";
+import { resolveGoogleApiKey } from "./google-key.js";
 
 // ─── Configuration ───────────────────────────────────────────
 
 const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 256;
-const GEMINI_API_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "";
 const GEMINI_EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}`;
 
 /** Hybrid retrieval weights */
@@ -57,8 +57,8 @@ export async function initMemory(
   db = database;
   rawSql = sqlInstance;
 
-  if (!GEMINI_API_KEY) {
-    console.warn("[memory] No GOOGLE_GENERATIVE_AI_API_KEY — embeddings will fail");
+  if (!resolveGoogleApiKey()) {
+    console.warn("[memory] No Google API key — embeddings will fail");
   }
 
   try {
@@ -118,10 +118,10 @@ export async function generateEmbedding(
   text: string,
   taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY" = "RETRIEVAL_DOCUMENT"
 ): Promise<number[]> {
-  if (!GEMINI_API_KEY) throw new Error("No Gemini API key for embeddings");
+  if (!resolveGoogleApiKey()) throw new Error("No Gemini API key for embeddings");
 
   const response = await fetch(
-    `${GEMINI_EMBED_URL}:embedContent?key=${GEMINI_API_KEY}`,
+    `${GEMINI_EMBED_URL}:embedContent?key=${resolveGoogleApiKey()}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -151,7 +151,7 @@ export async function generateEmbeddingsBatch(
   texts: string[],
   taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY" = "RETRIEVAL_DOCUMENT"
 ): Promise<number[][]> {
-  if (!GEMINI_API_KEY) throw new Error("No Gemini API key for embeddings");
+  if (!resolveGoogleApiKey()) throw new Error("No Gemini API key for embeddings");
   if (texts.length === 0) return [];
   if (texts.length === 1) return [await generateEmbedding(texts[0], taskType)];
 
@@ -170,7 +170,7 @@ export async function generateEmbeddingsBatch(
     }));
 
     const response = await fetch(
-      `${GEMINI_EMBED_URL}:batchEmbedContents?key=${GEMINI_API_KEY}`,
+      `${GEMINI_EMBED_URL}:batchEmbedContents?key=${resolveGoogleApiKey()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

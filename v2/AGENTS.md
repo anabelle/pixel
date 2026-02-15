@@ -127,7 +127,7 @@ Every connector: receive → identify user → load context → prompt agent →
 - **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.5-air first → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
-- **Vision/Audio:** Gemini 2.5 Flash — reasoning-capable, good quality for photo analysis and voice transcription.
+- **Google key failover:** Primary key ($300 free credits) → fallback key (billed) via `resolveGoogleApiKey()`. Flips on quota errors, resets on success. Used by all Google callers: agent cascade, embeddings (memory.ts), image gen, audio transcription.
 - Z.AI Coding Lite: $84/yr, valid to 2027-02-14. 5-hour rolling rate limit. Used opportunistically for background tasks via cascade.
 - Z.AI models constructed manually in `makeZaiModel()` (not in pi-ai registry)
 - `resolveApiKey("zai")` returns `ZAI_API_KEY` — implemented in agent.ts, outreach.ts, heartbeat.ts, jobs.ts, inner-life.ts
