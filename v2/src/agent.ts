@@ -672,7 +672,7 @@ export async function promptWithHistory(
     initialState: {
       systemPrompt,
       model: selectedModel,
-      thinkingLevel: "minimal",
+      thinkingLevel: "high",
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -734,7 +734,7 @@ export async function promptWithHistory(
       initialState: {
         systemPrompt,
         model: retryModel,
-        thinkingLevel: "minimal",
+        thinkingLevel: "high",
         tools: pixelTools,
       },
       getApiKey: async (provider: string) => resolveApiKey(provider),
@@ -1089,7 +1089,7 @@ export async function createPixelAgent(options: PixelAgentOptions): Promise<Agen
     initialState: {
       systemPrompt,
       model: getPixelModel(),
-      thinkingLevel: "minimal",
+      thinkingLevel: "high",
       tools: pixelTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),

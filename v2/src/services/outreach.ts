@@ -226,7 +226,7 @@ Decide if you should proactively reach out now.`;
     initialState: {
       systemPrompt,
       model: getPixelModel(),
-      thinkingLevel: "minimal",
+      thinkingLevel: "high",
       tools: [],
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
