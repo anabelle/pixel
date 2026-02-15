@@ -25,6 +25,9 @@ services:
       - AI_MODEL=glm-4.7
       - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
+    extra_hosts:
+      - "tallerubens.com:68.66.224.4"
+      - "dev.tallerubens.com:68.66.224.4"
     volumes:
       - ./conversations:/app/conversations
       - ./skills:/app/skills
