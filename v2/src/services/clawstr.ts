@@ -5,6 +5,7 @@
 
 const hostPixelRoot = process.env.HOST_PIXEL_ROOT ?? "/home/pixel/pixel";
 const clawstrHostDir = `${hostPixelRoot}/data/clawstr`;
+const clawstrContainerDir = "/app/data/.clawstr";
 
 // Check if Clawstr is configured
 let clawstrConfigured: boolean | null = null;
@@ -13,7 +14,9 @@ function isClawstrConfigured(): boolean {
   if (clawstrConfigured !== null) return clawstrConfigured;
   try {
     const fs = require('fs');
-    clawstrConfigured = fs.existsSync(`${clawstrHostDir}/config.json`);
+    clawstrConfigured =
+      fs.existsSync(`${clawstrContainerDir}/config.json`) ||
+      fs.existsSync(`${clawstrHostDir}/config.json`);
     return clawstrConfigured;
   } catch {
     clawstrConfigured = false;

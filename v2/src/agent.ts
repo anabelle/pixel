@@ -151,7 +151,7 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
 
 /** Primary conversation model — Z.AI GLM-4.7 when available, Gemini 2.5 Flash otherwise.
  * Z.AI has 5-hour rolling rate limits on Coding Lite ($84/yr) — promptWithHistory
- * cascade handles 429 automatically: GLM-4.7 → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
+ * cascade handles 429 automatically: GLM-4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
@@ -174,11 +174,12 @@ function getDmModel() {
   return getModel(provider as any, DM_MODEL_ID);
 }
 
-/** Fallback cascade — Google models (all free tier, strongest → safest) */
+/** Fallback cascade — Google models, ordered by quality (all free tier, cost is $0).
+ * Flash 3 first (best quality/$), then 2.5 Pro (strongest reasoner), then 2.5 Flash, then 2.0 Flash. */
 function getFallbackModel(level: number = 1) {
   switch (level) {
-    case 1: return getModel("google" as any, "gemini-2.5-pro");        // strongest GA model
-    case 2: return getModel("google" as any, "gemini-3-flash-preview"); // newest gen flash
+    case 1: return getModel("google" as any, "gemini-3-flash-preview"); // best quality/price
+    case 2: return getModel("google" as any, "gemini-2.5-pro");         // strongest reasoner
     case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
     default: return getModel("google" as any, "gemini-2.0-flash");      // always works
   }
@@ -479,7 +480,7 @@ export async function promptWithHistory(
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
-  // GLM-4.7 → Gemini 2.5 Pro → Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash
+  // GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
   const MAX_RETRIES = 4;
   let responseText = "";
   let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
