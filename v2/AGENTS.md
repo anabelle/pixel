@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-14 | Session: 40
+> Last updated: 2026-02-15 | Session: 41
 
 ---
 
@@ -154,72 +154,6 @@ Same Pixel, same brain, different payment doors:
 
 ---
 
-## 6. SESSION HISTORY
-
-### Sessions 1-7: V1 Infrastructure Fixes
-
-| # | What |
-|---|------|
-| 1 | Docker mounts, stale data, duplicate Nostr posting |
-| 2 | Lightning crash loop — disabled crashing CLN plugins |
-| 3 | Permissions overhaul — root-owned files, user 1000:1000, vision API fix |
-| 4 | Clawstr integration (6 tools), ecosystem awareness |
-| 5 | Switched dead OpenAI to free Google Gemini, patched ai-sdk, OpenRouter fallback |
-| 6 | Nginx DNS caching, NEXT_PUBLIC build-time fix, docs overhaul |
-| 7 | Nostr truncation fix — maxTokens 256→1024 |
-
-### Sessions 8-10: V2 Architecture & Research
-
-| # | What |
-|---|------|
-| 8 | Declared V1 failed. Researched ElizaOS (rejected), CrewAI, LangGraph, MCP, NIP-90, NDK. Spec'd V2: 18→4 containers |
-| 9 | Deep dive on Pi monorepo (pi-agent-core, pi-ai, pi-mom). Adopted Pi as foundation. OpenClaw/Clawi discovery. x402 + ERC-8004 research |
-| 10 | Critical reframe: "meet normies where they are" — WhatsApp, Telegram, Instagram FIRST |
-
-### Sessions 11-20: V2 Build & Deploy
-
-| # | What |
-|---|------|
-| 11 | V2 built + deployed. 3 doors (HTTP, Telegram, Nostr). Gemini model. |
-| 12 | Conversation persistence (Pi Mom JSONL pattern). promptWithHistory() as single entry point. |
-| 13 | NIP-90 DVM + Lightning service + WhatsApp connector (wired, not deployed) |
-| 14 | Lightning + WhatsApp + DVM payment flow deployed. Fixed LN address typo. |
-| 15 | Sats/millisats bug fix. Invoice cache. Revenue service (PostgreSQL). Context compaction at 40 messages. |
-| 16 | V1 deprecation — killed agent+syntropy+postgres V1. Canvas preserved. V2 routes in nginx. |
-| 17 | Heartbeat service (45-90min Nostr posts). V2 nginx persistent. Killed V1 PostgreSQL. Down to 6 containers. |
-| 18 | L402 revenue door live. /api/chat/premium (10 sats), /api/generate (50 sats). x402 researched. |
-| 19 | Rich heartbeat rewrite — 8 topics, 6 moods, proactive Nostr engagement (replies to mentions). |
-| 20 | 5 bug fixes + V1 soul porting. Double-reply fix, agent-card fix, memory extraction wired, user tracking, live canvas stats, character.md 63→146 lines. |
-
-### Sessions 21-30: Autonomy & Intelligence
-
-| # | What |
-|---|------|
-| 21-22 | Inner life system (reflect/learn/ideate/evolve). Nostr timeline analysis. |
-| 23 | Tools system — 7 tools giving Pixel hands (read/write/edit/bash/health/logs/web_fetch). Docker socket mount. |
-| 24 | Inner life file write fix (root ownership + LLM timeout). Landing page V2 rewrite. |
-| 25 | Model upgrade to Gemini 3 Flash. |
-| 26 | Autonomy rebuild — Nostr engagement (Primal trending, zap thanks, follow/unfollow, art reports), Telegram vision+reactions, group lore, job system, revenue-goal loop, idea garden, host stability (earlyoom, swap, log rotation). |
-| 27 | Nostr feed on landing. Proactive outreach service (LLM-judged owner pings, 4h cycle). |
-| 28 | Syntropy identity unification. Killed spam cron. Bidirectional Syntropy↔Pixel communication. Mailbox monitor. |
-| 29 | Brain transplant — GLM-4.7 primary, GLM-4.5-air background. Model split + 3-level fallback cascade. |
-| 30 | Tools philosophy shift ("Pixel's toolbelt first"). Audio transcription (Gemini). TTS voice replies (Edge TTS). research_task internal mode. Autonomous agents get pixelTools. |
-
-### Sessions 31-40: Hardening & Infrastructure
-
-| # | What |
-|---|------|
-| 31 | Disk cleanup (71→59%). Docker build cache prune (8.66GB). V1 backup compression (1.9GB→162MB). |
-| 32 | Skills system fixed + 3 curated skills. Crash resilience (null filter, tool integrity, global error handlers). backgroundLlmCall() refactor. |
-| 33 | Landing dashboard newest-first. Submodule push fix. Docs refresh. |
-| 34 | Research pipeline 3-bug fix. Alarm-style wake-up for research results. pixel-self conversation. Inner monologue on dashboard. Compaction abort-on-failure fix (critical data integrity). self-architecture skill. |
-| 35 | Clawstr graceful skip for unconfigured CLI. |
-| 36 | SSH libcrypto fix (key cleanup + decode trim bug). |
-| 37 | WPLMS plugin validation. dev.tallerubens.com path confirmed. |
-| 38 | Cloudflare DNS bypass — extra_hosts + /etc/hosts for tallerubens.com → 68.66.224.4 |
-| 39 | Autonomous dispatch audit (solid). Auto-commit policy. Deleted stale plan doc. Agent prompt compaction. |
-| 40 | AGENTS.md compaction (1110→300 lines, 73% reduction). Deep inspection: fixed file inventory (26→31 files, 13.7K→14.8K lines), tool count (40→43), skills (4→5), disk/RAM figures. Added missing blossom.ts + image-gen.ts to inventory. Cleaned stale conversation artifacts. |
-
 ---
 
 ## 7. KEY DECISIONS (Active — affects ongoing behavior)
@@ -285,12 +219,11 @@ Same Pixel, same brain, different payment doors:
 3. **Revenue is the metric.** "Does this make money?" is the first question.
 4. **4-5 containers max.** If it doesn't fit, it doesn't get built.
 5. **Zero Dockerfile patches.** Switch deps instead.
-6. **Update this file** at end of session.
-7. **Commit and push.** Don't leave uncommitted work.
-8. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
-9. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
-10. **Check Syntropy mailbox** on session start.
-11. **Complexity is debt.** ~14.8K lines current, 16K max.
+6. **Commit and push.** Don't leave uncommitted work.
+7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
+8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
+9. **Check Syntropy mailbox** on session start.
+10. **Complexity is debt.** ~14.8K lines current, 16K max.
 
 ### Anti-Patterns
 
