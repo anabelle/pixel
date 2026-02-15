@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-15 | Session: 41
+> Last updated: 2026-02-15 | Session: 42
 
 ---
 
@@ -67,18 +67,18 @@ WhatsApp/Telegram/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) �
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (31 source files, ~14,806 lines)
+### File Inventory (31 source files, ~14,596 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/index.ts` | ~948 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
-| `src/agent.ts` | ~1186 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
+| `src/agent.ts` | ~953 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM + shared repliedEventIds |
 | `src/connectors/whatsapp.ts` | ~284 | Baileys bot, pairing code auth, voice transcription, TTS |
-| `src/services/tools.ts` | ~2367 | 43 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
+| `src/services/tools.ts` | ~2390 | 43 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |
 | `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
@@ -223,7 +223,7 @@ Same Pixel, same brain, different payment doors:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~14.8K lines current, 16K max.
+10. **Complexity is debt.** ~14.6K lines current, 16K max.
 
 ### Anti-Patterns
 

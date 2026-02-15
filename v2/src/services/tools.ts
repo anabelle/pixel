@@ -1415,7 +1415,7 @@ const scheduleAlarmSchema = Type.Object({
   user_id: Type.String({ description: "Platform-specific user ID" }),
   platform: Type.String({ description: "Platform (telegram/whatsapp/nostr/etc)" }),
   platform_chat_id: Type.Optional(Type.String({ description: "Target chat ID for delivering the alarm. Auto-filled from context if not provided." })),
-  raw_message: Type.String({ description: "Raw intent message to store" }),
+  raw_message: Type.String({ description: "What this alarm is FOR — the intent/reason, not the raw user text. E.g. 'Research ghost deflection techniques — user asked for help with boundary setting' or 'Ana asked to call Marta next Saturday'. For self-set alarms, explain WHY you set it." }),
   due_at: Type.Optional(Type.String({ description: "ISO datetime to fire (use this OR relative_time, not both)" })),
   relative_time: Type.Optional(Type.String({ description: "Relative time from now, e.g. '10 seconds', '5 minutes', '2 hours', '1 day'. Server computes exact time. PREFERRED over due_at for short-term alarms." })),
   repeat_pattern: Type.Optional(Type.String({ description: "Optional repeat pattern (freeform)" })),
@@ -1435,15 +1435,38 @@ function normalizeTelegramUserId(userId: string, platform: string): string {
   throw new Error(`Invalid telegram user_id: ${userId}. Expected tg-<digits> or tg-group-<id>.`);
 }
 
+// Dedup guard: prevent LLM from creating identical alarms in quick succession
+// (e.g., calling schedule_alarm 5x in one tool-use turn)
+const recentAlarms = new Map<string, number>(); // key → timestamp
+const ALARM_DEDUP_WINDOW_MS = 30_000; // 30 seconds
+
 export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
   name: "schedule_alarm",
   label: "Schedule Alarm",
-  description: "Schedule an alarm. For short-term alarms (seconds/minutes/hours), use relative_time instead of due_at to avoid time computation errors. The platform_chat_id is auto-filled from the current chat context.",
+  description: "Schedule an alarm. Only call ONCE per alarm — do not repeat. For short-term alarms (seconds/minutes/hours), use relative_time instead of due_at to avoid time computation errors. The platform_chat_id is auto-filled from the current chat context.",
   parameters: scheduleAlarmSchema,
   execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
     const normalizedUserId = normalizeTelegramUserId(user_id, platform);
     // Auto-fill platform_chat_id from tool context if LLM didn't provide it
     const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
+
+    // Dedup: reject if same user+message was just scheduled
+    const dedupKey = `${normalizedUserId}:${platform}:${raw_message.slice(0, 80)}`;
+    const now = Date.now();
+    const lastCreated = recentAlarms.get(dedupKey);
+    if (lastCreated && now - lastCreated < ALARM_DEDUP_WINDOW_MS) {
+      return {
+        content: [{ type: "text" as const, text: `Alarm already scheduled for this — skipping duplicate.` }],
+        details: undefined,
+      };
+    }
+    recentAlarms.set(dedupKey, now);
+    // Prune old entries
+    if (recentAlarms.size > 100) {
+      for (const [k, t] of recentAlarms) {
+        if (now - t > ALARM_DEDUP_WINDOW_MS) recentAlarms.delete(k);
+      }
+    }
     
     // Compute due time: prefer relative_time (server-side, no LLM hallucination)
     let dueAt: Date;
