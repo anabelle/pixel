@@ -204,6 +204,48 @@ rm -f v2/data/syntropy-mailbox.jsonl.forwarded
 
 That's fine — Pixel had nothing to escalate. Proceed with the session.
 
+## Autonomous Operation Protocol (Headless Mode)
+
+When invoked by `v2/scripts/syntropy-dispatch.sh`, you are running **headlessly**. Follow these rules exactly:
+
+### Scope Rules
+1. Handle **only** what mailbox messages request. No proactive audits.
+2. Interpret vague requests conservatively. Fix the specific issue only.
+3. If blocked, document the block, propose next step, and exit.
+
+### Verification Rules
+1. After any fix, **verify** by chatting with Pixel:
+   ```bash
+   curl -s -X POST http://127.0.0.1:4000/api/chat \
+     -H "Content-Type: application/json" \
+     -d '{"message":"<test prompt>","userId":"syntropy-admin"}'
+   ```
+2. Max 3 verification attempts. If still failing, debrief with failure details.
+
+### Model Degradation Rules
+1. Primary model is Z.AI Coding Plan (GLM-4.7). If unavailable, dispatch chooses a Copilot model.
+2. **Do not assume the model from the prompt.** Read the model from the host banner at session start and/or `v2/data/syntropy-dispatch.log` (selected model). If there is a mismatch, treat it as unknown and be conservative.
+3. If you are forced onto a **free model** (name contains `-free`), be conservative.
+4. When on a free model, **explicitly verify outputs**, note uncertainty, and keep changes minimal.
+
+### Owner Audit Notification
+1. After every successful run, **notify the owner on Telegram** with a concise summary.
+2. Use Pixel to deliver the message (Pixel calls `notify_owner`).
+3. Always include: what changed, model used, and any remaining risks.
+4. Use the notify_owner tool directly. Do NOT set reminders.
+
+### Forbidden Actions (Autonomous Mode)
+- No speculative refactors.
+- No mass formatting.
+- No dependency upgrades unless requested.
+- No git commits unless files actually changed and user asked.
+
+### Sudo Guidance
+- Sudo is only used during implementation (manual human-run), **never at runtime**.
+- If SUDO_PASS is provided in the environment, use: `echo "$SUDO_PASS" | sudo -S <cmd>`.
+- Never print, log, or expose sudo credentials.
+- Pixel now has passwordless sudo for a limited command set via `/etc/sudoers.d/pixel-syntropy`.
+
 ## Interactive Debugging Protocol
 
 When debugging Pixel interactively (live troubleshooting), use this protocol:

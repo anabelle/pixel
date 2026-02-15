@@ -22,7 +22,8 @@
         "bash": "allow",
         "edit": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
+        "websearch": "allow",
+        "external_directory": "allow"
       },
       "color": "#8B5CF6",
       "prompt": "{file:./opencode-agents/syntropy-admin.md}"
