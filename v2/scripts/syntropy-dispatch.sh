@@ -85,6 +85,27 @@ if [ -f "$LOG" ]; then
   fi
 fi
 
+# ── Reap stale opencode processes (>20min, prevents swap saturation) ──
+CURRENT_DISPATCH_PID=""
+if [ -f "$PIDFILE" ]; then
+  CURRENT_DISPATCH_PID=$(cat "$PIDFILE" 2>/dev/null || echo "")
+fi
+STALE_THRESHOLD=$((20 * 60))  # 20 minutes in seconds
+NOW_EPOCH=$(date +%s)
+while IFS= read -r pid; do
+  [ -z "$pid" ] && continue
+  [ "$pid" = "$CURRENT_DISPATCH_PID" ] && continue
+  # Check process age via /proc
+  if [ -d "/proc/$pid" ]; then
+    START_TIME=$(stat -c %Y "/proc/$pid" 2>/dev/null || echo "$NOW_EPOCH")
+    AGE=$(( NOW_EPOCH - START_TIME ))
+    if [ "$AGE" -gt "$STALE_THRESHOLD" ]; then
+      log "INFO: killing stale opencode process PID $pid (age: $((AGE/60))m)"
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  fi
+done < <(pgrep -u pixel -f "opencode" 2>/dev/null || true)
+
 # ── Guard: prevent concurrent runs ─────────────────────────────
 if [ -f "$LOCKFILE" ]; then
   if [ -f "$PIDFILE" ]; then

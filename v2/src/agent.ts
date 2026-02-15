@@ -149,21 +149,21 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
   } as any;
 }
 
-/** Get the AI model for conversations — temporarily Gemini 2.5 Flash for stability (Z.AI 429 crisis: 82% failure)
- * TODO: Re-evaluate Z.AI GLM-4.7 after rate limit investigation */
+/** Primary conversation model — Z.AI GLM-4.7 when available, Gemini 2.5 Flash otherwise.
+ * Z.AI has 5-hour rolling rate limits on Coding Lite ($84/yr) — promptWithHistory
+ * cascade handles 429 automatically: GLM-4.7 → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
 function getPixelModel() {
-  // TEMPORARY: Switch to Gemini 2.5 Flash due to Z.AI 429 crisis
-  // Original: const provider = process.env.AI_PROVIDER ?? "google";
-  // Original: const modelId = process.env.AI_MODEL ?? "gemini-3-flash-preview";
-  // Original: if (provider === "zai") { return makeZaiModel(modelId, true); }
-  return getModel("google" as any, "gemini-2.5-flash");
+  const provider = process.env.AI_PROVIDER ?? "google";
+  const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
+  if (provider === "zai") { return makeZaiModel(modelId, true); }
+  return getModel(provider as any, modelId);
 }
 
-/** Get the fast model for background tasks — GLM-4.5-air (~1.3s, no reasoning overhead) */
+/** Background model — tries Z.AI first (when available), cascade handles 429 fallback.
+ * backgroundLlmCall() cascade: getSimpleModel → getFallbackModel(1..4) */
 function getSimpleModel() {
-  // TEMPORARY: Also switch background to Gemini 2.0 Flash for consistency
-  // const provider = process.env.AI_PROVIDER ?? "google";
-  // if (provider === "zai") { return makeZaiModel("glm-4.5-air", false); }
+  const provider = process.env.AI_PROVIDER ?? "google";
+  if (provider === "zai") { return makeZaiModel("glm-4.5-air", false); }
   return getModel("google" as any, "gemini-2.0-flash");
 }
 
@@ -184,9 +184,9 @@ function getFallbackModel(level: number = 1) {
   }
 }
 
-/** Vision-capable model — Google Gemini (Z.AI doesn't support vision on Coding Lite) */
+/** Vision-capable model — Gemini 2.5 Flash (reasoning-capable, good quality) */
 function getVisionModel() {
-  return getModel("google" as any, "gemini-2.0-flash");
+  return getModel("google" as any, "gemini-2.5-flash");
 }
 
 /** Get API key for the given provider (called by pi-agent-core per LLM call) */
@@ -432,7 +432,7 @@ export async function promptWithHistory(
     : getPixelModel();
 
   if (hasImages) {
-    console.log(`[agent] Vision request from ${userId} — using Gemini for image analysis`);
+    console.log(`[agent] Vision request from ${userId} — using Gemini 2.5 Flash for image analysis`);
   }
 
   const agent = new Agent({
