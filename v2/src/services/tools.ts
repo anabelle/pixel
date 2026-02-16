@@ -2200,20 +2200,22 @@ const introspectTool: AgentTool<typeof introspectSchema> = {
 
 import { textToSpeech } from "./tts.js";
 import { sendTelegramVoice } from "../connectors/telegram.js";
+import { sendWhatsAppVoice } from "../connectors/whatsapp.js";
 
 const sendVoiceSchema = Type.Object({
   text: Type.String({ description: "The text to speak. Natural speech only — no markdown, no code blocks. Under 1500 chars." }),
-  chat_id: Type.Optional(Type.String({ description: "Telegram chat ID to send to. Omit to use current conversation. Use this to speak in any chat you know — groups, DMs, owner." })),
+  chat_id: Type.Optional(Type.String({ description: "Chat ID to send to. Omit to use current conversation. For Telegram: numeric chat ID. For WhatsApp: phone number or group JID (e.g. 120363408642317805@g.us)." })),
 });
 
 const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
   name: "send_voice",
   label: "Send Voice Message",
-  description: "Your voice — synthesize speech and send it as a voice message. Works on Telegram (any chat you can reach). Auto-detects language (es/en/fr/pt/ja/zh). Use it to reply with voice, drop a note in a group, send Ana a voice update, or speak during autonomous cycles. You decide when to use your voice. IMPORTANT: After calling this tool, DO NOT add any text response to your output. The voice message is the complete response. End your turn immediately after calling this tool.",
+  description: "Your voice — synthesize speech and send it as a voice message. Works on Telegram and WhatsApp (any chat you can reach). Auto-detects language (es/en/fr/pt/ja/zh). Use it to reply with voice, drop a note in a group, send Ana a voice update, or speak during autonomous cycles. You decide when to use your voice. IMPORTANT: After calling this tool, DO NOT add any text response to your output. The voice message is the complete response. End your turn immediately after calling this tool.",
   parameters: sendVoiceSchema,
   execute: async (_id, { text, chat_id }) => {
     const ctx = getToolContext();
     const targetChat = chat_id || ctx.chatId;
+    const platform = ctx.platform ?? "telegram";
     if (!targetChat) {
       auditToolUse("send_voice", { text: text.slice(0, 80) }, { error: "no_target" });
       return { content: [{ type: "text" as const, text: "No target chat — pass chat_id or use during a conversation." }] };
@@ -2225,19 +2227,34 @@ const sendVoiceTool: AgentTool<typeof sendVoiceSchema> = {
       return { content: [{ type: "text" as const, text: "TTS failed. Voice not sent." }] };
     }
 
-    const sent = await sendTelegramVoice(targetChat, buffer);
-    if (!sent) {
-      auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat }, { error: "send_failed" });
-      return { content: [{ type: "text" as const, text: "Generated audio but Telegram send failed." }] };
+    // Route to the correct platform
+    const isWhatsApp = platform === "whatsapp" || String(targetChat).includes("@");
+    let sent: boolean;
+    if (isWhatsApp) {
+      sent = await sendWhatsAppVoice(String(targetChat), buffer);
+    } else {
+      sent = await sendTelegramVoice(targetChat, buffer);
     }
 
-    // Log voice message into target chat's conversation context so it knows what Pixel said
-    const chatIdStr = String(targetChat);
-    const conversationId = chatIdStr.startsWith("tg-") ? chatIdStr
-      : chatIdStr.startsWith("-") ? `tg-group-${chatIdStr}` : `tg-${chatIdStr}`;
-    appendToLog(conversationId, "", `[voice message sent]: ${text}`, "telegram");
+    if (!sent) {
+      auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, platform }, { error: "send_failed" });
+      return { content: [{ type: "text" as const, text: `Generated audio but ${isWhatsApp ? "WhatsApp" : "Telegram"} send failed.` }] };
+    }
 
-    auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, chars: text.length, bytes: buffer.byteLength }, { sent: true });
+    // Log voice message into target chat's conversation context
+    const chatIdStr = String(targetChat);
+    let conversationId: string;
+    if (isWhatsApp) {
+      conversationId = chatIdStr.includes("@g.us")
+        ? `wa-group-${chatIdStr.replace("@g.us", "")}`
+        : `wa-${chatIdStr.replace(/\D/g, "")}`;
+    } else {
+      conversationId = chatIdStr.startsWith("tg-") ? chatIdStr
+        : chatIdStr.startsWith("-") ? `tg-group-${chatIdStr}` : `tg-${chatIdStr}`;
+    }
+    appendToLog(conversationId, "", `[voice message sent]: ${text}`, isWhatsApp ? "whatsapp" : "telegram");
+
+    auditToolUse("send_voice", { text: text.slice(0, 80), chat_id: targetChat, platform: isWhatsApp ? "whatsapp" : "telegram", chars: text.length, bytes: buffer.byteLength }, { sent: true });
     return { content: [{ type: "text" as const, text: `[VOICE SENT to ${targetChat}] ${text.length} chars → ${buffer.byteLength} bytes` }] };
   },
 };

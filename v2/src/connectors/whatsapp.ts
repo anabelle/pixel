@@ -771,6 +771,33 @@ export async function sendWhatsAppImage(
   }
 }
 
+/** Send a voice note to a WhatsApp user or group */
+export async function sendWhatsAppVoice(
+  target: string,
+  audio: Buffer
+): Promise<boolean> {
+  if (!sock) {
+    console.log("[whatsapp] No sock available for sending voice");
+    return false;
+  }
+  if (!isConnectedAndReady) {
+    console.log("[whatsapp] Not connected — cannot send voice");
+    return false;
+  }
+
+  try {
+    const clean = target.trim();
+    const jid = clean.includes("@")
+      ? clean
+      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
+    return true;
+  } catch (err: any) {
+    console.error(`[whatsapp] Failed to send voice to ${target}:`, err.message);
+    return false;
+  }
+}
+
 /** Send a proactive message to a WhatsApp group JID (@g.us) */
 export async function sendWhatsAppGroupMessage(
   groupJid: string,
