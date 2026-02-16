@@ -27,3 +27,6 @@ if [ "$DISK_USED_PCT" -ge 85 ]; then
   docker builder prune -af --filter "until=168h" || true
   log "docker prune complete"
 fi
+
+# Ensure postgres volume ownership is correct
+/home/pixel/pixel/v2/scripts/check-postgres-perms.sh || true

@@ -33,6 +33,15 @@ let db: PostgresJsDatabase<typeof schema> | null = null;
 export function initReminders(database: PostgresJsDatabase<typeof schema>): void {
   db = database;
   console.log("[reminders] Reminder service initialized");
+
+  // Quick read test to fail fast on permission issues
+  db.select().from(reminders).limit(1)
+    .then(() => {
+      console.log("[reminders] Database read check OK");
+    })
+    .catch((err: any) => {
+      console.error("[reminders] Database read check FAILED:", err?.message ?? err);
+    });
 }
 
 // No grace period — fire only when due_at <= now

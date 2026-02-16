@@ -838,6 +838,9 @@ async function boot() {
     console.log("[db] User tracking index verified");
   } catch (err: any) {
     console.error("[db] PostgreSQL connection failed:", err.message);
+    if (err?.stack) {
+      console.error("[db] PostgreSQL connection stack:", err.stack);
+    }
     console.error("[db] Will continue without database — some features unavailable");
   }
 

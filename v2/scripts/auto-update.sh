@@ -57,4 +57,7 @@ fi
 log "UPDATE: rebuilding pixel container"
 docker compose -f v2/docker-compose.yml up -d --build pixel
 
+log "UPDATE: ensuring postgres volume ownership"
+/home/pixel/pixel/v2/scripts/check-postgres-perms.sh || true
+
 log "OK: update complete"

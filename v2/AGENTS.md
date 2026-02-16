@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-15 | Session: 44
+> Last updated: 2026-02-16 | Session: 45
 
 ---
 
@@ -200,6 +200,7 @@ Same Pixel, same brain, different payment doors:
 - **Docker socket via group_add ["988"]** — not running as root.
 - **Alpine needs bash+curl** — added to Dockerfile runtime stage.
 - **NEXT_PUBLIC_* vars are build-time only** — must rebuild to change.
+- **Postgres volume ownership:** `/home/pixel/pixel/v2/data/postgres` must be `999:999`. Auto-checked daily via `v2/scripts/check-postgres-perms.sh` (called by `host-health.sh` and `auto-update.sh`).
 
 ---
 
