@@ -165,7 +165,7 @@ probe_zai() {
     "https://api.z.ai/api/coding/paas/v4/chat/completions" \
     -H "Authorization: Bearer $ZAI_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
+    -d '{"model":"glm-5","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' \
     2>/dev/null || echo "000")
   [ "$HTTP_CODE" = "200" ]
 }
@@ -183,7 +183,7 @@ notify_owner_and_retry() {
 
 select_model() {
   if probe_zai; then
-    echo "zai-coding-plan/glm-4.7"
+    echo "zai-coding-plan/glm-5"
     return 0
   fi
 
