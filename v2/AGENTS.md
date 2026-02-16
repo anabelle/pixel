@@ -18,7 +18,7 @@
 |-----------|--------|
 | Telegram (@PixelSurvival_bot) | ✅ Live — vision, voice, groups, notify_owner |
 | Nostr (NDK) | ✅ Live — mentions, DMs, DVM, engagement |
-| WhatsApp (Baileys) | ⚠️ Deployed, QR page live at /v2/api/whatsapp/qr — needs phone scan |
+| WhatsApp (Baileys) | ✅ Live — voice, QR pairing at /v2/api/whatsapp/qr |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
 | x402 | 📋 Researched, needs @x402/hono + Base wallet |
