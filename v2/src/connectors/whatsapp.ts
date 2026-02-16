@@ -116,6 +116,22 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
 
     const response = cleanResponse(rawResponse);
     if (response) {
+      // Check if anyone in the batch asked for voice
+      const wantsVoice = /\b(h[aá]blame|mand[aá]?me? (?:un )?(?:audio|voz|nota de voz)|send (?:me )?(?:a )?(?:voice|audio)|speak|respond(?:e|é)? (?:con|en|with) (?:voz|audio|voice))\b/i.test(joined);
+      if (wantsVoice && isSuitableForVoice(response)) {
+        try {
+          const voiceBuffer = await textToSpeech(response);
+          if (voiceBuffer) {
+            await sock!.sendMessage(groupJid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+            await sock!.sendMessage(groupJid, { text: response }).catch(() => {});
+            console.log(`[whatsapp] Group voice reply to ${groupJid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
+            return;
+          }
+        } catch (ttsErr: any) {
+          console.error(`[whatsapp] Group TTS failed, falling back to text:`, ttsErr.message);
+        }
+      }
+
       try {
         await sock!.sendMessage(groupJid, { text: response });
       } catch (sendErr: any) {
@@ -410,6 +426,21 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
             const response = cleanResponse(rawResponse);
             if (response) {
+              // Voice in → voice out for groups too
+              if (isSuitableForVoice(response)) {
+                try {
+                  const voiceBuffer = await textToSpeech(response);
+                  if (voiceBuffer) {
+                    await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+                    await sock!.sendMessage(jid, { text: response }).catch(() => {});
+                    console.log(`[whatsapp] Group voice-to-voice reply to ${jid} (${voiceBuffer.byteLength} bytes)`);
+                    continue;
+                  }
+                } catch (ttsErr: any) {
+                  console.error(`[whatsapp] Group TTS failed, falling back to text:`, ttsErr.message);
+                }
+              }
+
               try {
                 await sock!.sendMessage(jid, { text: response });
               } catch (sendErr: any) {
