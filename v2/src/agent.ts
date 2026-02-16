@@ -207,7 +207,34 @@ export function resolveApiKey(provider?: string): string {
   }
 }
 
-/** Extract text from a pi-agent-core message */
+/** Strip thinking/reasoning preambles that some models emit as regular text.
+ * Handles: (1) <think>/<thinking> XML tags (DeepSeek R1, QwQ, etc.)
+ * (2) GLM-5/Gemini bold-header pattern: **Title Case Header**\n\n<reasoning>\n\n\n<response>
+ * Only apply to user-facing text — NOT memory extraction, compaction, or summaries. */
+export function stripThinkingFromResponse(text: string): string {
+  if (!text) return text;
+  // Pattern 1: <think>...</think> or <thinking>...</thinking> tags
+  let cleaned = text.replace(/<(?:think|thinking|budget:thinking)>[\s\S]*?<\/(?:think|thinking|budget:thinking)>/gi, "").trim();
+  if (cleaned !== text && cleaned) return cleaned;
+
+  // Pattern 2: GLM-5 bold-header self-narrating pattern
+  // Must start with **Header** and contain \n\n\n separator before actual response
+  if (!text.startsWith("**")) return text;
+  const lastSep = text.lastIndexOf("\n\n\n");
+  if (lastSep === -1) return text;
+
+  // Verify the preamble looks like thinking, not legitimate content:
+  // Check for first-person meta-reasoning language in the preamble section
+  const preamble = text.substring(0, lastSep);
+  const thinkingSignals = /\b(I'm |I'll |I need |I've |I also |I should |I want |I don't |Let me |My response|Refining|Acknowledging|Analyzing|Processing|Evaluating|Considering|Clarifying|Exploring)\b/i;
+  if (!thinkingSignals.test(preamble)) return text;
+
+  const afterSep = text.substring(lastSep + 3).trim();
+  if (!afterSep) return text;
+  return afterSep;
+}
+
+/** Extract text from a pi-agent-core message (pure extraction, no stripping) */
 export function extractText(message: any): string {
   if (!message) return "";
   const content = message.content;
@@ -532,7 +559,7 @@ export async function promptWithHistory(
 
     await attemptAgent.prompt(message, images);
 
-    responseText = responseChunks.join("\n");
+    responseText = stripThinkingFromResponse(responseChunks.join("\n"));
     if (!responseText) {
       // Fallback: read from agent state
       const state = attemptAgent.state;
@@ -541,7 +568,7 @@ export async function promptWithHistory(
           (m: any) => m.role === "assistant"
         );
         if (assistantMsgs.length > 0) {
-          responseText = extractText(assistantMsgs[assistantMsgs.length - 1]);
+          responseText = stripThinkingFromResponse(extractText(assistantMsgs[assistantMsgs.length - 1]));
         }
       }
     }
@@ -932,6 +959,8 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
     }
 
     if (responseText) {
+      // Strip thinking preambles before returning (backgroundLlmCall results go to Nostr, heartbeat, etc.)
+      responseText = stripThinkingFromResponse(responseText);
       // Track cost
       const inputTokens = estimateTokens(userPrompt) + estimateTokens(systemPrompt);
       const outputTokens = estimateTokens(responseText);
