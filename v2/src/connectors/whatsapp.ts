@@ -367,9 +367,8 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // Handle audio messages separately (need async transcription)
       if (!text && msg.message?.audioMessage) {
-        if (isGroup) continue; // Skip group audio for now
         try {
-          console.log(`[whatsapp] Audio message from ${userId}`);
+          console.log(`[whatsapp] Audio message from ${userId} (group=${isGroup})`);
           await sock!.sendPresenceUpdate("composing", jid);
 
           const audioBuffer = await downloadMediaMessage(msg, "buffer", {}) as Buffer;
@@ -379,46 +378,85 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
           const transcription = await transcribeAudio(audioBuffer, mimeType);
           if (!transcription) {
             await sock!.sendPresenceUpdate("paused", jid);
-            await sock!.sendMessage(jid, { text: "I couldn't understand that voice message. Could you type it out?" });
-            continue;
-          }
-
-          const formatted = `[voice message, ${duration}s]: ${transcription}`;
-          const response = await promptWithHistory(
-            { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
-            formatted
-          );
-
-          await sock!.sendPresenceUpdate("paused", jid);
-
-          if (!response) {
-            await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
-            continue;
-          }
-
-          // Voice in → voice out (if content is suitable)
-          if (isSuitableForVoice(response)) {
-            try {
-              const voiceBuffer = await textToSpeech(response);
-              if (voiceBuffer) {
-                await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
-                // Also send text for accessibility
-                await sock!.sendMessage(jid, { text: response }).catch(() => {});
-                console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
-                continue;
-              }
-            } catch (ttsErr: any) {
-              console.error(`[whatsapp] TTS failed, falling back to text:`, ttsErr.message);
+            if (!isGroup) {
+              await sock!.sendMessage(jid, { text: "I couldn't understand that voice message. Could you type it out?" });
             }
+            continue;
           }
 
-          await sock!.sendMessage(jid, { text: response });
-          console.log(`[whatsapp] Replied to voice from ${userId} (${response.length} chars)`);
+          if (isGroup) {
+            // Groups: send transcription to LLM with sender context + [SILENT] check
+            const senderName = msg.pushName ?? msg.key.participant?.split("@")[0] ?? "someone";
+            const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
+            const formatted = `${senderName}: [voice message, ${duration}s]: ${transcription}`;
+
+            const response = await promptWithHistory(
+              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              formatted
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!response || response.includes("[SILENT]")) {
+              console.log(`[whatsapp] Group voice — [SILENT]`);
+              continue;
+            }
+
+            if (response.trim()) {
+              try {
+                await sock!.sendMessage(jid, { text: response });
+              } catch (sendErr: any) {
+                if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+                  groupMetadataCache.delete(jid);
+                  await new Promise(r => setTimeout(r, 2000));
+                  await sock!.sendMessage(jid, { text: response });
+                } else {
+                  throw sendErr;
+                }
+              }
+              console.log(`[whatsapp] Group voice reply to ${jid} (${response.length} chars)`);
+            }
+          } else {
+            // DMs: direct prompt + optional voice reply
+            const formatted = `[voice message, ${duration}s]: ${transcription}`;
+            const response = await promptWithHistory(
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              formatted
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!response) {
+              await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+              continue;
+            }
+
+            // Voice in → voice out (if content is suitable)
+            if (isSuitableForVoice(response)) {
+              try {
+                const voiceBuffer = await textToSpeech(response);
+                if (voiceBuffer) {
+                  await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+                  // Also send text for accessibility
+                  await sock!.sendMessage(jid, { text: response }).catch(() => {});
+                  console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
+                  continue;
+                }
+              } catch (ttsErr: any) {
+                console.error(`[whatsapp] TTS failed, falling back to text:`, ttsErr.message);
+              }
+            }
+
+            await sock!.sendMessage(jid, { text: response });
+            console.log(`[whatsapp] Replied to voice from ${userId} (${response.length} chars)`);
+          }
         } catch (err: any) {
           console.error(`[whatsapp] Audio error for ${userId}:`, err.message);
           try {
             await sock!.sendPresenceUpdate("paused", jid);
-            await sock!.sendMessage(jid, { text: "Something broke while processing that voice message." });
+            if (!isGroup) {
+              await sock!.sendMessage(jid, { text: "Something broke while processing that voice message." });
+            }
           } catch {}
         }
         continue;
