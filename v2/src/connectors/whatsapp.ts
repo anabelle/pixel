@@ -16,6 +16,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   type WASocket,
+  type GroupMetadata,
   Browsers,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
@@ -27,9 +28,15 @@ import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 import { existsSync, rmSync } from "fs";
 
 let sock: WASocket | null = null;
+/** Mutable ref so cachedGroupMetadata closure can call sock.groupMetadata */
+let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
+
+/** Group metadata cache — avoids live queries on every group send */
+const groupMetadataCache = new Map<string, { metadata: GroupMetadata; timestamp: number }>();
+const GROUP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** Reconnect attempt counter for exponential backoff */
 let reconnectAttempts = 0;
@@ -131,11 +138,30 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     printQRInTerminal: true,
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
-    // Required for group messaging — Baileys needs this for retry/resend
-    getMessage: async (key: any) => {
-      return { conversation: "" };
+    // Return undefined to SKIP retries — returning { conversation: "" } causes
+    // sender-key-memory resets that cascade into "No sessions" errors for groups
+    getMessage: async (_key: any) => {
+      return undefined;
+    },
+    // Provide cached group metadata so relayMessage doesn't do live queries
+    // on every group send. Also ensures participant list is available for
+    // assertSessions() to establish Signal sessions.
+    cachedGroupMetadata: async (jid: string) => {
+      const cached = groupMetadataCache.get(jid);
+      if (cached && Date.now() - cached.timestamp < GROUP_CACHE_TTL) {
+        return cached.metadata;
+      }
+      if (!sockRef) return undefined;
+      try {
+        const metadata = await sockRef.groupMetadata(jid);
+        groupMetadataCache.set(jid, { metadata, timestamp: Date.now() });
+        return metadata;
+      } catch {
+        return undefined;
+      }
     },
   });
+  sockRef = sock;
 
   // Track if we've already requested pairing code to avoid duplicates
   let pairingCodeRequested = false;
@@ -169,6 +195,20 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       console.log("[whatsapp] ✅ Connected successfully!");
       isConnectedAndReady = true;
       reconnectAttempts = 0; // Reset on successful connection
+
+      // Pre-warm group metadata cache so first group send has Signal sessions ready
+      try {
+        const groups = await sock!.groupFetchAllParticipating();
+        for (const [jid, metadata] of Object.entries(groups)) {
+          groupMetadataCache.set(jid, { metadata, timestamp: Date.now() });
+          // Debug: log participant IDs to understand format (LID vs phone)
+          const pids = metadata.participants.map((p: any) => p.id).join(", ");
+          console.log(`[whatsapp] Group ${jid} participants: ${pids}`);
+        }
+        console.log(`[whatsapp] Cached metadata for ${Object.keys(groups).length} groups`);
+      } catch (err: any) {
+        console.error("[whatsapp] Failed to pre-warm group cache:", err.message);
+      }
     }
 
     // When we get a QR code event
@@ -206,6 +246,12 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
   // Save credentials when updated
   sock.ev.on("creds.update", saveCreds);
+
+  // Invalidate group cache when participants change so next send fetches fresh metadata
+  sock.ev.on("group-participants.update", async ({ id, participants, action }) => {
+    console.log(`[whatsapp] Group ${id} participants ${action}: ${participants.join(", ")}`);
+    groupMetadataCache.delete(id);
+  });
 
   // Handle incoming messages
   sock.ev.on("messages.upsert", async (event) => {
@@ -373,13 +419,24 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         }
 
         // WhatsApp message limit is ~65536 chars, but keep it reasonable
-        // Retry once on "No sessions" error (common with groups after fresh connection)
+        // For groups: log participant info for debugging
+        if (isGroup) {
+          const cached = groupMetadataCache.get(jid);
+          if (cached) {
+            console.log(`[whatsapp] Sending to group ${jid} — ${cached.metadata.participants.length} participants cached`);
+          } else {
+            console.log(`[whatsapp] Sending to group ${jid} — no cached metadata, relayMessage will fetch`);
+          }
+        }
+
         try {
           await sock!.sendMessage(jid, { text: response });
         } catch (sendErr: any) {
-          if (sendErr?.message?.includes("No sessions") && isGroup) {
-            console.log(`[whatsapp] No sessions for group — retrying in 3s...`);
-            await new Promise(r => setTimeout(r, 3000));
+          if (isGroup && (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable"))) {
+            // First attempt failed — invalidate cache and retry with fresh metadata
+            console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
+            groupMetadataCache.delete(jid);
+            await new Promise(r => setTimeout(r, 2000));
             await sock!.sendMessage(jid, { text: response });
           } else {
             throw sendErr;
@@ -388,7 +445,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
         console.log(`[whatsapp] Replied to ${userId} (${response.length} chars)`);
       } catch (err: any) {
-        console.error(`[whatsapp] Error for ${userId}:`, err.message);
+        console.error(`[whatsapp] Error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 5).join("\n"));
         try {
           await sock!.sendPresenceUpdate("paused", jid);
           // Don't try to send error message to groups with session issues
@@ -481,7 +538,18 @@ export async function sendWhatsAppGroupMessage(
   }
   try {
     const jid = groupJid.includes("@") ? groupJid : `${groupJid}@g.us`;
-    await sock.sendMessage(jid, { text });
+    try {
+      await sock.sendMessage(jid, { text });
+    } catch (sendErr: any) {
+      if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+        console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
+        groupMetadataCache.delete(jid);
+        await new Promise(r => setTimeout(r, 2000));
+        await sock.sendMessage(jid, { text });
+      } else {
+        throw sendErr;
+      }
+    }
     return true;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send group message to ${groupJid}:`, err.message);
@@ -555,9 +623,11 @@ export async function repairWhatsApp(mode?: "qr" | "pairing"): Promise<{ mode: s
       sock.ev.removeAllListeners("connection.update");
       sock.ev.removeAllListeners("creds.update");
       sock.ev.removeAllListeners("messages.upsert");
+      sock.ev.removeAllListeners("group-participants.update");
       sock.end(undefined);
     } catch {}
     sock = null;
+    sockRef = null;
   }
 
   // Clear auth state only on explicit repair
@@ -569,6 +639,7 @@ export async function repairWhatsApp(mode?: "qr" | "pairing"): Promise<{ mode: s
   lastPairingCode = null;
   currentQrString = null;
   isFirstConnect = true; // Allow stale creds check on next connect
+  groupMetadataCache.clear(); // Clear group cache on repair
 
   // Wait a moment before reconnecting
   await new Promise(resolve => setTimeout(resolve, 2000));

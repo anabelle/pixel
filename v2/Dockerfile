@@ -1,5 +1,5 @@
 # Pixel V2 — Single-brain container
-# Zero patches. If it needs patching, switch dependencies.
+# Runtime patch for Baileys v6 LID bug applied in entrypoint.sh
 
 FROM oven/bun:1-alpine AS builder
 
@@ -37,6 +37,9 @@ COPY --from=builder /app/character.md* ./
 # Create data directories (including external for bind-mount fallback)
 RUN mkdir -p /app/conversations /app/skills /app/tools /app/data /app/external && \
     chown -R bun:bun /app
+
+# Copy scripts (Baileys LID patch, etc.)
+COPY scripts/ ./scripts/
 
 # Entrypoint runs as root to fix bind-mount permissions, then drops to bun
 COPY entrypoint.sh ./

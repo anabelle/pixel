@@ -2275,6 +2275,31 @@ const joinWhatsAppGroupTool: AgentTool<typeof joinWhatsAppGroupSchema> = {
   },
 };
 
+const sendWhatsAppMessageSchema = Type.Object({
+  to: Type.String({ description: "Destination: phone number (e.g. 573001234567) for DMs, or group JID (e.g. 120363408642317805@g.us) for groups" }),
+  message: Type.String({ description: "Text message to send" }),
+});
+
+const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
+  name: "send_whatsapp_message",
+  label: "Send WhatsApp Message",
+  description: "Send a proactive WhatsApp message to a phone number (DM) or group JID.",
+  parameters: sendWhatsAppMessageSchema,
+  execute: async (_id, { to, message }) => {
+    const isGroup = to.includes("@g.us");
+    let ok: boolean;
+    if (isGroup) {
+      ok = await sendWhatsAppGroupMessage(to, message);
+    } else {
+      ok = await sendWhatsAppMessage(to, message);
+    }
+    if (ok) {
+      return { content: [{ type: "text" as const, text: `WhatsApp message sent to ${to}` }] };
+    }
+    return { content: [{ type: "text" as const, text: `Failed to send WhatsApp message to ${to}` }] };
+  },
+};
+
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
   label: "Generate Image",
@@ -2373,6 +2398,7 @@ export const pixelTools = [
   sendVoiceTool,
   generateImageTool,
   joinWhatsAppGroupTool,
+  sendWhatsAppMessageTool,
 ];
 
 // Map of tool names to their implementations

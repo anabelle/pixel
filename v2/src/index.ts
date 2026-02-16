@@ -29,7 +29,7 @@ import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
-import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr } from "./connectors/whatsapp.js";
+import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr, sendWhatsAppMessage, sendWhatsAppGroupMessage } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
@@ -305,6 +305,27 @@ pollInterval = setInterval(poll, 3000);
 /** WhatsApp QR data endpoint (JSON — used by the QR page's JS) */
 app.get("/api/whatsapp/qr/data", (c) => {
   return c.json(getWhatsAppQr());
+});
+
+/** WhatsApp send endpoint — proactive messaging to DMs and groups */
+app.post("/api/whatsapp/send", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { to, message } = body as { to?: string; message?: string };
+    if (!to || !message) {
+      return c.json({ ok: false, error: "Missing 'to' and/or 'message'" }, 400);
+    }
+    const isGroup = to.includes("@g.us");
+    let ok: boolean;
+    if (isGroup) {
+      ok = await sendWhatsAppGroupMessage(to, message);
+    } else {
+      ok = await sendWhatsAppMessage(to, message);
+    }
+    return c.json({ ok, to, isGroup });
+  } catch (err: any) {
+    return c.json({ ok: false, error: err?.message ?? "unknown" }, 500);
+  }
 });
 
 /** Agent card (A2A / ERC-8004 discovery) */
