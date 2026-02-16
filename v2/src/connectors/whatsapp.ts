@@ -49,6 +49,11 @@ const WA_BATCH_WINDOW_MS = 20_000; // 20 seconds
 const WA_BATCH_MAX = 10;           // max messages per batch
 const WA_BATCH_MAX_CHARS = 2000;   // max chars sent to LLM
 
+/** Strip LLM artifacts that leak from batch/control prompts */
+function cleanResponse(text: string): string {
+  return text.replace(/^\[BATCHED\]\s*/i, "").replace(/^\[BATCH\]\s*/i, "").trim();
+}
+
 interface WaBatchEntry {
   items: string[];
   timer: ReturnType<typeof setTimeout> | null;
@@ -97,19 +102,20 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
   try {
     await sock?.sendPresenceUpdate("composing", groupJid);
 
-    const response = await promptWithHistory(
+    const rawResponse = await promptWithHistory(
       { userId: entry.conversationId, platform: "whatsapp", chatId: groupJid },
       prompt
     );
 
     await sock?.sendPresenceUpdate("paused", groupJid);
 
-    if (!response || response.includes("[SILENT]")) {
+    if (!rawResponse || rawResponse.includes("[SILENT]")) {
       console.log(`[whatsapp] Group ${groupJid} — [SILENT] (${items.length} msgs batched)`);
       return;
     }
 
-    if (response.trim()) {
+    const response = cleanResponse(rawResponse);
+    if (response) {
       try {
         await sock!.sendMessage(groupJid, { text: response });
       } catch (sendErr: any) {
@@ -390,19 +396,20 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
             const formatted = `${senderName}: [voice message, ${duration}s]: ${transcription}`;
 
-            const response = await promptWithHistory(
+            const rawResponse = await promptWithHistory(
               { userId: conversationId, platform: "whatsapp", chatId: jid },
               formatted
             );
 
             await sock!.sendPresenceUpdate("paused", jid);
 
-            if (!response || response.includes("[SILENT]")) {
+            if (!rawResponse || rawResponse.includes("[SILENT]")) {
               console.log(`[whatsapp] Group voice — [SILENT]`);
               continue;
             }
 
-            if (response.trim()) {
+            const response = cleanResponse(rawResponse);
+            if (response) {
               try {
                 await sock!.sendMessage(jid, { text: response });
               } catch (sendErr: any) {
@@ -489,7 +496,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             console.log(`[whatsapp] Group image from ${senderName} in ${jid}`);
             await sock!.sendPresenceUpdate("composing", jid);
 
-            const response = await promptWithHistory(
+            const rawResponse = await promptWithHistory(
               { userId: conversationId, platform: "whatsapp", chatId: jid },
               line,
               [{ type: "image", data: base64, mimeType }]
@@ -497,12 +504,13 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
             await sock!.sendPresenceUpdate("paused", jid);
 
-            if (!response || response.includes("[SILENT]")) {
+            if (!rawResponse || rawResponse.includes("[SILENT]")) {
               console.log(`[whatsapp] Group image — [SILENT]`);
               continue;
             }
 
-            if (response.trim()) {
+            const response = cleanResponse(rawResponse);
+            if (response) {
               try {
                 await sock!.sendMessage(jid, { text: response });
               } catch (sendErr: any) {
