@@ -25,6 +25,7 @@ import { parse as parseHTML } from "node-html-parser";
 import { generateImage } from "./image-gen.js";
 import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramImage } from "../connectors/telegram.js";
+import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -2248,11 +2249,31 @@ const generateImageSchema = Type.Object({
   ratio: Type.Optional(Type.String({ description: "Aspect ratio (e.g. 1:1, 16:9, 9:16). Default: 1:1" })),
   model: Type.Optional(Type.Union([Type.Literal("pro"), Type.Literal("flash")], { description: "Image model tier" })),
   size: Type.Optional(Type.Union([Type.Literal("1K"), Type.Literal("2K"), Type.Literal("4K")], { description: "Image size (pro only)" })),
-  platform: Type.Optional(Type.Union([Type.Literal("telegram"), Type.Literal("nostr")], { description: "Send to a platform directly (default: current platform)" })),
-  chat_id: Type.Optional(Type.String({ description: "Target chat id (Telegram). Optional if tool is called in conversation." })),
+  platform: Type.Optional(Type.Union([Type.Literal("telegram"), Type.Literal("nostr"), Type.Literal("whatsapp")], { description: "Send to a platform directly (default: current platform)" })),
+  chat_id: Type.Optional(Type.String({ description: "Target chat id (Telegram/WhatsApp). Optional if tool is called in conversation." })),
   upload: Type.Optional(Type.Boolean({ description: "Upload to Blossom and return URL" })),
   caption: Type.Optional(Type.String({ description: "Optional caption when sending" })),
 });
+
+// ─── WHATSAPP GROUP JOIN ───────────────────────────────────────
+
+const joinWhatsAppGroupSchema = Type.Object({
+  invite_code: Type.String({ description: "WhatsApp group invite code" }),
+});
+
+const joinWhatsAppGroupTool: AgentTool<typeof joinWhatsAppGroupSchema> = {
+  name: "join_whatsapp_group",
+  label: "Join WhatsApp Group",
+  description: "Join a WhatsApp group using an invite code.",
+  parameters: joinWhatsAppGroupSchema,
+  execute: async (_id, { invite_code }) => {
+    const result = await joinWhatsAppGroup(invite_code);
+    if (result.ok) {
+      return { content: [{ type: "text" as const, text: `Joined WhatsApp group: ${result.jid}` }] };
+    }
+    return { content: [{ type: "text" as const, text: `Failed to join WhatsApp group: ${result.error ?? "unknown error"}` }] };
+  },
+};
 
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
@@ -2278,6 +2299,14 @@ const generateImageTool: AgentTool<typeof generateImageSchema> = {
         if (sent) {
           auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "telegram", chat_id: String(targetChat) }, { sent: true });
           return { content: [{ type: "text" as const, text: `Image sent to Telegram chat ${targetChat}.` }] };
+        }
+      }
+
+      if (targetPlatform === "whatsapp" && targetChat) {
+        const ok = await sendWhatsAppImage(targetChat, result.buffer, caption, result.mimeType);
+        if (ok) {
+          auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "whatsapp", chat_id: String(targetChat) }, { sent: true });
+          return { content: [{ type: "text" as const, text: `Image sent to WhatsApp chat ${targetChat}.` }] };
         }
       }
 
@@ -2343,6 +2372,7 @@ export const pixelTools = [
   introspectTool,
   sendVoiceTool,
   generateImageTool,
+  joinWhatsAppGroupTool,
 ];
 
 // Map of tool names to their implementations
