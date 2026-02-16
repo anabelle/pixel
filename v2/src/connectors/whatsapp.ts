@@ -42,6 +42,94 @@ const GROUP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// ─── Group message batching (like Telegram) ────────────────────
+// Every group message is queued; after a quiet window the batch is
+// sent to the LLM which decides whether to reply or output [SILENT].
+const WA_BATCH_WINDOW_MS = 20_000; // 20 seconds
+const WA_BATCH_MAX = 10;           // max messages per batch
+const WA_BATCH_MAX_CHARS = 2000;   // max chars sent to LLM
+
+interface WaBatchEntry {
+  items: string[];
+  timer: ReturnType<typeof setTimeout> | null;
+  groupJid: string;
+  conversationId: string;
+}
+const waGroupBuffers = new Map<string, WaBatchEntry>();
+
+/** Queue a group message for batched processing */
+function queueGroupMessage(groupJid: string, conversationId: string, line: string): void {
+  const entry = waGroupBuffers.get(groupJid) ?? { items: [], timer: null, groupJid, conversationId };
+  entry.items.push(line);
+
+  if (entry.items.length > WA_BATCH_MAX) {
+    entry.items = entry.items.slice(-WA_BATCH_MAX);
+  }
+
+  if (entry.timer) clearTimeout(entry.timer);
+
+  entry.timer = setTimeout(() => {
+    flushGroupMessages(groupJid).catch((err) => {
+      console.error("[whatsapp] Group flush failed:", err.message);
+    });
+  }, WA_BATCH_WINDOW_MS);
+
+  waGroupBuffers.set(groupJid, entry);
+}
+
+/** Flush batched group messages — send to LLM, respect [SILENT] */
+async function flushGroupMessages(groupJid: string): Promise<void> {
+  const entry = waGroupBuffers.get(groupJid);
+  if (!entry || entry.items.length === 0) return;
+
+  const items = entry.items.slice();
+  entry.items = [];
+  entry.timer = null;
+  waGroupBuffers.set(groupJid, entry);
+
+  const joined = items.join("\n");
+  const trimmed = joined.length > WA_BATCH_MAX_CHARS
+    ? joined.slice(-WA_BATCH_MAX_CHARS)
+    : joined;
+
+  const prompt = `Recent WhatsApp group messages (batched):\n${trimmed}\n\nRespond once to the batch if useful. If nothing to add, output [SILENT].`;
+
+  try {
+    await sock?.sendPresenceUpdate("composing", groupJid);
+
+    const response = await promptWithHistory(
+      { userId: entry.conversationId, platform: "whatsapp", chatId: groupJid },
+      prompt
+    );
+
+    await sock?.sendPresenceUpdate("paused", groupJid);
+
+    if (!response || response.includes("[SILENT]")) {
+      console.log(`[whatsapp] Group ${groupJid} — [SILENT] (${items.length} msgs batched)`);
+      return;
+    }
+
+    if (response.trim()) {
+      try {
+        await sock!.sendMessage(groupJid, { text: response });
+      } catch (sendErr: any) {
+        if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+          console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
+          groupMetadataCache.delete(groupJid);
+          await new Promise(r => setTimeout(r, 2000));
+          await sock!.sendMessage(groupJid, { text: response });
+        } else {
+          throw sendErr;
+        }
+      }
+      console.log(`[whatsapp] Group reply to ${groupJid} (${response.length} chars, ${items.length} msgs batched)`);
+    }
+  } catch (err: any) {
+    console.error(`[whatsapp] Group flush error for ${groupJid}:`, err.message, err.stack?.split("\n").slice(0, 3).join("\n"));
+    try { await sock?.sendPresenceUpdate("paused", groupJid); } catch {}
+  }
+}
+
 /** Last pairing code for API retrieval */
 let lastPairingCode: string | null = null;
 let lastPairingTime: number = 0;
@@ -338,51 +426,64 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       if (!text) continue;
 
-      // In groups, only respond if mentioned or replied to
+      // ─── GROUP MESSAGES: batch like Telegram ───────────────────
       if (isGroup) {
-        // Extract contextInfo from any message type that has it
+        const senderName = msg.pushName ?? msg.key.participant?.split("@")[0] ?? "someone";
+        const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
+
+        // Check if bot was @mentioned or replied-to (for context annotation)
         const contextInfo = msg.message?.extendedTextMessage?.contextInfo
           ?? msg.message?.imageMessage?.contextInfo
           ?? msg.message?.videoMessage?.contextInfo
           ?? undefined;
 
-        // Debug: dump group message details
         const mentionedRaw = contextInfo?.mentionedJid ?? [];
-        const participantRaw = contextInfo?.participant ?? "(none)";
-        const stanzaRaw = contextInfo?.stanzaId ?? "(none)";
-        console.log(`[whatsapp] GROUP msg from ${userId} in ${jid} — text: "${(text ?? "").slice(0, 40)}", mentioned: [${mentionedRaw.join(",")}], replyParticipant: ${participantRaw}, stanzaId: ${stanzaRaw}`);
-
-        // Check if this is a reply to the bot
         const replyParticipant = contextInfo?.participant ?? "";
         const myId = sock?.user?.id ?? "";
-        const myPhone = myId.split(":")[0].split("@")[0]; // e.g. "573223176133"
-
-        // Also get our LID from the creds if available
+        const myPhone = myId.split(":")[0].split("@")[0];
         const myLid = (sock as any)?.authState?.creds?.me?.lid ?? "";
-        const myLidBase = myLid.split(":")[0].split("@")[0]; // LID number without suffix
+        const myLidBase = myLid.split(":")[0].split("@")[0];
 
         const isReplyToBot = Boolean(contextInfo?.stanzaId) &&
           (replyParticipant === myId ||
            replyParticipant.startsWith(myPhone) ||
            (myLidBase && replyParticipant.startsWith(myLidBase)));
 
-        // Check if bot was @mentioned — compare phone AND LID
         const isMentioned = mentionedRaw.some((mjid: string) => {
           const mentionBase = mjid.split(":")[0].split("@")[0];
           return mentionBase === myPhone || (myLidBase && mentionBase === myLidBase);
         });
 
-        // Also check if the text contains @phone or @lid as a fallback
         const textMention = (text?.includes(`@${myPhone}`) || (myLidBase && text?.includes(`@${myLidBase}`))) ?? false;
+        const addressed = isReplyToBot || isMentioned || textMention;
 
-        console.log(`[whatsapp] GROUP check — myId: ${myId}, myLid: ${myLid}, isReply: ${isReplyToBot}, isMentioned: ${isMentioned}, textMention: ${textMention}`);
-
-        if (!isReplyToBot && !isMentioned && !textMention) {
-          continue;
+        // Format line with sender context — indicate when Pixel is being addressed
+        let line: string;
+        if (addressed) {
+          line = `${senderName} (addressing you): ${text}`;
+        } else {
+          line = `${senderName}: ${text}`;
         }
-        console.log(`[whatsapp] GROUP TRIGGERED — responding to group message`);
+
+        console.log(`[whatsapp] GROUP queue — ${jid} — ${line.slice(0, 80)} (addressed=${addressed})`);
+
+        // If directly addressed, flush immediately after queuing
+        queueGroupMessage(jid, conversationId, line);
+        if (addressed) {
+          // Clear the timer and flush now so the user gets a fast reply
+          const entry = waGroupBuffers.get(jid);
+          if (entry?.timer) {
+            clearTimeout(entry.timer);
+            entry.timer = null;
+          }
+          flushGroupMessages(jid).catch((err) => {
+            console.error("[whatsapp] Immediate flush failed:", err.message);
+          });
+        }
+        continue;
       }
 
+      // ─── DM MESSAGES: direct prompt (unchanged) ───────────────
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
 
       try {
@@ -418,24 +519,11 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
           }
         }
 
-        // WhatsApp message limit is ~65536 chars, but keep it reasonable
-        // For groups: log participant info for debugging
-        if (isGroup) {
-          const cached = groupMetadataCache.get(jid);
-          if (cached) {
-            console.log(`[whatsapp] Sending to group ${jid} — ${cached.metadata.participants.length} participants cached`);
-          } else {
-            console.log(`[whatsapp] Sending to group ${jid} — no cached metadata, relayMessage will fetch`);
-          }
-        }
-
         try {
           await sock!.sendMessage(jid, { text: response });
         } catch (sendErr: any) {
-          if (isGroup && (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable"))) {
-            // First attempt failed — invalidate cache and retry with fresh metadata
-            console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
-            groupMetadataCache.delete(jid);
+          if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+            console.log(`[whatsapp] DM send failed (${sendErr.message}) — retrying...`);
             await new Promise(r => setTimeout(r, 2000));
             await sock!.sendMessage(jid, { text: response });
           } else {
@@ -448,10 +536,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         console.error(`[whatsapp] Error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 5).join("\n"));
         try {
           await sock!.sendPresenceUpdate("paused", jid);
-          // Don't try to send error message to groups with session issues
-          if (!isGroup || !err?.message?.includes("No sessions")) {
-            await sock!.sendMessage(jid, { text: "Something broke. I'll be back in a moment." });
-          }
+          await sock!.sendMessage(jid, { text: "Something broke. I'll be back in a moment." });
         } catch {}
       }
     }
