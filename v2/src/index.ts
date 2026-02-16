@@ -222,7 +222,7 @@ h1{font-size:1.4em;margin-bottom:4px}
 .age{color:#666;font-size:0.8em;margin-top:8px}
 a{color:#64b5f6}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"><\/script>
 </head>
 <body>
 <h1>🟢 Pixel WhatsApp</h1>
