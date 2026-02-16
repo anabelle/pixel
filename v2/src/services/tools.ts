@@ -2294,6 +2294,11 @@ const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
       ok = await sendWhatsAppMessage(to, message);
     }
     if (ok) {
+      // Log proactive message so Pixel has memory of what it sent
+      const conversationId = isGroup
+        ? `wa-group-${to.replace("@g.us", "")}`
+        : `wa-${to.replace(/\D/g, "")}`;
+      appendToLog(conversationId, "[proactive message sent via tool]", message, "whatsapp");
       return { content: [{ type: "text" as const, text: `WhatsApp message sent to ${to}` }] };
     }
     return { content: [{ type: "text" as const, text: `Failed to send WhatsApp message to ${to}` }] };

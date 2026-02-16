@@ -30,7 +30,7 @@ import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
 import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr, sendWhatsAppMessage, sendWhatsAppGroupMessage } from "./connectors/whatsapp.js";
-import { getConversationStats } from "./conversations.js";
+import { getConversationStats, appendToLog } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { initUsers, getUserStats } from "./services/users.js";
@@ -321,6 +321,13 @@ app.post("/api/whatsapp/send", async (c) => {
       ok = await sendWhatsAppGroupMessage(to, message);
     } else {
       ok = await sendWhatsAppMessage(to, message);
+    }
+    if (ok) {
+      // Log so Pixel has memory of proactive sends
+      const conversationId = isGroup
+        ? `wa-group-${to.replace("@g.us", "")}`
+        : `wa-${to.replace(/\D/g, "")}`;
+      appendToLog(conversationId, "[proactive message sent via API]", message, "whatsapp");
     }
     return c.json({ ok, to, isGroup });
   } catch (err: any) {
