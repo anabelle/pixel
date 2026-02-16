@@ -424,6 +424,92 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         continue;
       }
 
+      // Handle image messages (vision) — download + send to LLM with caption
+      const imageMsg = msg.message?.imageMessage;
+      if (imageMsg) {
+        const caption = imageMsg.caption?.trim() ?? "";
+        const baseText = caption ? `Image with caption: ${caption}` : "Image received.";
+
+        try {
+          console.log(`[whatsapp] Image message from ${userId} (caption: "${caption.slice(0, 40)}")`);
+
+          const imgBuffer = await downloadMediaMessage(msg, "buffer", {}) as Buffer;
+          const rawMime = imageMsg.mimetype ?? "image/jpeg";
+          const mimeType = rawMime.split(";")[0] || "image/jpeg";
+          const base64 = imgBuffer.toString("base64");
+
+          console.log(`[whatsapp] Image downloaded: ${imgBuffer.byteLength} bytes, ${mimeType}`);
+
+          if (isGroup) {
+            // Groups: queue with image note (can't batch binary images, but the LLM
+            // gets the image via promptWithHistory and the batch gets the text note)
+            const senderName = msg.pushName ?? msg.key.participant?.split("@")[0] ?? "someone";
+            const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
+            const line = `${senderName}: [sent an image${caption ? `: ${caption}` : ""}]`;
+
+            // For group images, send directly to LLM (not batched) since we have binary data
+            console.log(`[whatsapp] Group image from ${senderName} in ${jid}`);
+            await sock!.sendPresenceUpdate("composing", jid);
+
+            const response = await promptWithHistory(
+              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              line,
+              [{ type: "image", data: base64, mimeType }]
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!response || response.includes("[SILENT]")) {
+              console.log(`[whatsapp] Group image — [SILENT]`);
+              continue;
+            }
+
+            if (response.trim()) {
+              try {
+                await sock!.sendMessage(jid, { text: response });
+              } catch (sendErr: any) {
+                if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+                  groupMetadataCache.delete(jid);
+                  await new Promise(r => setTimeout(r, 2000));
+                  await sock!.sendMessage(jid, { text: response });
+                } else {
+                  throw sendErr;
+                }
+              }
+              console.log(`[whatsapp] Group image reply to ${jid} (${response.length} chars)`);
+            }
+          } else {
+            // DMs: send image directly to LLM
+            await sock!.sendPresenceUpdate("composing", jid);
+
+            const response = await promptWithHistory(
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              baseText,
+              [{ type: "image", data: base64, mimeType }]
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!response) {
+              await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+              continue;
+            }
+
+            await sock!.sendMessage(jid, { text: response });
+            console.log(`[whatsapp] Image reply to ${userId} (${response.length} chars)`);
+          }
+        } catch (err: any) {
+          console.error(`[whatsapp] Image error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 3).join("\n"));
+          try {
+            await sock!.sendPresenceUpdate("paused", jid);
+            if (!isGroup) {
+              await sock!.sendMessage(jid, { text: "Something broke while looking at that image." });
+            }
+          } catch {}
+        }
+        continue;
+      }
+
       if (!text) continue;
 
       // ─── GROUP MESSAGES: batch like Telegram ───────────────────
