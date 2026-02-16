@@ -373,57 +373,83 @@ log_opencode_errors
 build_summary() {
   local session_num
   session_num=$(date +%Y%m%d%H%M)
-  
-  # Get Pixel health state
   local pixel_state="unknown"
   pixel_state=$(curl -s --max-time 5 http://127.0.0.1:4000/health 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'uptime={int(d.get(\"uptime\",0))}s, heartbeat={d.get(\"heartbeat\",{}).get(\"running\",False)}')" 2>/dev/null || echo "unreachable")
-  
-  # Parse opencode output for changes
-  local changes=""
-  local findings=""
-  local action_items=""
-  
+
+  local opencode_excerpt=""
   if [ -f "$OPENCODE_OUTPUT" ]; then
-    # Count files modified (look for file paths in output)
-    local file_changes
-    file_changes=$(grep -cE "(\.ts|\.js|\.json|\.md|\.sh)" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
-    
-    # Check for commits
-    local commits_made
-    commits_made=$(grep -c "commit" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
-    
-    # Check for errors
-    local errors_found
-    errors_found=$(grep -cE '"type":"error"' "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
-    
-    # Check for docker operations
-    local docker_ops
-    docker_ops=$(grep -cE "(docker compose|docker-compose|rebuild|restart)" "$OPENCODE_OUTPUT" 2>/dev/null || echo "0")
-    
-    if [ "$file_changes" -gt 0 ]; then
-      changes="$file_changes file(s) modified, $commits_made commit(s) made"
-    elif [ "$docker_ops" -gt 0 ]; then
-      changes="$docker_ops docker operation(s) executed"
-    else
-      changes="diagnostic/review only - no code changes"
-    fi
-    
-    if [ "$errors_found" -gt 0 ]; then
-      findings="$errors_found error(s) encountered and handled"
-    fi
-  else
-    changes="no output captured"
+    opencode_excerpt=$(tail -n 400 "$OPENCODE_OUTPUT" 2>/dev/null | sed 's/\r//g')
   fi
-  
-  # Build structured message
+
+  local debrief_text=""
+  debrief_text=$(python3 - <<'PY' "$opencode_excerpt" "$MODEL" "$MSG_COUNT" "$pixel_state" "$session_num" 2>/dev/null
+import json
+import sys
+import urllib.request
+
+opencode_excerpt = sys.argv[1]
+model = sys.argv[2]
+msg_count = sys.argv[3]
+pixel_state = sys.argv[4]
+session_num = sys.argv[5]
+
+prompt = f"""You are Pixel. Provide a concise, human-readable executive debrief for Ana. Use this exact format and keep it short but informative:
+
+syntropy session {session_num} completed.
+
+changes:
+- <1-3 bullets describing what actually changed; mention key files/actions, not counts>
+
+findings:
+- <relevant observations or diagnosis; say none if nothing>
+
+state:
+- Pixel: {pixel_state}
+- model: {model}
+- messages processed: {msg_count}
+
+action items:
+- <any follow-ups for Pixel/owner; say none if no action>
+
+Context (dispatch log tail / tool output excerpt):
+{opencode_excerpt}
+"""
+
+payload = {
+  "message": prompt,
+  "userId": "syntropy-admin"
+}
+
+req = urllib.request.Request(
+  "http://127.0.0.1:4000/api/chat",
+  data=json.dumps(payload).encode("utf-8"),
+  headers={"Content-Type": "application/json"},
+  method="POST",
+)
+
+try:
+  with urllib.request.urlopen(req, timeout=15) as resp:
+    body = resp.read().decode("utf-8")
+    data = json.loads(body)
+    print(data.get("response", ""))
+except Exception:
+  print("")
+PY
+)
+
+  if [ -n "$debrief_text" ]; then
+    printf "%s\n" "$debrief_text"
+    return 0
+  fi
+
   cat << EOF
 syntropy session $session_num completed.
 
 changes:
-- $changes
+- diagnostic or maintenance run (no LLM debrief available)
 
 findings:
-- $findings
+- none
 
 state:
 - Pixel: $pixel_state
