@@ -150,9 +150,8 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
   } as any;
 }
 
-/** Primary conversation model — Z.AI GLM-4.7 when available, Gemini 2.5 Flash otherwise.
- * Z.AI has 5-hour rolling rate limits on Coding Lite ($84/yr) — promptWithHistory
- * cascade handles 429 automatically: GLM-4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash */
+/** Primary conversation model — Z.AI GLM-5 (744B params, reasoning).
+ * Fallback cascade handles 429: GLM-5 → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
@@ -160,11 +159,11 @@ function getPixelModel() {
   return getModel(provider as any, modelId);
 }
 
-/** Background model — tries Z.AI first (when available), cascade handles 429 fallback.
+/** Background model — GLM-4.7 (reasoning, fast enough for background).
  * backgroundLlmCall() cascade: getSimpleModel → getFallbackModel(1..4) */
 function getSimpleModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "zai") { return makeZaiModel("glm-4.5-air", false); }
+  if (provider === "zai") { return makeZaiModel("glm-4.7", true); }
   return getModel("google" as any, "gemini-2.0-flash");
 }
 

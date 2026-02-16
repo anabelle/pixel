@@ -22,7 +22,7 @@ services:
       - DATA_DIR=/app/conversations
       - CHARACTER_PATH=/app/character.md
       - AI_PROVIDER=zai
-      - AI_MODEL=glm-4.7
+      - AI_MODEL=glm-5
       - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
     extra_hosts:
