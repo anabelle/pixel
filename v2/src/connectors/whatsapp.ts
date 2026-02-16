@@ -27,6 +27,8 @@ import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 import { existsSync, rmSync } from "fs";
 
 let sock: WASocket | null = null;
+/** True once connection.update fires with connection === "open" */
+let isConnectedAndReady = false;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
 
 /** Reconnect attempt counter for exponential backoff */
@@ -64,6 +66,8 @@ function clearAuthState(): void {
   }
 }
 
+// NOTE: We do NOT auto-clear auth on logout. This prevents unexpected QR invalidation.
+
 /** Start the WhatsApp connector */
 export async function startWhatsApp(): Promise<void> {
   const rawPhone = process.env.WHATSAPP_PHONE_NUMBER;
@@ -78,10 +82,29 @@ export async function startWhatsApp(): Promise<void> {
   await connectToWhatsApp(phoneNumber);
 }
 
+/** Join a WhatsApp group by invite code */
+export async function joinWhatsAppGroup(inviteCode: string): Promise<{ ok: boolean; jid?: string; error?: string }> {
+  if (!sock) {
+    return { ok: false, error: "WhatsApp socket not initialized" };
+  }
+  if (!isConnectedAndReady) {
+    return { ok: false, error: "WhatsApp not connected (pairing required)" };
+  }
+  try {
+    const code = inviteCode.trim();
+    const jid = await sock.groupAcceptInvite(code);
+    console.log(`[whatsapp] Joined group via invite (${code}) -> ${jid}`);
+    return { ok: true, jid };
+  } catch (err: any) {
+    console.error("[whatsapp] Failed to join group:", err.message);
+    return { ok: false, error: err?.message ?? "unknown error" };
+  }
+}
+
 /** Connect (and reconnect) to WhatsApp */
 async function connectToWhatsApp(phoneNumber: string): Promise<void> {
-  // Only clear stale creds on first boot — NOT on 515 reconnect (which is normal during pairing)
-  // The 515 stream restart sets me.id + registered=false as an intermediate state
+  // On first connect, just log the state — we no longer clear "stale" creds
+  // because registered=false with me.id is a valid Baileys state after pairing
   if (isFirstConnect) {
     isFirstConnect = false;
     try {
@@ -89,13 +112,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       if (existsSync(credsPath)) {
         const raw = await Bun.file(credsPath).text();
         const creds = JSON.parse(raw);
-        if (!creds.registered && creds.me) {
-          console.log("[whatsapp] First boot: found stale unregistered creds with me.id — clearing for fresh pairing");
-          const { readdirSync, unlinkSync } = await import("fs");
-          for (const f of readdirSync(AUTH_DIR)) {
-            try { unlinkSync(`${AUTH_DIR}/${f}`); } catch {}
-          }
-        }
+        console.log(`[whatsapp] First boot: registered=${creds.registered}, has me=${!!creds.me}`);
       }
     } catch {}
   }
@@ -127,6 +144,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
+      isConnectedAndReady = false;
       console.log(
         `[whatsapp] Connection closed (status: ${statusCode}), reconnecting: ${shouldReconnect}`
       );
@@ -138,16 +156,14 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         console.log(`[whatsapp] Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
         setTimeout(() => connectToWhatsApp(phoneNumber), delay);
       } else if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-        console.log("[whatsapp] Logged out — clearing auth state for fresh pairing on next restart.");
-        clearAuthState();
-        // Try one more time with fresh state
+        console.log("[whatsapp] Logged out — auth state preserved. Manual repair required to re-pair.");
         reconnectAttempts = 0;
-        setTimeout(() => connectToWhatsApp(phoneNumber), 5000);
       } else {
         console.log(`[whatsapp] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
       }
     } else if (connection === "open") {
       console.log("[whatsapp] ✅ Connected successfully!");
+      isConnectedAndReady = true;
       reconnectAttempts = 0; // Reset on successful connection
     }
 
@@ -268,9 +284,13 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // In groups, only respond if mentioned or replied to
       if (isGroup) {
-        // TODO: implement group mention detection
-        // For now, skip group messages
-        continue;
+        const isReplyToBot = Boolean(msg.message?.extendedTextMessage?.contextInfo?.stanzaId) &&
+          msg.message?.extendedTextMessage?.contextInfo?.participant === sock?.user?.id;
+        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
+        const isMentioned = sock?.user?.id ? mentioned.includes(sock.user.id) : false;
+        if (!isReplyToBot && !isMentioned) {
+          continue;
+        }
       }
 
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
@@ -341,12 +361,72 @@ export async function sendWhatsAppMessage(
     return false;
   }
 
+  if (!isConnectedAndReady) {
+    console.log("[whatsapp] Not connected — cannot send message");
+    return false;
+  }
+
   try {
-    const jid = `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    const clean = phoneNumber.trim();
+    const jid = clean.includes("@")
+      ? clean
+      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
     await sock.sendMessage(jid, { text });
     return true;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send message to ${phoneNumber}:`, err.message);
+    return false;
+  }
+}
+
+/** Send an image to a WhatsApp user or group */
+export async function sendWhatsAppImage(
+  target: string,
+  image: Buffer,
+  caption?: string,
+  mimeType?: string
+): Promise<boolean> {
+  if (!sock) {
+    console.log("[whatsapp] No sock available for sending image");
+    return false;
+  }
+  if (!isConnectedAndReady) {
+    console.log("[whatsapp] Not connected — cannot send image");
+    return false;
+  }
+
+  try {
+    const clean = target.trim();
+    const jid = clean.includes("@")
+      ? clean
+      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { image, caption, mimetype: mimeType });
+    return true;
+  } catch (err: any) {
+    console.error(`[whatsapp] Failed to send image to ${target}:`, err.message);
+    return false;
+  }
+}
+
+/** Send a proactive message to a WhatsApp group JID (@g.us) */
+export async function sendWhatsAppGroupMessage(
+  groupJid: string,
+  text: string
+): Promise<boolean> {
+  if (!sock) {
+    console.log("[whatsapp] No sock available for sending group message");
+    return false;
+  }
+  if (!isConnectedAndReady) {
+    console.log("[whatsapp] Not connected — cannot send group message");
+    return false;
+  }
+  try {
+    const jid = groupJid.includes("@") ? groupJid : `${groupJid}@g.us`;
+    await sock.sendMessage(jid, { text });
+    return true;
+  } catch (err: any) {
+    console.error(`[whatsapp] Failed to send group message to ${groupJid}:`, err.message);
     return false;
   }
 }
@@ -384,7 +464,7 @@ export function getWhatsAppStatus(): {
 } {
   return {
     connected: sock !== null,
-    registered: sock?.authState?.creds?.registered ?? false,
+    registered: isConnectedAndReady,
     lastPairingCode,
     lastPairingTime,
     reconnectAttempts,
@@ -422,11 +502,12 @@ export async function repairWhatsApp(mode?: "qr" | "pairing"): Promise<{ mode: s
     sock = null;
   }
 
-  // Clear auth state
+  // Clear auth state only on explicit repair
   clearAuthState();
 
   // Reset state
   reconnectAttempts = 0;
+  isConnectedAndReady = false;
   lastPairingCode = null;
   currentQrString = null;
   isFirstConnect = true; // Allow stale creds check on next connect
