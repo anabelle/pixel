@@ -131,6 +131,10 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     printQRInTerminal: true,
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
+    // Required for group messaging — Baileys needs this for retry/resend
+    getMessage: async (key: any) => {
+      return { conversation: "" };
+    },
   });
 
   // Track if we've already requested pairing code to avoid duplicates
@@ -213,13 +217,19 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       if (msg.key.remoteJid === "status@broadcast") continue;
       if (!msg.message) continue;
 
+      // DEBUG: Log every incoming message JID to understand group format
+      const rawJid = msg.key.remoteJid ?? "(none)";
+      const rawParticipant = msg.key.participant ?? "(none)";
+      const msgType = Object.keys(msg.message).filter(k => k !== "messageContextInfo").join(",") || "unknown";
+      console.log(`[whatsapp] RAW incoming — jid: ${rawJid}, participant: ${rawParticipant}, type: ${msgType}`);
+
       // Extract text from various message types
       const text = extractWhatsAppText(msg.message);
 
       const jid = msg.key.remoteJid!;
       // User ID: phone number without @s.whatsapp.net
-      const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@g.us", "")}`;
-      const isGroup = jid.endsWith("@g.us");
+      const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@g.us", "").replace("@lid", "")}`;
+      const isGroup = jid.endsWith("@g.us") || (msg.key.participant !== undefined && msg.key.participant !== null);
 
       // Handle audio messages separately (need async transcription)
       if (!text && msg.message?.audioMessage) {
@@ -284,13 +294,47 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // In groups, only respond if mentioned or replied to
       if (isGroup) {
-        const isReplyToBot = Boolean(msg.message?.extendedTextMessage?.contextInfo?.stanzaId) &&
-          msg.message?.extendedTextMessage?.contextInfo?.participant === sock?.user?.id;
-        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
-        const isMentioned = sock?.user?.id ? mentioned.includes(sock.user.id) : false;
-        if (!isReplyToBot && !isMentioned) {
+        // Extract contextInfo from any message type that has it
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo
+          ?? msg.message?.imageMessage?.contextInfo
+          ?? msg.message?.videoMessage?.contextInfo
+          ?? undefined;
+
+        // Debug: dump group message details
+        const mentionedRaw = contextInfo?.mentionedJid ?? [];
+        const participantRaw = contextInfo?.participant ?? "(none)";
+        const stanzaRaw = contextInfo?.stanzaId ?? "(none)";
+        console.log(`[whatsapp] GROUP msg from ${userId} in ${jid} — text: "${(text ?? "").slice(0, 40)}", mentioned: [${mentionedRaw.join(",")}], replyParticipant: ${participantRaw}, stanzaId: ${stanzaRaw}`);
+
+        // Check if this is a reply to the bot
+        const replyParticipant = contextInfo?.participant ?? "";
+        const myId = sock?.user?.id ?? "";
+        const myPhone = myId.split(":")[0].split("@")[0]; // e.g. "573223176133"
+
+        // Also get our LID from the creds if available
+        const myLid = (sock as any)?.authState?.creds?.me?.lid ?? "";
+        const myLidBase = myLid.split(":")[0].split("@")[0]; // LID number without suffix
+
+        const isReplyToBot = Boolean(contextInfo?.stanzaId) &&
+          (replyParticipant === myId ||
+           replyParticipant.startsWith(myPhone) ||
+           (myLidBase && replyParticipant.startsWith(myLidBase)));
+
+        // Check if bot was @mentioned — compare phone AND LID
+        const isMentioned = mentionedRaw.some((mjid: string) => {
+          const mentionBase = mjid.split(":")[0].split("@")[0];
+          return mentionBase === myPhone || (myLidBase && mentionBase === myLidBase);
+        });
+
+        // Also check if the text contains @phone or @lid as a fallback
+        const textMention = (text?.includes(`@${myPhone}`) || (myLidBase && text?.includes(`@${myLidBase}`))) ?? false;
+
+        console.log(`[whatsapp] GROUP check — myId: ${myId}, myLid: ${myLid}, isReply: ${isReplyToBot}, isMentioned: ${isMentioned}, textMention: ${textMention}`);
+
+        if (!isReplyToBot && !isMentioned && !textMention) {
           continue;
         }
+        console.log(`[whatsapp] GROUP TRIGGERED — responding to group message`);
       }
 
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
@@ -329,14 +373,28 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         }
 
         // WhatsApp message limit is ~65536 chars, but keep it reasonable
-        await sock!.sendMessage(jid, { text: response });
+        // Retry once on "No sessions" error (common with groups after fresh connection)
+        try {
+          await sock!.sendMessage(jid, { text: response });
+        } catch (sendErr: any) {
+          if (sendErr?.message?.includes("No sessions") && isGroup) {
+            console.log(`[whatsapp] No sessions for group — retrying in 3s...`);
+            await new Promise(r => setTimeout(r, 3000));
+            await sock!.sendMessage(jid, { text: response });
+          } else {
+            throw sendErr;
+          }
+        }
 
         console.log(`[whatsapp] Replied to ${userId} (${response.length} chars)`);
       } catch (err: any) {
         console.error(`[whatsapp] Error for ${userId}:`, err.message);
         try {
           await sock!.sendPresenceUpdate("paused", jid);
-          await sock!.sendMessage(jid, { text: "Something broke. I'll be back in a moment." });
+          // Don't try to send error message to groups with session issues
+          if (!isGroup || !err?.message?.includes("No sessions")) {
+            await sock!.sendMessage(jid, { text: "Something broke. I'll be back in a moment." });
+          }
         } catch {}
       }
     }
