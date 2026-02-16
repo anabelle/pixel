@@ -18,7 +18,7 @@
 |-----------|--------|
 | Telegram (@PixelSurvival_bot) | ✅ Live — vision, voice, groups, notify_owner |
 | Nostr (NDK) | ✅ Live — mentions, DMs, DVM, engagement |
-| WhatsApp (Baileys) | ⚠️ Deployed, logged out (needs re-pairing) |
+| WhatsApp (Baileys) | ⚠️ Deployed, QR page live at /v2/api/whatsapp/qr — needs phone scan |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
 | x402 | 📋 Researched, needs @x402/hono + Base wallet |
@@ -67,17 +67,17 @@ WhatsApp/Telegram/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) �
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (31 source files, ~14,697 lines)
+### File Inventory (31 source files, ~15,024 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~948 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
+| `src/index.ts` | ~1086 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
 | `src/agent.ts` | ~953 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM + shared repliedEventIds |
-| `src/connectors/whatsapp.ts` | ~284 | Baileys bot, pairing code auth, voice transcription, TTS |
+| `src/connectors/whatsapp.ts` | ~447 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
 | `src/services/tools.ts` | ~2390 | 44 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |

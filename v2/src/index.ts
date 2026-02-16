@@ -29,7 +29,7 @@ import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
-import { startWhatsApp } from "./connectors/whatsapp.js";
+import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr } from "./connectors/whatsapp.js";
 import { getConversationStats } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
@@ -168,8 +168,143 @@ app.get("/health", (c) => {
     innerLife: getInnerLifeStatus(),
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
+    whatsapp: getWhatsAppStatus(),
     timestamp: new Date().toISOString(),
   });
+});
+
+/** WhatsApp re-pairing endpoint — clears auth, reconnects in specified mode */
+app.post("/api/whatsapp/repair", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const mode = body?.mode === "pairing" ? "pairing" : "qr";
+  console.log(`[http] WhatsApp re-pair requested (mode: ${mode})`);
+  const result = await repairWhatsApp(mode);
+  return c.json(result);
+});
+
+/** WhatsApp status endpoint */
+app.get("/api/whatsapp/status", (c) => {
+  return c.json(getWhatsAppStatus());
+});
+
+/** WhatsApp QR code scanning page — renders QR for phone to scan */
+app.get("/api/whatsapp/qr", (c) => {
+  const { qr, timestamp, expired } = getWhatsAppQr();
+  const status = getWhatsAppStatus();
+
+  // If already connected, show success
+  if (status.registered) {
+    return c.html(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pixel WhatsApp</title>
+<style>body{font-family:system-ui;max-width:500px;margin:40px auto;padding:20px;text-align:center;background:#0a0a0a;color:#e0e0e0}
+.ok{color:#4caf50;font-size:2em}p{color:#888}</style></head>
+<body><div class="ok">✅ WhatsApp Connected</div><p>Already paired and running.</p>
+<p><a href="/api/whatsapp/status" style="color:#64b5f6">View status</a></p></body></html>`);
+  }
+
+  // Serve QR scanning page with auto-refresh
+  return c.html(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pixel WhatsApp — Scan QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:500px;margin:40px auto;padding:20px;text-align:center;background:#0a0a0a;color:#e0e0e0}
+h1{font-size:1.4em;margin-bottom:4px}
+.sub{color:#888;font-size:0.9em;margin-bottom:24px}
+#qr-container{background:#fff;border-radius:12px;padding:20px;display:inline-block;margin:16px 0;min-height:264px;min-width:264px;position:relative}
+#qr-container canvas{display:block}
+.waiting{color:#888;padding:100px 20px;font-size:0.95em}
+.status{margin-top:16px;padding:10px;border-radius:8px;font-size:0.85em}
+.status.ok{background:#1b3a1b;color:#4caf50}
+.status.wait{background:#3a3a1b;color:#ffc107}
+.status.err{background:#3a1b1b;color:#ef5350}
+.instructions{text-align:left;background:#1a1a1a;padding:16px;border-radius:8px;margin-top:20px;font-size:0.9em;line-height:1.6}
+.instructions ol{margin:8px 0;padding-left:20px}
+.age{color:#666;font-size:0.8em;margin-top:8px}
+a{color:#64b5f6}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"><\/script>
+</head>
+<body>
+<h1>🟢 Pixel WhatsApp</h1>
+<p class="sub">Scan the QR code with your phone to link</p>
+
+<div id="qr-container">
+  <div class="waiting" id="qr-waiting">Waiting for QR code...</div>
+</div>
+<div id="age" class="age"></div>
+<div id="status" class="status wait">Connecting...</div>
+
+<div class="instructions">
+  <strong>How to scan:</strong>
+  <ol>
+    <li>Open <strong>WhatsApp</strong> on your phone</li>
+    <li>Go to <strong>Settings → Linked Devices</strong></li>
+    <li>Tap <strong>Link a Device</strong></li>
+    <li>Point your camera at the QR code above</li>
+  </ol>
+</div>
+
+<script>
+let lastQr = "";
+let pollInterval = null;
+
+async function poll() {
+  try {
+    // Check status first
+    // Detect base path: if accessed via /v2/, use that prefix
+    const base = location.pathname.startsWith("/v2/") ? "/v2" : "";
+    const statusRes = await fetch(base + "/api/whatsapp/status");
+    const st = await statusRes.json();
+
+    if (st.registered) {
+      document.getElementById("status").className = "status ok";
+      document.getElementById("status").textContent = "✅ Connected! WhatsApp is linked.";
+      document.getElementById("qr-container").innerHTML = '<div class="waiting" style="color:#4caf50">✅ Paired successfully!</div>';
+      document.getElementById("age").textContent = "";
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+      return;
+    }
+
+    // Fetch QR data
+    const qrRes = await fetch(base + "/api/whatsapp/qr/data");
+    const data = await qrRes.json();
+
+    if (data.qr && !data.expired) {
+      if (data.qr !== lastQr) {
+        lastQr = data.qr;
+        document.getElementById("qr-waiting").style.display = "none";
+        // Clear previous canvas
+        const container = document.getElementById("qr-container");
+        const oldCanvas = container.querySelector("canvas");
+        if (oldCanvas) oldCanvas.remove();
+        const canvas = document.createElement("canvas");
+        container.appendChild(canvas);
+        QRCode.toCanvas(canvas, data.qr, { width: 264, margin: 0, color: { dark: "#000", light: "#fff" } });
+      }
+      const age = Math.round((Date.now() - data.timestamp) / 1000);
+      document.getElementById("age").textContent = "QR age: " + age + "s (refreshes automatically)";
+      document.getElementById("status").className = "status wait";
+      document.getElementById("status").textContent = "⏳ Waiting for scan...";
+    } else {
+      document.getElementById("status").className = "status wait";
+      document.getElementById("status").textContent = "⏳ Generating new QR code...";
+      document.getElementById("age").textContent = "";
+    }
+  } catch (err) {
+    document.getElementById("status").className = "status err";
+    document.getElementById("status").textContent = "Error: " + err.message;
+  }
+}
+
+poll();
+pollInterval = setInterval(poll, 3000);
+<\/script>
+</body></html>`);
+});
+
+/** WhatsApp QR data endpoint (JSON — used by the QR page's JS) */
+app.get("/api/whatsapp/qr/data", (c) => {
+  return c.json(getWhatsAppQr());
 });
 
 /** Agent card (A2A / ERC-8004 discovery) */

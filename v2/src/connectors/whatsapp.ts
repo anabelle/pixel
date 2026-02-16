@@ -6,6 +6,10 @@
  *
  * Auth: Uses pairing code (no QR scanning needed).
  * Session: Persisted to /app/data/whatsapp-auth/ so it survives container restarts.
+ *
+ * IMPORTANT: Works with WhatsApp Personal OR WhatsApp Business App.
+ * Does NOT work with WhatsApp Business API (Cloud API / WABA) — different protocol.
+ * Phone number must be digits-only with country code (e.g., 573001234567, NOT +573001234567).
  */
 
 import makeWASocket, {
@@ -20,32 +24,90 @@ import { Boom } from "@hapi/boom";
 import { promptWithHistory } from "../agent.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
+import { existsSync, rmSync } from "fs";
 
 let sock: WASocket | null = null;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
 
+/** Reconnect attempt counter for exponential backoff */
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+
+/** Last pairing code for API retrieval */
+let lastPairingCode: string | null = null;
+let lastPairingTime: number = 0;
+
+/** Current QR code string for web-based scanning */
+let currentQrString: string | null = null;
+let qrTimestamp: number = 0;
+
+/** Whether to use QR mode (true) or pairing code mode (false) */
+let useQrMode = true;
+
+/** Clean phone number to digits only (strip +, spaces, dashes) */
+function cleanPhoneNumber(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+/** Clear auth state to force fresh pairing */
+function clearAuthState(): void {
+  try {
+    if (existsSync(AUTH_DIR)) {
+      rmSync(AUTH_DIR, { recursive: true, force: true });
+      console.log("[whatsapp] Cleared auth state for fresh pairing");
+    }
+  } catch (err: any) {
+    console.error("[whatsapp] Failed to clear auth state:", err.message);
+  }
+}
+
 /** Start the WhatsApp connector */
 export async function startWhatsApp(): Promise<void> {
-  const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
-  if (!phoneNumber) {
+  const rawPhone = process.env.WHATSAPP_PHONE_NUMBER;
+  if (!rawPhone) {
     console.log("[whatsapp] No WHATSAPP_PHONE_NUMBER set, skipping");
     return;
   }
+
+  const phoneNumber = cleanPhoneNumber(rawPhone);
+  console.log(`[whatsapp] Phone number: ${phoneNumber} (cleaned from ${rawPhone})`);
 
   await connectToWhatsApp(phoneNumber);
 }
 
 /** Connect (and reconnect) to WhatsApp */
 async function connectToWhatsApp(phoneNumber: string): Promise<void> {
+  // If creds exist but registered is false, clear everything for fresh pairing
+  // This prevents the "login with stale username" loop (428 → 401)
+  try {
+    const credsPath = `${AUTH_DIR}/creds.json`;
+    if (existsSync(credsPath)) {
+      const raw = await Bun.file(credsPath).text();
+      const creds = JSON.parse(raw);
+      if (!creds.registered && creds.me) {
+        console.log("[whatsapp] Found stale unregistered creds with me.id — clearing for fresh pairing");
+        // Remove all files in auth dir but keep the dir
+        const { readdirSync, unlinkSync } = await import("fs");
+        for (const f of readdirSync(AUTH_DIR)) {
+          try { unlinkSync(`${AUTH_DIR}/${f}`); } catch {}
+        }
+      }
+    }
+  } catch {}
+
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
+
+  console.log(`[whatsapp] Using Baileys version: ${version.join(".")}, registered: ${state.creds.registered}`);
 
   sock = makeWASocket({
     version,
     auth: state,
-    browser: Browsers.ubuntu("Pixel"),
+    // CRITICAL: Must use macOS/Chrome for pairing code to work.
+    // Baileys wiki: "only set a valid/logical browser config, otherwise the pair will fail"
+    browser: Browsers.macOS("Chrome"),
     printQRInTerminal: true,
-    markOnlineOnConnect: false, // Don't show as "online" (saves battery + notifications work)
+    markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
   });
 
@@ -64,34 +126,55 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         `[whatsapp] Connection closed (status: ${statusCode}), reconnecting: ${shouldReconnect}`
       );
 
-      if (shouldReconnect) {
-        // Reconnect after a short delay
-        setTimeout(() => connectToWhatsApp(phoneNumber), 3000);
+      if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        // Exponential backoff: 3s, 6s, 12s, 24s... max 60s
+        const delay = Math.min(3000 * Math.pow(2, reconnectAttempts - 1), 60000);
+        console.log(`[whatsapp] Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        setTimeout(() => connectToWhatsApp(phoneNumber), delay);
+      } else if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+        console.log("[whatsapp] Logged out — clearing auth state for fresh pairing on next restart.");
+        clearAuthState();
+        // Try one more time with fresh state
+        reconnectAttempts = 0;
+        setTimeout(() => connectToWhatsApp(phoneNumber), 5000);
       } else {
-        console.log("[whatsapp] Logged out. Delete auth dir and restart to re-pair.");
+        console.log(`[whatsapp] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
       }
     } else if (connection === "open") {
-      console.log("[whatsapp] Connected successfully");
+      console.log("[whatsapp] ✅ Connected successfully!");
+      reconnectAttempts = 0; // Reset on successful connection
     }
 
-    // When we get a QR code, request pairing code instead (better for headless/Docker)
-    if (qr && !state.creds.registered && !pairingCodeRequested) {
-      pairingCodeRequested = true;
-      try {
-        const code = await sock!.requestPairingCode(phoneNumber);
-        console.log(`[whatsapp] ========================================`);
-        console.log(`[whatsapp] PAIRING CODE: ${code}`);
-        console.log(`[whatsapp] Enter this code in WhatsApp:`);
-        console.log(`[whatsapp] Settings > Linked Devices > Link a Device > Link with phone number`);
-        console.log(`[whatsapp] ========================================`);
-      } catch (err: any) {
-        console.error(`[whatsapp] Failed to request pairing code:`, err.message);
-        // Fallback: show QR instructions
-        console.log(`[whatsapp] ========================================`);
-        console.log(`[whatsapp] QR CODE READY - Scan with WhatsApp`);
-        console.log(`[whatsapp] Go to: Settings > Linked Devices > Link a Device`);
-        console.log(`[whatsapp] The QR code should appear above (terminal QR)`);
-        console.log(`[whatsapp] ========================================`);
+    // When we get a QR code event
+    if (qr && !state.creds.registered) {
+      // Always store the QR string for web-based scanning
+      currentQrString = qr;
+      qrTimestamp = Date.now();
+      console.log(`[whatsapp] QR code updated — scan at https://pixel.xx.kg/v2/api/whatsapp/qr`);
+
+      if (!useQrMode && !pairingCodeRequested) {
+        // Pairing code mode — request a code instead of QR
+        pairingCodeRequested = true;
+        try {
+          console.log(`[whatsapp] Requesting pairing code for ${phoneNumber}...`);
+          const code = await sock!.requestPairingCode(phoneNumber);
+          lastPairingCode = code;
+          lastPairingTime = Date.now();
+          console.log(`[whatsapp] ========================================`);
+          console.log(`[whatsapp] 🔑 PAIRING CODE: ${code}`);
+          console.log(`[whatsapp]`);
+          console.log(`[whatsapp] On your phone, open WhatsApp and go to:`);
+          console.log(`[whatsapp]   Settings > Linked Devices > Link a Device`);
+          console.log(`[whatsapp]   Then tap "Link with phone number instead"`);
+          console.log(`[whatsapp]   Enter the code above`);
+          console.log(`[whatsapp]`);
+          console.log(`[whatsapp] ⏰ Code expires in ~60 seconds!`);
+          console.log(`[whatsapp] ========================================`);
+        } catch (err: any) {
+          console.error(`[whatsapp] Failed to request pairing code:`, err.message);
+          console.log(`[whatsapp] Falling back to QR mode — scan at https://pixel.xx.kg/v2/api/whatsapp/qr`);
+        }
       }
     }
   });
@@ -281,4 +364,84 @@ function extractWhatsAppText(message: any): string | null {
   // Audio messages are handled separately in the message handler (need async transcription)
   // Stickers and other media types are not yet supported
   return null;
+}
+
+/** Get WhatsApp connection status */
+export function getWhatsAppStatus(): {
+  connected: boolean;
+  registered: boolean;
+  lastPairingCode: string | null;
+  lastPairingTime: number;
+  reconnectAttempts: number;
+  hasQr: boolean;
+  qrAge: number;
+  mode: "qr" | "pairing";
+} {
+  return {
+    connected: sock !== null,
+    registered: sock?.authState?.creds?.registered ?? false,
+    lastPairingCode,
+    lastPairingTime,
+    reconnectAttempts,
+    hasQr: currentQrString !== null && (Date.now() - qrTimestamp) < 60000,
+    qrAge: currentQrString ? Math.round((Date.now() - qrTimestamp) / 1000) : -1,
+    mode: useQrMode ? "qr" : "pairing",
+  };
+}
+
+/** Get current QR code string for rendering */
+export function getWhatsAppQr(): { qr: string | null; timestamp: number; expired: boolean } {
+  const expired = !currentQrString || (Date.now() - qrTimestamp) > 60000;
+  return { qr: currentQrString, timestamp: qrTimestamp, expired };
+}
+
+/**
+ * Force re-pair: clear auth state, close existing connection, reconnect.
+ * Returns status object with QR or pairing code.
+ */
+export async function repairWhatsApp(mode?: "qr" | "pairing"): Promise<{ mode: string; pairingCode?: string; qrAvailable?: boolean; message: string }> {
+  const rawPhone = process.env.WHATSAPP_PHONE_NUMBER;
+  if (!rawPhone) return { mode: "none", message: "No WHATSAPP_PHONE_NUMBER set" };
+
+  if (mode) useQrMode = mode === "qr";
+  const phoneNumber = cleanPhoneNumber(rawPhone);
+
+  // Close existing socket
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners("connection.update");
+      sock.ev.removeAllListeners("creds.update");
+      sock.ev.removeAllListeners("messages.upsert");
+      sock.end(undefined);
+    } catch {}
+    sock = null;
+  }
+
+  // Clear auth state
+  clearAuthState();
+
+  // Reset state
+  reconnectAttempts = 0;
+  lastPairingCode = null;
+  currentQrString = null;
+
+  // Wait a moment before reconnecting
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Reconnect
+  console.log(`[whatsapp] Re-pairing initiated (mode: ${useQrMode ? "qr" : "pairing"})...`);
+  connectToWhatsApp(phoneNumber);
+
+  // Wait for QR or pairing code (up to 15s)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (useQrMode && currentQrString) {
+      return { mode: "qr", qrAvailable: true, message: "QR ready — scan at https://pixel.xx.kg/v2/api/whatsapp/qr" };
+    }
+    if (!useQrMode && lastPairingCode && lastPairingTime > Date.now() - 60000) {
+      return { mode: "pairing", pairingCode: lastPairingCode, message: "Enter this code on your phone" };
+    }
+  }
+
+  return { mode: useQrMode ? "qr" : "pairing", message: "Timed out — check logs" };
 }
