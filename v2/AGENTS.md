@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-16 | Session: 45
+> Last updated: 2026-02-16 | Session: 46
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 43 tools. Primary model: Z.AI GLM-4.7 → Gemini cascade on 429. Background: Z.AI GLM-4.5-air → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 44 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -67,7 +67,7 @@ WhatsApp/Telegram/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) �
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (31 source files, ~14,596 lines)
+### File Inventory (31 source files, ~14,697 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -78,14 +78,14 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM + shared repliedEventIds |
 | `src/connectors/whatsapp.ts` | ~284 | Baileys bot, pairing code auth, voice transcription, TTS |
-| `src/services/tools.ts` | ~2390 | 43 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
+| `src/services/tools.ts` | ~2390 | 44 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |
 | `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
 | `src/services/jobs.ts` | ~564 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
 | `src/services/reminders.ts` | ~513 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
 | `src/services/outreach.ts` | ~397 | Proactive owner outreach — LLM-judged Telegram pings, cooldowns, dedup |
-| `src/services/cost-monitor.ts` | ~346 | LLM cost tracking and budget monitoring |
+| `src/services/cost-monitor.ts` | ~347 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware |
 | `src/services/audit.ts` | ~257 | Structured JSONL audit trail |
 | `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 + Lightning payment + revenue |
@@ -123,8 +123,8 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-4.7 first → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
-- **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.5-air first → same Gemini cascade via `backgroundLlmCall()`.
+- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) first → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
+- **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.7 (reasoning) first → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
 - **Google key failover:** Primary key ($300 free credits) → fallback key (billed) via `resolveGoogleApiKey()`. Flips on quota errors, resets on success. Used by all Google callers: agent cascade, embeddings (memory.ts), image gen, audio transcription.
@@ -161,9 +161,9 @@ Same Pixel, same brain, different payment doors:
 
 ### Architecture & Models
 
-- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-4.7 for conversations, GLM-4.5-air for background. GLM-5 not on Lite plan.
+- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
 - **Model objects constructed manually** — not in pi-ai registry. Uses `openai-completions` provider.
-- **3-level fallback:** GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
+- **Multi-level fallback:** GLM-5/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
 - **Zero Dockerfile patches.** If a dep needs patching, switch deps.
@@ -227,7 +227,7 @@ Same Pixel, same brain, different payment doors:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~14.6K lines current, 16K max.
+10. **Complexity is debt.** ~14.7K lines current, 16K max.
 
 ### Anti-Patterns
 
