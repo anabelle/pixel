@@ -44,6 +44,9 @@ let qrTimestamp: number = 0;
 /** Whether to use QR mode (true) or pairing code mode (false) */
 let useQrMode = true;
 
+/** Track whether this is the first connection attempt (for stale creds check) */
+let isFirstConnect = true;
+
 /** Clean phone number to digits only (strip +, spaces, dashes) */
 function cleanPhoneNumber(phone: string): string {
   return phone.replace(/\D/g, "");
@@ -77,23 +80,25 @@ export async function startWhatsApp(): Promise<void> {
 
 /** Connect (and reconnect) to WhatsApp */
 async function connectToWhatsApp(phoneNumber: string): Promise<void> {
-  // If creds exist but registered is false, clear everything for fresh pairing
-  // This prevents the "login with stale username" loop (428 → 401)
-  try {
-    const credsPath = `${AUTH_DIR}/creds.json`;
-    if (existsSync(credsPath)) {
-      const raw = await Bun.file(credsPath).text();
-      const creds = JSON.parse(raw);
-      if (!creds.registered && creds.me) {
-        console.log("[whatsapp] Found stale unregistered creds with me.id — clearing for fresh pairing");
-        // Remove all files in auth dir but keep the dir
-        const { readdirSync, unlinkSync } = await import("fs");
-        for (const f of readdirSync(AUTH_DIR)) {
-          try { unlinkSync(`${AUTH_DIR}/${f}`); } catch {}
+  // Only clear stale creds on first boot — NOT on 515 reconnect (which is normal during pairing)
+  // The 515 stream restart sets me.id + registered=false as an intermediate state
+  if (isFirstConnect) {
+    isFirstConnect = false;
+    try {
+      const credsPath = `${AUTH_DIR}/creds.json`;
+      if (existsSync(credsPath)) {
+        const raw = await Bun.file(credsPath).text();
+        const creds = JSON.parse(raw);
+        if (!creds.registered && creds.me) {
+          console.log("[whatsapp] First boot: found stale unregistered creds with me.id — clearing for fresh pairing");
+          const { readdirSync, unlinkSync } = await import("fs");
+          for (const f of readdirSync(AUTH_DIR)) {
+            try { unlinkSync(`${AUTH_DIR}/${f}`); } catch {}
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
@@ -424,6 +429,7 @@ export async function repairWhatsApp(mode?: "qr" | "pairing"): Promise<{ mode: s
   reconnectAttempts = 0;
   lastPairingCode = null;
   currentQrString = null;
+  isFirstConnect = true; // Allow stale creds check on next connect
 
   // Wait a moment before reconnecting
   await new Promise(resolve => setTimeout(resolve, 2000));
