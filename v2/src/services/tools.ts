@@ -24,7 +24,7 @@ import { appendToLog } from "../conversations.js";
 import { parse as parseHTML } from "node-html-parser";
 import { generateImage } from "./image-gen.js";
 import { uploadToBlossom } from "./blossom.js";
-import { sendTelegramImage } from "../connectors/telegram.js";
+import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
@@ -1167,14 +1167,38 @@ export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
   },
 };
 
+// ─── SERVER REGISTRY ──────────────────────────────────────────
+
+import { resolveServer, resolveServerKey, listServers as listRegisteredServers, isCommandBlocked, isCommandGloballyBlocked, isServerAuthorized, isGlobalAdmin } from "./server-registry.js";
+
+const listServersSchema = Type.Object({});
+
+export const listServersTool: AgentTool<typeof listServersSchema> = {
+  name: "list_servers",
+  label: "List Servers",
+  description: "List all registered servers I can SSH into. Shows server names, labels, hosts, users, and capabilities. Use this to know which servers are available before running ssh or wp commands.",
+  parameters: listServersSchema,
+  execute: async () => {
+    const servers = listRegisteredServers();
+    if (servers.length === 0) {
+      return { content: [{ type: "text" as const, text: "No servers registered. Use raw host/user/key params with ssh tool, or add servers to servers.json." }] };
+    }
+    const lines = servers.map(s =>
+      `• ${s.name} — ${s.label}\n  host: ${s.host}, user: ${s.user}, capabilities: [${s.capabilities.join(", ")}]${s.wp_path ? `, wp_path: ${s.wp_path}` : ""}`
+    );
+    return { content: [{ type: "text" as const, text: `Registered servers:\n\n${lines.join("\n\n")}` }] };
+  },
+};
+
 // ─── SSH EXECUTE ───────────────────────────────────────────────
 
 const sshSchema = Type.Object({
-  host: Type.Optional(Type.String({ description: "SSH host (IP or hostname). Falls back to TALLERUBENS_SSH_HOST env var if not provided." })),
-  user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
+  server: Type.Optional(Type.String({ description: "Registered server name (e.g. 'tallerubens', 'ambienteniwa'). Use list_servers to see available servers. If provided, host/user/key are resolved automatically." })),
+  host: Type.Optional(Type.String({ description: "SSH host (IP or hostname). Only needed if not using a registered server name." })),
+  user: Type.Optional(Type.String({ description: "SSH user. Only needed if not using a registered server name. Default: root" })),
   port: Type.Optional(Type.Number({ description: "SSH port (default: 22)" })),
   command: Type.String({ description: "Command to execute on remote server" }),
-  key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded key. Falls back to TALLERUBENS_SSH_KEY env var." })),
+  key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded. Only needed if not using a registered server name." })),
 });
 
 function decodeSshKey(maybeKey: string): string {
@@ -1199,18 +1223,60 @@ function decodeSshKey(maybeKey: string): string {
 export const sshTool: AgentTool<typeof sshSchema> = {
   name: "ssh",
   label: "SSH Execute",
-  description: "Execute commands on a remote server via SSH. Use for managing external servers like tallerubens. Uses TALLERUBENS_SSH_* env vars as fallback.",
+  description: "Execute commands on a remote server via SSH. Use 'server' param with a registered name (e.g. 'tallerubens', 'ambienteniwa') for known servers, or provide raw host/user/key for ad-hoc connections. Run list_servers first to see available servers.",
   parameters: sshSchema,
-  execute: async (_id, { host, user, port, command, key }) => {
-    const effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
-    const effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
-    const effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
-    const sshPort = port ?? 22;
-    
-    if (!effectiveHost) {
-      throw new Error("SSH host required. Provide 'host' parameter or set TALLERUBENS_SSH_HOST env var.");
+  execute: async (_id, { server, host, user, port, command, key }) => {
+    let effectiveHost: string | undefined;
+    let effectiveUser: string;
+    let effectiveKey: string | undefined;
+    let serverName: string | undefined;
+
+    if (server) {
+      // Registry-based resolution
+      const entry = resolveServer(server);
+      if (!entry) {
+        const available = listRegisteredServers().map(s => s.name).join(", ");
+        throw new Error(`Unknown server "${server}". Available: ${available || "none"}. Use list_servers to see options, or provide raw host/user/key params.`);
+      }
+      effectiveHost = host ?? entry.host;
+      effectiveUser = user ?? entry.user;
+      effectiveKey = key ?? resolveServerKey(entry);
+      serverName = server;
+    } else {
+      // Legacy / ad-hoc fallback
+      effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
+      effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
+      effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
+      serverName = undefined;
     }
-    
+
+    const sshPort = port ?? 22;
+
+    if (!effectiveHost) {
+      throw new Error("SSH host required. Provide 'server' (registered name) or 'host' parameter.");
+    }
+
+    // Defense-in-depth: runtime authorization check (even if tool-filtering is bypassed)
+    const ctx = getToolContext();
+    if (serverName) {
+      if (!isServerAuthorized(serverName, ctx.userId)) {
+        throw new Error(`Access denied: user "${ctx.userId}" is not authorized for server "${serverName}".`);
+      }
+    } else {
+      // Ad-hoc SSH (no registered server) — only global admins allowed
+      if (!isGlobalAdmin(ctx.userId)) {
+        throw new Error(`Access denied: ad-hoc SSH connections require global admin privileges. Use a registered server name instead.`);
+      }
+    }
+
+    // Safety checks
+    const globalBlock = isCommandGloballyBlocked(command);
+    if (globalBlock) throw new Error(globalBlock);
+    if (serverName) {
+      const serverBlock = isCommandBlocked(serverName, command);
+      if (serverBlock) throw new Error(serverBlock);
+    }
+
     const args = [
       "-o", "StrictHostKeyChecking=no",
       "-o", "UserKnownHostsFile=/dev/null",
@@ -1218,7 +1284,7 @@ export const sshTool: AgentTool<typeof sshSchema> = {
       "-o", "IdentitiesOnly=yes",
       "-p", sshPort.toString(),
     ];
-    
+
     if (effectiveKey) {
       const keyContent = decodeSshKey(effectiveKey);
       const keyFile = `/tmp/ssh_key_${Date.now()}`;
@@ -1228,7 +1294,7 @@ export const sshTool: AgentTool<typeof sshSchema> = {
     }
 
     const target = `${effectiveUser}@${effectiveHost}`;
-    
+
     const proc = Bun.spawn(["ssh", ...args, target, command], {
       stdout: "pipe",
       stderr: "pipe",
@@ -1251,15 +1317,15 @@ export const sshTool: AgentTool<typeof sshSchema> = {
     const output = stdout + (stderr ? `\n[stderr]: ${stderr}` : "");
     const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
 
-    auditToolUse("ssh", { host: effectiveHost, user: effectiveUser, port: sshPort, hasKey: !!effectiveKey }, { exitCode, outputLength: output.length });
+    auditToolUse("ssh", { server: serverName, host: effectiveHost, user: effectiveUser, port: sshPort, hasKey: !!effectiveKey }, { exitCode, outputLength: output.length });
 
     if (exitCode !== 0) {
-      throw new Error(`SSH failed (exit ${exitCode}): ${stderr || stdout}`);
+      throw new Error(`SSH failed on ${serverName || effectiveHost} (exit ${exitCode}): ${stderr || stdout}`);
     }
 
     return {
       content: [{ type: "text" as const, text: truncated || "Command executed successfully" }],
-      details: { exitCode, outputLength: output.length },
+      details: { exitCode, outputLength: output.length, server: serverName },
     };
   },
 };
@@ -1267,26 +1333,72 @@ export const sshTool: AgentTool<typeof sshSchema> = {
 // ─── WP-CLI ───────────────────────────────────────────────────
 
 const wpCliSchema = Type.Object({
+  server: Type.Optional(Type.String({ description: "Registered server name (e.g. 'tallerubens', 'ambienteniwa'). Resolves host/user/key/wp_path automatically." })),
   command: Type.String({ description: "WP-CLI command to run (e.g., 'plugin list', 'post list --limit=10')" }),
-  host: Type.Optional(Type.String({ description: "SSH host for remote execution. Falls back to TALLERUBENS_SSH_HOST." })),
-  user: Type.Optional(Type.String({ description: "SSH user (default: root)" })),
-  path: Type.Optional(Type.String({ description: "WordPress installation path. Falls back to TALLERUBENS_WP_PATH." })),
-  key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded key. Falls back to TALLERUBENS_SSH_KEY env var." })),
+  host: Type.Optional(Type.String({ description: "SSH host for remote execution. Only needed without 'server' param." })),
+  user: Type.Optional(Type.String({ description: "SSH user. Only needed without 'server' param." })),
+  path: Type.Optional(Type.String({ description: "WordPress installation path. Only needed without 'server' param." })),
+  key: Type.Optional(Type.String({ description: "Private SSH key. Only needed without 'server' param." })),
 });
 
 export const wpCliTool: AgentTool<typeof wpCliSchema> = {
   name: "wp",
   label: "WP-CLI",
-  description: "Run WordPress commands via WP-CLI. Use for managing WordPress sites like tallerubens.com. Uses TALLERUBENS_SSH_* env vars as fallback.",
+  description: "Run WordPress commands via WP-CLI on remote servers. Use 'server' param with a registered name (e.g. 'tallerubens', 'ambienteniwa') for known WordPress sites. Run list_servers to see available servers and their wp_path.",
   parameters: wpCliSchema,
-  execute: async (_id, { command, host, user, path, key }) => {
-    const effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
-    const effectivePath = path ?? process.env.TALLERUBENS_WP_PATH;
-    const effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
-    const effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
-    
+  execute: async (_id, { server, command, host, user, path, key }) => {
+    let effectiveHost: string | undefined;
+    let effectivePath: string | undefined;
+    let effectiveUser: string;
+    let effectiveKey: string | undefined;
+    let serverName: string | undefined;
+
+    if (server) {
+      const entry = resolveServer(server);
+      if (!entry) {
+        const available = listRegisteredServers().map(s => s.name).join(", ");
+        throw new Error(`Unknown server "${server}". Available: ${available || "none"}.`);
+      }
+      if (!entry.capabilities.includes("wp")) {
+        throw new Error(`Server "${server}" does not have WordPress capability. Capabilities: [${entry.capabilities.join(", ")}]`);
+      }
+      effectiveHost = host ?? entry.host;
+      effectiveUser = user ?? entry.user;
+      effectiveKey = key ?? resolveServerKey(entry);
+      effectivePath = path ?? entry.wp_path ?? undefined;
+      serverName = server;
+    } else {
+      effectiveHost = host ?? process.env.TALLERUBENS_SSH_HOST;
+      effectivePath = path ?? process.env.TALLERUBENS_WP_PATH;
+      effectiveUser = user ?? process.env.TALLERUBENS_SSH_USER ?? "root";
+      effectiveKey = key ?? process.env.TALLERUBENS_SSH_KEY;
+      serverName = undefined;
+    }
+
+    // Defense-in-depth: runtime authorization check
+    const ctx = getToolContext();
+    if (serverName) {
+      if (!isServerAuthorized(serverName, ctx.userId)) {
+        throw new Error(`Access denied: user "${ctx.userId}" is not authorized for server "${serverName}".`);
+      }
+    } else {
+      // Ad-hoc WP-CLI (no registered server) — only global admins allowed
+      if (!isGlobalAdmin(ctx.userId)) {
+        throw new Error(`Access denied: ad-hoc WP-CLI connections require global admin privileges. Use a registered server name instead.`);
+      }
+    }
+
+    // Safety: check wp command against blocklist (wp commands run via ssh)
+    const wpFullCmd = `wp ${command}`;
+    const globalBlock = isCommandGloballyBlocked(wpFullCmd);
+    if (globalBlock) throw new Error(globalBlock);
+    if (serverName) {
+      const serverBlock = isCommandBlocked(serverName, wpFullCmd);
+      if (serverBlock) throw new Error(serverBlock);
+    }
+
     let fullCommand = "wp " + command;
-    
+
     if (effectivePath) {
       fullCommand = `cd ${effectivePath} && wp ${command}`;
     }
@@ -1294,7 +1406,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
     if (effectiveHost) {
       const sshArgs = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "PreferredAuthentications=publickey", "-o", "IdentitiesOnly=yes"];
       const target = `${effectiveUser}@${effectiveHost}`;
-      
+
       const keyContent = effectiveKey ? decodeSshKey(effectiveKey) : null;
       let finalArgs = [...sshArgs];
       if (keyContent) {
@@ -1303,7 +1415,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
         await chmodSync(keyFile, 0o600);
         finalArgs = [...finalArgs, "-i", keyFile];
       }
-      
+
       const proc = Bun.spawn(["ssh", ...finalArgs, target, fullCommand], {
         stdout: "pipe",
         stderr: "pipe",
@@ -1325,15 +1437,15 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
       }
 
       if (exitCode !== 0) {
-        auditToolUse("wp", { host: effectiveHost, command }, { exitCode, error: stderr });
-        throw new Error(`WP-CLI failed: ${stderr}`);
+        auditToolUse("wp", { server: serverName, host: effectiveHost, command }, { exitCode, error: stderr });
+        throw new Error(`WP-CLI failed on ${serverName || effectiveHost}: ${stderr}`);
       }
 
       const output = stdout || stderr;
       const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
-      
-      auditToolUse("wp", { host: effectiveHost, command }, { exitCode, outputLength: output.length });
-      return { content: [{ type: "text" as const, text: truncated }], details: { exitCode } };
+
+      auditToolUse("wp", { server: serverName, host: effectiveHost, command }, { exitCode, outputLength: output.length });
+      return { content: [{ type: "text" as const, text: truncated }], details: { exitCode, server: serverName } };
     } else {
       const proc = Bun.spawn(["wp", ...command.split(" ")], {
         stdout: "pipe",
@@ -1353,7 +1465,7 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
 
       const output = stdout || stderr;
       const truncated = output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output;
-      
+
       auditToolUse("wp", { command, local: true }, { exitCode, outputLength: output.length });
       return { content: [{ type: "text" as const, text: truncated }], details: { exitCode } };
     }
@@ -2322,6 +2434,29 @@ const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
   },
 };
 
+const sendTelegramMessageSchema = Type.Object({
+  chat_id: Type.String({ description: "Telegram chat ID: numeric user ID for DMs, or negative group ID (e.g. -1001234567890) for groups" }),
+  message: Type.String({ description: "Text message to send" }),
+});
+
+const sendTelegramMessageTool: AgentTool<typeof sendTelegramMessageSchema> = {
+  name: "send_telegram_message",
+  label: "Send Telegram Message",
+  description: "Send a proactive Telegram message to a user or group by chat ID. Use this for cross-chat messaging, alarm delivery, or proactive group engagement.",
+  parameters: sendTelegramMessageSchema,
+  execute: async (_id, { chat_id, message }) => {
+    const ok = await sendTelegramMessage(chat_id, message);
+    if (ok) {
+      // Log so Pixel has memory of what it sent
+      const chatIdStr = String(chat_id);
+      const conversationId = chatIdStr.startsWith("-") ? `tg-group-${chatIdStr}` : `tg-${chatIdStr}`;
+      appendToLog(conversationId, "[proactive message sent via tool]", message, "telegram");
+      return { content: [{ type: "text" as const, text: `Telegram message sent to ${chat_id}` }] };
+    }
+    return { content: [{ type: "text" as const, text: `Failed to send Telegram message to ${chat_id}` }] };
+  },
+};
+
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
   label: "Generate Image",
@@ -2416,11 +2551,13 @@ export const pixelTools = [
   gitCommitTool,
   sshTool,
   wpCliTool,
+  listServersTool,
   introspectTool,
   sendVoiceTool,
   generateImageTool,
   joinWhatsAppGroupTool,
   sendWhatsAppMessageTool,
+  sendTelegramMessageTool,
 ];
 
 // Map of tool names to their implementations
