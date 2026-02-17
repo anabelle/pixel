@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, statSync, unlinkSync, rmdirSync } from "fs";
 import { backgroundLlmCall } from "../agent.js";
 import { pixelTools } from "./tools.js";
 import { audit } from "./audit.js";
@@ -53,6 +53,11 @@ const JOBS_PATH = "/app/data/jobs.json";
 const JOB_LOG_PATH = "/app/data/jobs.jsonl";
 const JOB_REPORT_PATH = "/app/data/jobs-report.md";
 const DATA_DIR = "/app/data";
+const WHATSAPP_MEDIA_DIR = process.env.WHATSAPP_MEDIA_DIR ?? "/app/data/whatsapp-media";
+const WHATSAPP_MEDIA_RETENTION_DAYS = Number.parseInt(process.env.WHATSAPP_MEDIA_RETENTION_DAYS ?? "30", 10);
+const WHATSAPP_MEDIA_RETENTION_MS = WHATSAPP_MEDIA_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const WHATSAPP_MEDIA_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let lastWhatsAppMediaCleanup = 0;
 
 const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per job
 
@@ -86,6 +91,66 @@ function logJob(entry: JobEntry): void {
     writeFileSync(JOB_LOG_PATH, JSON.stringify(entry) + "\n", { flag: "a" });
   } catch (err: any) {
     console.error("[jobs] Failed to write job log:", err.message);
+  }
+}
+
+function cleanupWhatsAppMedia(): void {
+  if (!existsSync(WHATSAPP_MEDIA_DIR)) return;
+  const now = Date.now();
+  if (now - lastWhatsAppMediaCleanup < WHATSAPP_MEDIA_CLEANUP_INTERVAL_MS) return;
+  lastWhatsAppMediaCleanup = now;
+  let deletedFiles = 0;
+  let deletedDirs = 0;
+
+  const pruneDir = (dir: string): boolean => {
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return false;
+    }
+
+    for (const entry of entries) {
+      const fullPath = join(dir, entry);
+      let stats: ReturnType<typeof statSync> | null = null;
+      try {
+        stats = statSync(fullPath);
+      } catch {
+        continue;
+      }
+
+      if (stats.isDirectory()) {
+        const emptied = pruneDir(fullPath);
+        if (emptied) {
+          try {
+            rmdirSync(fullPath);
+            deletedDirs++;
+          } catch {}
+        }
+        continue;
+      }
+
+      if (!stats.isFile()) continue;
+      const age = now - stats.mtimeMs;
+      if (age < WHATSAPP_MEDIA_RETENTION_MS) continue;
+
+      try {
+        unlinkSync(fullPath);
+        deletedFiles++;
+      } catch {}
+    }
+
+    try {
+      return readdirSync(dir).length === 0;
+    } catch {
+      return false;
+    }
+  };
+
+  pruneDir(WHATSAPP_MEDIA_DIR);
+
+  if (deletedFiles > 0 || deletedDirs > 0) {
+    console.log(`[jobs] WhatsApp media cleanup: removed ${deletedFiles} file(s), ${deletedDirs} dir(s) older than ${WHATSAPP_MEDIA_RETENTION_DAYS}d`);
   }
 }
 
@@ -555,9 +620,11 @@ export function stopJobs(): void {
 export function startJobs(): void {
   if (jobTimer) return;
   recoverStaleJobs();
+  cleanupWhatsAppMedia();
   scheduleDailyJob();
   const tick = async () => {
     await runNextJob();
+    cleanupWhatsAppMedia();
     jobTimer = setTimeout(tick, 60_000);
   };
   jobTimer = setTimeout(tick, 20_000);
