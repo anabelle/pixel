@@ -52,7 +52,9 @@
       "git_push",
       "git_commit",
       "notify_owner",
-      "syntropy_notify"
+      "syntropy_notify",
+      "update_missions",
+      "update_monologue"
     ],
     "server_admin": [
       "ssh",
@@ -72,7 +74,8 @@
       "capabilities": ["ssh", "wp"],
       "authorized_users": [
         "wa-573153353120",
-        "wa-573214100915"
+        "wa-573214100915",
+        "wa-86505003417712"
       ],
       "authorized_groups": [
         "tg-group--4839030836"
@@ -95,7 +98,8 @@
       "wp_path": "~/public_html",
       "capabilities": ["ssh", "wp"],
       "authorized_users": [
-        "wa-50672330211"
+        "wa-50672330211",
+        "wa-143430835556577"
       ],
       "authorized_groups": [
         "wa-group-120363408642317805"

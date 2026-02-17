@@ -478,6 +478,50 @@ export async function promptWithHistory(
     getApiKey: async (provider: string) => resolveApiKey(provider),
     convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
     transformContext: async (messages: any[]) => {
+      // Inject global context (active missions + inner monologue) for ALL conversations
+      const globalContext: any[] = [];
+      
+      const missionsPath = "/app/data/active_missions.md";
+      if (existsSync(missionsPath)) {
+        try {
+          const missions = readFileSync(missionsPath, "utf8").trim();
+          if (missions && missions.length > 50) { // Skip if essentially empty
+            globalContext.push({
+              role: "assistant",
+              content: [{ type: "text", text: `[MISIONES ACTIVAS]\n${missions}` }],
+              metadata: { type: "global-missions" },
+            });
+          }
+        } catch {}
+      }
+      
+      const monologuePath = "/app/data/inner_monologue.md";
+      if (existsSync(monologuePath)) {
+        try {
+          const monologue = readFileSync(monologuePath, "utf8").trim();
+          if (monologue && monologue.length > 50) {
+            globalContext.push({
+              role: "assistant",
+              content: [{ type: "text", text: `[MONÓLOGO INTERIOR]\n${monologue}` }],
+              metadata: { type: "global-monologue" },
+            });
+          }
+        } catch {}
+      }
+      
+      // Inject global context before the last user message (so it's fresh in context)
+      if (globalContext.length > 0) {
+        const lastUserIndex = [...messages].map((m) => m?.role).lastIndexOf("user");
+        if (lastUserIndex >= 0) {
+          const copy = messages.slice();
+          copy.splice(lastUserIndex, 0, ...globalContext);
+          messages = copy;
+        } else {
+          messages = [...globalContext, ...messages];
+        }
+      }
+      
+      // Group lore (Telegram groups only)
       if (platform !== "telegram" || !userId.startsWith("tg-group-")) return messages;
       const summary = loadGroupSummary(userId);
       if (!summary) return messages;

@@ -2457,6 +2457,50 @@ const sendTelegramMessageTool: AgentTool<typeof sendTelegramMessageSchema> = {
   },
 };
 
+// ─── GLOBAL CONTEXT TOOLS ───────────────────────────────────────
+
+const updateMissionsSchema = Type.Object({
+  content: Type.String({ description: "Full content for active_missions.md. Use '# Active Missions' header. Format: - [type] description [assigned_by]" }),
+});
+
+const updateMissionsTool: AgentTool<typeof updateMissionsSchema> = {
+  name: "update_missions",
+  label: "Update Active Missions",
+  description: "Update the global active missions file. This context is injected into ALL conversations. Use to track cross-chat tasks like sales leads, support requests, etc.",
+  parameters: updateMissionsSchema,
+  execute: async (_id, { content }) => {
+    const path = "/app/data/active_missions.md";
+    try {
+      const { writeFileSync } = await import("fs");
+      writeFileSync(path, content, "utf8");
+      return { content: [{ type: "text" as const, text: `Updated active missions (${content.length} chars)` }] };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `Failed to update missions: ${err.message}` }] };
+    }
+  },
+};
+
+const updateMonologueSchema = Type.Object({
+  content: Type.String({ description: "Full content for inner_monologue.md. Short narrative of Pixel's current state, mood, and context." }),
+});
+
+const updateMonologueTool: AgentTool<typeof updateMonologueSchema> = {
+  name: "update_monologue",
+  label: "Update Inner Monologue",
+  description: "Update Pixel's inner monologue — a short narrative that gives persistent identity across conversations. Keep it brief and evocative.",
+  parameters: updateMonologueSchema,
+  execute: async (_id, { content }) => {
+    const path = "/app/data/inner_monologue.md";
+    try {
+      const { writeFileSync } = await import("fs");
+      writeFileSync(path, content, "utf8");
+      return { content: [{ type: "text" as const, text: `Updated inner monologue (${content.length} chars)` }] };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `Failed to update monologue: ${err.message}` }] };
+    }
+  },
+};
+
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
   label: "Generate Image",
@@ -2558,6 +2602,8 @@ export const pixelTools = [
   joinWhatsAppGroupTool,
   sendWhatsAppMessageTool,
   sendTelegramMessageTool,
+  updateMissionsTool,
+  updateMonologueTool,
 ];
 
 // Map of tool names to their implementations
