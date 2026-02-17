@@ -246,7 +246,60 @@ export async function startTelegram(): Promise<void> {
       groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     }
 
-    // Log incoming photo message (like voice/audio/video_note handlers do)
+    appendToLog(conversationId, formatted, "", "telegram");
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      const chatTitle = isGroupChat
+        ? (ctx.chat as any).title ?? undefined
+        : senderName;
+
+      const response = await promptWithHistory(
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        formatted
+      );
+
+      if (!response || response.includes("[SILENT]")) {
+        return;
+      }
+
+      if (response.length <= 4096) {
+        await ctx.reply(response);
+      } else {
+        const chunks = splitMessage(response, 4096);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk);
+        }
+      }
+    } catch (error: any) {
+      console.error(`[telegram] Text error for ${conversationId}:`, error.message);
+      const errMsg = "Something broke while reading that message.";
+      await ctx.reply(errMsg).catch(() => {});
+      appendToLog(conversationId, formatted, errMsg, "telegram");
+    }
+  });
+
+  // Handle photo messages (image vision)
+  bot.on("message:photo", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    const isGroupChat = chatType === "group" || chatType === "supergroup";
+    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
+    const photos = ctx.message.photo;
+    const photo = photos?.[photos.length - 1];
+    if (!photo) return;
+
+    const senderName = ctx.from.username
+      ? `@${ctx.from.username}`
+      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
+    const caption = ctx.message.caption?.trim();
+    const formatted = isGroupChat
+      ? `${senderName}${caption ? `: ${caption}` : " sent an image"}`
+      : caption ?? "[image]";
+
+    if (isGroupChat) {
+      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
+    }
+
     appendToLog(conversationId, formatted, "", "telegram");
 
     try {

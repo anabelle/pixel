@@ -45,10 +45,13 @@ import { costMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
 import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
+import { initLogging } from "./services/logging.js";
 
 // ============================================================
 // Configuration
 // ============================================================
+
+initLogging();
 
 const PORT = parseInt(process.env.PORT ?? "4000", 10);
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5433/pixel_v2";
