@@ -151,6 +151,21 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
   } as any;
 }
 
+/** Construct an OpenRouter model object (OpenAI-compatible) */
+function makeOpenRouterModel(modelId: string) {
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions" as const,
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    input: ["text"] as const,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 8192,
+  } as any;
+}
+
 /** Primary conversation model — Z.AI GLM-5 (744B params, reasoning).
  * Fallback cascade handles 429: GLM-5 → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
 function getPixelModel() {
@@ -956,7 +971,7 @@ export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVis
 
 // ─── BACKGROUND LLM CALL ─────────────────────────────────────
 // Shared utility for heartbeat, inner-life, jobs — any autonomous agent cycle.
-// Tries getSimpleModel() first, then full Gemini fallback cascade on error.
+// Tries Trinity (OpenRouter free) first, then GLM-4.7, then Gemini cascade.
 // Tracks costs. Logs errors with detail.
 
 export interface BackgroundLlmOptions {
@@ -969,7 +984,14 @@ export interface BackgroundLlmOptions {
 
 export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
   const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000 } = opts;
-  const models = [getSimpleModel(), getFallbackModel(1), getFallbackModel(2), getFallbackModel(3), getFallbackModel(4)];
+  const models = [
+    makeOpenRouterModel("arcee-ai/trinity-large-preview:free"),
+    getSimpleModel(),
+    getFallbackModel(1),
+    getFallbackModel(2),
+    getFallbackModel(3),
+    getFallbackModel(4),
+  ];
 
   for (let attempt = 0; attempt < models.length; attempt++) {
     const model = models[attempt];
@@ -1027,6 +1049,8 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
         llmError.includes("429") || llmError.includes("RESOURCE_EXHAUSTED") ||
         llmError.includes("quota") || llmError.includes("Insufficient balance") ||
         llmError.includes("rate limit") || llmError.includes("Usage limit") ||
+        llmError.includes("insufficient_quota") || llmError.includes("model_not_found") ||
+        llmError.includes("provider_error") ||
         llmError.includes("1308") || llmError.includes("timeout")
       );
       if (isRetryable && attempt < models.length - 1) {

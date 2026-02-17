@@ -126,7 +126,7 @@ Every connector: receive → identify user → load context → prompt agent →
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
 - **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) first → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
-- **Background (heartbeat/inner-life/jobs):** Z.AI GLM-4.7 (reasoning) first → same Gemini cascade via `backgroundLlmCall()`.
+- **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
 - **Google key failover:** Primary key ($300 free credits) → fallback key (billed) via `resolveGoogleApiKey()`. Flips on quota errors, resets on success. Used by all Google callers: agent cascade, embeddings (memory.ts), image gen, audio transcription.
