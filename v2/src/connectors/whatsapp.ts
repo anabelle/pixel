@@ -26,7 +26,7 @@ import { promptWithHistory } from "../agent.js";
 import { appendToLog } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
-import { existsSync, rmSync } from "fs";
+import { existsSync, rmSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 
 let sock: WASocket | null = null;
@@ -77,6 +77,68 @@ async function sendWithAck(jid: string, content: any, timeoutMs = 8000): Promise
   const messageId = sent?.key?.id;
   if (!messageId) return false;
   return await waitForAck(messageId, timeoutMs);
+}
+
+async function sendImageWithAckOptional(jid: string, content: any, timeoutMs = 15000): Promise<boolean> {
+  if (!sock) return false;
+  const sent = await sock.sendMessage(jid, content);
+  const messageId = sent?.key?.id;
+  if (!messageId) return true;
+  const acked = await waitForAck(messageId, timeoutMs);
+  if (!acked) {
+    console.warn(`[whatsapp] Image sent but no ACK from ${jid} after ${timeoutMs}ms`);
+  }
+  return true;
+}
+
+async function normalizeImageForWhatsApp(
+  image: Buffer,
+  mimeType?: string
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const rawMime = (mimeType ?? "image/jpeg").split(";")[0].trim().toLowerCase();
+
+  if (rawMime.includes("webp")) {
+    const converted = await convertWebpToJpeg(image);
+    if (converted) {
+      return { buffer: converted, mimeType: "image/jpeg" };
+    }
+    console.warn("[whatsapp] Failed to convert WEBP → JPEG, attempting original WEBP");
+  }
+
+  if (rawMime.includes("png")) return { buffer: image, mimeType: "image/png" };
+  if (rawMime.includes("jpeg") || rawMime.includes("jpg")) return { buffer: image, mimeType: "image/jpeg" };
+
+  return { buffer: image, mimeType: rawMime || "image/jpeg" };
+}
+
+async function convertWebpToJpeg(image: Buffer): Promise<Buffer | null> {
+  const base = `pixel-wa-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const inputPath = join("/tmp", `${base}.webp`);
+  const outputPath = join("/tmp", `${base}.jpg`);
+
+  try {
+    writeFileSync(inputPath, image);
+    const proc = Bun.spawn([
+      "ffmpeg",
+      "-y",
+      "-i",
+      inputPath,
+      "-frames:v",
+      "1",
+      outputPath,
+    ], { stdout: "ignore", stderr: "ignore" });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      return null;
+    }
+    return readFileSync(outputPath);
+  } catch (err: any) {
+    console.error("[whatsapp] WEBP conversion failed:", err?.message ?? err);
+    return null;
+  } finally {
+    try { rmSync(inputPath, { force: true }); } catch {}
+    try { rmSync(outputPath, { force: true }); } catch {}
+  }
 }
 
 /** Normalize WhatsApp target identifiers to a JID */
@@ -890,12 +952,13 @@ export async function sendWhatsAppImage(
       console.error(`[whatsapp] Failed to normalize image target: ${target}`);
       return false;
     }
-    let ok = await sendWithAck(normalized.jid, { image, caption, mimetype: mimeType });
+    const normalizedImage = await normalizeImageForWhatsApp(image, mimeType);
+    let ok = await sendImageWithAckOptional(normalized.jid, { image: normalizedImage.buffer, caption, mimetype: normalizedImage.mimeType });
     if (!ok) {
       const altJid = getAlternateJid(normalized.jid);
       if (altJid && altJid !== normalized.jid) {
         console.warn(`[whatsapp] No ACK from ${normalized.jid}; retrying image via ${altJid}`);
-        ok = await sendWithAck(altJid, { image, caption, mimetype: mimeType });
+        ok = await sendImageWithAckOptional(altJid, { image: normalizedImage.buffer, caption, mimetype: normalizedImage.mimeType });
       }
     }
     return ok;
