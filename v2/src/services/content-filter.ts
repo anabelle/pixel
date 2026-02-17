@@ -19,6 +19,45 @@ const BLOCKED_HASHTAGS = new Set([
   "naked",
   "onlyfans",
   "bdsm",
+  "religion",
+  "jew",
+  "jews",
+  "jewish",
+  "islam",
+  "muslim",
+  "christian",
+  "catholic",
+  "fuck",
+  "fucking",
+  "ass",
+  "asshole",
+  "tit",
+  "tits",
+  "boobs",
+  "breasts",
+  "cock",
+  "dick",
+  "penis",
+  "pussy",
+  "vagina",
+  "cum",
+  "cumshot",
+  "blowjob",
+  "handjob",
+  "anal",
+  "oral",
+  "threesome",
+  "orgy",
+  "masturbat",
+  "erotic",
+  "horny",
+  "slut",
+  "whore",
+  "bitch",
+  "milf",
+  "dilf",
+  "incest",
+  "rape",
 ]);
 
 const EXPLICIT_TERMS = [
@@ -51,6 +90,17 @@ const EXPLICIT_TERMS = [
   "cum",
   "masturbat",
   "erotic",
+  "horny",
+  "slut",
+  "whore",
+  "milf",
+  "dilf",
+  "incest",
+  "rape",
+  "faith based porn",
+  "religious porn",
+  "fuck",
+  "fucking",
 ];
 
 const HATE_TERMS = [
@@ -62,19 +112,29 @@ const HATE_TERMS = [
   "chink",
   "wetback",
   "raghead",
+  "holocaust",
+  "hitler",
+  "nazi",
+  "white power",
+  "white supremacy",
 ];
 
-const GROUP_TERMS = [
+const GROUP_TARGETING_TERMS = [
   "jew",
   "jews",
+  "jewish",
   "islam",
   "muslim",
-  "arab",
   "christian",
+  "catholic",
   "hindu",
   "black",
   "white",
   "asian",
+  "arab",
+  "mexican",
+  "latino",
+  "latina",
 ];
 
 function escapeRegExp(value: string): string {
@@ -143,6 +203,15 @@ export function getUnsafeReason(
     if (BLOCKED_HASHTAGS.has(tag)) return `blocked hashtag #${tag}`;
   }
 
+  // Check for group-targeting hashtag combinations
+  const groupTags = hashtags.filter((t) => GROUP_TARGETING_TERMS.includes(t));
+  const explicitTags = hashtags.filter((t) => 
+    BLOCKED_HASHTAGS.has(t) || EXPLICIT_TERMS.some((e) => t.includes(e))
+  );
+  if (groupTags.length >= 2 && explicitTags.length >= 1) {
+    return `group-targeting hashtags: ${groupTags.slice(0, 3).join(", ")}`;
+  }
+
   const hateHit = containsAny(text, HATE_TERMS);
   if (hateHit) return `blocked slur: ${hateHit}`;
 
@@ -150,7 +219,7 @@ export function getUnsafeReason(
   if (explicitHit) return `explicit keyword: ${explicitHit}`;
 
   const hasExplicit = containsAny(text, EXPLICIT_TERMS) !== null;
-  const hasGroup = containsAny(text, GROUP_TERMS) !== null;
+  const hasGroup = containsAny(text, GROUP_TARGETING_TERMS) !== null;
   if (hasExplicit && hasGroup) return "explicit content with group targeting";
 
   if (options.blockVideo && hasVideoContent(text, tags)) {
