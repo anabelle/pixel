@@ -36,6 +36,8 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   'gemini-2.0-flash-lite': { input: 0.07, output: 0.30, free: false },
   'gemini-2.5-flash': { input: 0.30, output: 2.50, free: false },
   'gemini-3-flash-preview': { input: 0.50, output: 3.00, free: false },  // Estimated
+  // OpenRouter (free tier)
+  'arcee-ai/trinity-large-preview:free': { input: 0, output: 0, free: true },
   // GLM models (flat-rate Coding Lite plan - $84/yr, effectively $0 per call)
   'glm-4.5': { input: 0, output: 0, free: true },
   'glm-4.5-air': { input: 0, output: 0, free: true },
