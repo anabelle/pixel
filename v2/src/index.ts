@@ -560,6 +560,9 @@ app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
   const ideaGarden = readTextFile(join(DATA_DIR, "idea-garden.md"));
   const projects = readTextFile(join(DATA_DIR, "projects.md"));
 
+  const activeMissions = readTextFile(join(DATA_DIR, "active_missions.md"));
+  const innerMonologueFile = readTextFile(join(DATA_DIR, "inner_monologue.md"));
+
   return c.json({
     reflections,
     learnings,
@@ -567,6 +570,8 @@ app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
     evolution,
     ideaGarden,
     projects,
+    activeMissions,
+    innerMonologueFile,
     status: getInnerLifeStatus(),
   });
 });
