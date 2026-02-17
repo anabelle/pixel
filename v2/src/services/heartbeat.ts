@@ -24,7 +24,7 @@ import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from 
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
-import { getRevenueStats, getRevenueSince } from "./revenue.js";
+import { getRevenueStats, getRevenueSince, recordRevenue } from "./revenue.js";
 import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -1150,6 +1150,21 @@ async function zapLoop(): Promise<void> {
       lastZapCheckTime = Date.now();
       saveHeartbeatState();
       audit("zap_thanks", `Zap thanks sent (${amountMsats ? Math.floor(amountMsats / 1000) : "?"} sats)`, { eventId: event.id, sender });
+
+      // Record zap as revenue so Pixel knows its actual earnings
+      if (amountMsats && amountMsats > 0) {
+        const sats = Math.floor(amountMsats / 1000);
+        if (sats > 0) {
+          recordRevenue({
+            source: "zap",
+            amountSats: sats,
+            userId: sender ?? undefined,
+            description: `Nostr zap${sender ? ` from ${sender.slice(0, 8)}...` : ""}`,
+            txHash: event.id,
+          }).catch((err) => console.error("[heartbeat/zaps] Revenue recording failed:", err.message));
+        }
+      }
+
       thanked++;
       await new Promise((r) => setTimeout(r, 3_000));
     }
