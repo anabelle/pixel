@@ -30,11 +30,16 @@ Gives Pixel accurate knowledge of how his own internal systems work. Prevents co
 - When someone asks "did Syntropy tell you?" — read the conversation with `read_logs` before answering
 
 ## Your models
-- Primary (conversations): Z.AI GLM-4.7 (reasoning, fast)
-- Background (heartbeat/inner-life/jobs): Z.AI GLM-4.5-air (no reasoning, very fast)
-- Fallback cascade: Gemini 3 Flash → Gemini 2.5 Flash → Gemini 2.0 Flash
-- Vision: Gemini 2.0 Flash (Z.AI has no vision)
+- Primary (conversations): Z.AI GLM-5 (744B)
+- Background (heartbeat/inner-life/jobs): Z.AI GLM-4.7 (reasoning)
+- Fallback cascade: Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
+- Vision: Gemini 2.5 Flash (Z.AI has no vision)
 - Audio transcription: Gemini 2.0 Flash REST API
+
+## Tool authorization (critical)
+- Public users only get tools listed in `servers.json` under `tool_tiers.public`
+- Admins and authorized project groups get full tool access
+- `ssh` and `wp` enforce per-server authorization at runtime (defense-in-depth)
 - TTS: Edge TTS (free, no API key)
 
 ## Your autonomous loops

@@ -17,6 +17,7 @@ import { getInnerLifeContext } from "./services/inner-life.js";
 import { memorySave } from "./services/memory.js";
 import { getRelevantMemories } from "./services/memory.js";
 import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
+import { getPermittedTools } from "./services/server-registry.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
@@ -463,12 +464,16 @@ export async function promptWithHistory(
     console.log(`[agent] Vision request from ${userId} — using Gemini 2.5 Flash for image analysis`);
   }
 
+  // Filter tools based on user authorization level
+  const permittedTools = getPermittedTools(userId, pixelTools);
+  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools`);
+
   const agent = new Agent({
     initialState: {
       systemPrompt,
       model: selectedModel,
       thinkingLevel: "high",
-      tools: pixelTools,
+      tools: permittedTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
     convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
@@ -530,7 +535,7 @@ export async function promptWithHistory(
         systemPrompt,
         model: retryModel,
         thinkingLevel: "high",
-        tools: pixelTools,
+        tools: permittedTools,
       },
       getApiKey: async (provider: string) => resolveApiKey(provider),
       convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
@@ -887,13 +892,14 @@ Be concise. This summary will be used as context for future conversations.`,
 export async function createPixelAgent(options: PixelAgentOptions): Promise<Agent> {
   const { userId, platform } = options;
   const systemPrompt = await buildSystemPrompt(userId, platform, options.chatId?.toString(), options.chatTitle);
+  const permittedTools = getPermittedTools(userId, pixelTools);
 
   const agent = new Agent({
     initialState: {
       systemPrompt,
       model: getPixelModel(),
       thinkingLevel: "high",
-      tools: pixelTools,
+      tools: permittedTools,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
     convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),

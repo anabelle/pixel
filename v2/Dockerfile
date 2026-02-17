@@ -38,6 +38,9 @@ COPY --from=builder /app/character.md* ./
 RUN mkdir -p /app/conversations /app/skills /app/tools /app/data /app/external && \
     chown -R bun:bun /app
 
+# Copy server registry (multi-server SSH config)
+COPY servers.json ./
+
 # Copy scripts (Baileys LID patch, etc.)
 COPY scripts/ ./scripts/
 
