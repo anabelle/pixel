@@ -1559,10 +1559,19 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
   label: "Schedule Alarm",
   description: "Schedule an alarm. Only call ONCE per alarm — do not repeat. For short-term alarms (seconds/minutes/hours), use relative_time instead of due_at to avoid time computation errors. The platform_chat_id is auto-filled from the current chat context.",
   parameters: scheduleAlarmSchema,
-  execute: async (_id, { user_id, platform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
-    const normalizedUserId = normalizeTelegramUserId(user_id, platform);
+  execute: async (_id, { user_id, platform: rawPlatform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
+    const normalizedUserId = normalizeTelegramUserId(user_id, rawPlatform);
     // Auto-fill platform_chat_id from tool context if LLM didn't provide it
     const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
+
+    // Infer correct delivery platform from userId when platform is "http" (dashboard sessions)
+    // Without this, reminders created via HTTP dashboard would never be delivered
+    let platform = rawPlatform;
+    if (platform === "http" || platform === "http-premium") {
+      if (normalizedUserId.startsWith("tg-")) platform = "telegram";
+      else if (normalizedUserId.startsWith("wa-")) platform = "whatsapp";
+      else if (normalizedUserId.startsWith("nostr-")) platform = "nostr";
+    }
 
     // Dedup: reject if exact same alarm was just scheduled (use full message hash, not prefix)
     const messageHash = createHash("sha256").update(raw_message).digest("hex").slice(0, 16);

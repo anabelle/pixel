@@ -6,7 +6,7 @@
  */
 
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { sql, eq, and, or, lte, isNull, desc, inArray } from "drizzle-orm";
+import { sql, eq, and, or, lte, isNull, isNotNull, desc, inArray } from "drizzle-orm";
 import { reminders } from "../db.js";
 import type * as schema from "../db.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
@@ -504,6 +504,23 @@ async function schedulerLoop(): Promise<void> {
   const now = new Date();
 
   try {
+    // ── Recovery sweep: fix reminders stuck as "active" after partial firing ──
+    // If lastFiredAt >= dueAt but status is still "active" and no repeat pattern,
+    // the status update was lost (container crash, unhandled error, etc).
+    // Mark these as "fired" so they don't linger forever.
+    const stuckReminders = await db.update(reminders)
+      .set({ status: "fired" })
+      .where(and(
+        eq(reminders.status, "active"),
+        isNotNull(reminders.lastFiredAt),
+        sql`${reminders.lastFiredAt} >= ${reminders.dueAt}`,
+        isNull(reminders.repeatPattern)
+      ))
+      .returning({ id: reminders.id });
+    if (stuckReminders.length > 0) {
+      audit("reminder", `Recovery sweep: marked ${stuckReminders.length} stuck reminders as fired: ${stuckReminders.map(r => r.id).join(", ")}`);
+    }
+
     // Only select reminders that are actually due (due_at <= now)
     // No grace period — alarms fire precisely when due, not before
     const dueReminders = await db.select().from(reminders)

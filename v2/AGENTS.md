@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-17 | Session: 47
+> Last updated: 2026-02-17 | Session: 48
 
 ---
 
@@ -216,6 +216,9 @@ Authorization config lives in `servers.json`:
 - **Alpine needs bash+curl** — added to Dockerfile runtime stage.
 - **NEXT_PUBLIC_* vars are build-time only** — must rebuild to change.
 - **Postgres volume ownership:** `/home/pixel/pixel/v2/data/postgres` must be `999:999`. Auto-checked daily via `v2/scripts/check-postgres-perms.sh` (called by `host-health.sh` and `auto-update.sh`).
+- **V2 DB credentials:** user=`pixel`, password=`pixel`, database=`pixel_v2`, container=`postgres-v2` (port 5433). Access: `docker compose -f v2/docker-compose.yml exec postgres-v2 psql -U pixel -d pixel_v2`.
+- **Alarm platform inference:** `schedule_alarm` auto-remaps `platform: http` → correct platform based on userId prefix (`tg-` → telegram, `wa-` → whatsapp, `nostr-` → nostr). Prevents undeliverable reminders from HTTP dashboard sessions.
+- **Alarm recovery sweep:** `schedulerLoop()` runs a recovery sweep every tick — non-recurring reminders stuck as `active` with `lastFiredAt >= dueAt` are auto-marked `fired`. Prevents orphaned reminders from container crashes between the optimistic lock and status update.
 
 ---
 
