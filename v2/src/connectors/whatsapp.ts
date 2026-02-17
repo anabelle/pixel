@@ -23,6 +23,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import { promptWithHistory } from "../agent.js";
+import { appendToLog } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 import { existsSync, rmSync } from "fs";
@@ -34,6 +35,49 @@ let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
+
+type PendingAck = {
+  resolve: (ok: boolean) => void;
+  timeout: ReturnType<typeof setTimeout>;
+};
+
+const pendingAcks = new Map<string, PendingAck>();
+
+function clearPendingAcks() {
+  for (const [, pending] of pendingAcks) {
+    clearTimeout(pending.timeout);
+    pending.resolve(false);
+  }
+  pendingAcks.clear();
+}
+
+async function waitForAck(messageId: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise(resolve => {
+    const timeout = setTimeout(() => {
+      pendingAcks.delete(messageId);
+      resolve(false);
+    }, timeoutMs);
+    pendingAcks.set(messageId, { resolve, timeout });
+  });
+}
+
+function getAlternateJid(jid: string): string | null {
+  if (!jid.includes("@")) return null;
+  const [rawId, domain] = jid.split("@");
+  const digits = rawId.replace(/\D/g, "");
+  if (!digits) return null;
+  if (domain === "s.whatsapp.net") return `${digits}@lid`;
+  if (domain === "lid") return `${digits}@s.whatsapp.net`;
+  return null;
+}
+
+async function sendWithAck(jid: string, content: any, timeoutMs = 8000): Promise<boolean> {
+  if (!sock) return false;
+  const sent = await sock.sendMessage(jid, content);
+  const messageId = sent?.key?.id;
+  if (!messageId) return false;
+  return await waitForAck(messageId, timeoutMs);
+}
 
 /** Normalize WhatsApp target identifiers to a JID */
 export function normalizeWhatsAppTarget(target: string): { jid: string; isGroup: boolean } | null {
@@ -324,6 +368,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     const { connection, lastDisconnect, qr } = update;
 
     if (connection === "close") {
+      clearPendingAcks();
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
@@ -346,6 +391,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       }
     } else if (connection === "open") {
       console.log("[whatsapp] ✅ Connected successfully!");
+      clearPendingAcks();
       isConnectedAndReady = true;
       reconnectAttempts = 0; // Reset on successful connection
 
@@ -397,6 +443,21 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     }
   });
 
+  sock.ev.on("messages.update", async (updates) => {
+    for (const update of updates) {
+      const messageId = update.key?.id;
+      if (!messageId) continue;
+      const pending = pendingAcks.get(messageId);
+      if (!pending) continue;
+      const status = (update.update as any)?.status;
+      if (typeof status === "number") {
+        pendingAcks.delete(messageId);
+        clearTimeout(pending.timeout);
+        pending.resolve(status >= 2);
+      }
+    }
+  });
+
   // Save credentials when updated
   sock.ev.on("creds.update", saveCreds);
 
@@ -444,7 +505,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
           if (!transcription) {
             await sock!.sendPresenceUpdate("paused", jid);
             if (!isGroup) {
-              await sock!.sendMessage(jid, { text: "I couldn't understand that voice message. Could you type it out?" });
+              const errMsg = "I couldn't understand that voice message. Could you type it out?";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, "[voice message - transcription failed]", errMsg, "whatsapp");
             }
             continue;
           }
@@ -508,7 +571,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             await sock!.sendPresenceUpdate("paused", jid);
 
             if (!response) {
-              await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+              const errMsg = "Brain glitch. Try again in a moment.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, formatted, errMsg, "whatsapp");
               continue;
             }
 
@@ -536,7 +601,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
           try {
             await sock!.sendPresenceUpdate("paused", jid);
             if (!isGroup) {
-              await sock!.sendMessage(jid, { text: "Something broke while processing that voice message." });
+              const errMsg = "Something broke while processing that voice message.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, "[voice message - processing error]", errMsg, "whatsapp");
             }
           } catch {}
         }
@@ -611,7 +678,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             await sock!.sendPresenceUpdate("paused", jid);
 
             if (!response) {
-              await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+              const errMsg = "Brain glitch. Try again in a moment.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, baseText, errMsg, "whatsapp");
               continue;
             }
 
@@ -623,7 +692,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
           try {
             await sock!.sendPresenceUpdate("paused", jid);
             if (!isGroup) {
-              await sock!.sendMessage(jid, { text: "Something broke while looking at that image." });
+              const errMsg = "Something broke while looking at that image.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, baseText, errMsg, "whatsapp");
             }
           } catch {}
         }
@@ -705,7 +776,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         await sock!.sendPresenceUpdate("paused", jid);
 
         if (!response) {
-          await sock!.sendMessage(jid, { text: "Brain glitch. Try again in a moment." });
+          const errMsg = "Brain glitch. Try again in a moment.";
+          await sock!.sendMessage(jid, { text: errMsg });
+          appendToLog(userId, text, errMsg, "whatsapp");
           continue;
         }
 
@@ -742,7 +815,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         console.error(`[whatsapp] Error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 5).join("\n"));
         try {
           await sock!.sendPresenceUpdate("paused", jid);
-          await sock!.sendMessage(jid, { text: "Something broke. I'll be back in a moment." });
+          const errMsg = "Something broke. I'll be back in a moment.";
+          await sock!.sendMessage(jid, { text: errMsg });
+          appendToLog(userId, text, errMsg, "whatsapp");
         } catch {}
       }
     }
@@ -778,8 +853,15 @@ export async function sendWhatsAppMessage(
       console.error(`[whatsapp] Failed to normalize target: ${phoneNumber}`);
       return false;
     }
-    await sock.sendMessage(normalized.jid, { text });
-    return true;
+    let ok = await sendWithAck(normalized.jid, { text });
+    if (!ok) {
+      const altJid = getAlternateJid(normalized.jid);
+      if (altJid && altJid !== normalized.jid) {
+        console.warn(`[whatsapp] No ACK from ${normalized.jid}; retrying via ${altJid}`);
+        ok = await sendWithAck(altJid, { text });
+      }
+    }
+    return ok;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send message to ${phoneNumber}:`, err.message);
     return false;
@@ -808,8 +890,15 @@ export async function sendWhatsAppImage(
       console.error(`[whatsapp] Failed to normalize image target: ${target}`);
       return false;
     }
-    await sock.sendMessage(normalized.jid, { image, caption, mimetype: mimeType });
-    return true;
+    let ok = await sendWithAck(normalized.jid, { image, caption, mimetype: mimeType });
+    if (!ok) {
+      const altJid = getAlternateJid(normalized.jid);
+      if (altJid && altJid !== normalized.jid) {
+        console.warn(`[whatsapp] No ACK from ${normalized.jid}; retrying image via ${altJid}`);
+        ok = await sendWithAck(altJid, { image, caption, mimetype: mimeType });
+      }
+    }
+    return ok;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send image to ${target}:`, err.message);
     return false;
@@ -836,8 +925,15 @@ export async function sendWhatsAppVoice(
       console.error(`[whatsapp] Failed to normalize voice target: ${target}`);
       return false;
     }
-    await sock.sendMessage(normalized.jid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
-    return true;
+    let ok = await sendWithAck(normalized.jid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
+    if (!ok) {
+      const altJid = getAlternateJid(normalized.jid);
+      if (altJid && altJid !== normalized.jid) {
+        console.warn(`[whatsapp] No ACK from ${normalized.jid}; retrying voice via ${altJid}`);
+        ok = await sendWithAck(altJid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
+      }
+    }
+    return ok;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send voice to ${target}:`, err.message);
     return false;

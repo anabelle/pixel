@@ -2523,6 +2523,11 @@ const generateImageTool: AgentTool<typeof generateImageSchema> = {
       if (targetPlatform === "telegram" && targetChat) {
         const sent = await sendTelegramImage(targetChat, result.buffer, caption);
         if (sent) {
+          // Log image send to conversation
+          const chatIdStr = String(targetChat);
+          const convId = chatIdStr.startsWith("tg-") ? chatIdStr
+            : chatIdStr.startsWith("-") ? `tg-group-${chatIdStr}` : `tg-${chatIdStr}`;
+          appendToLog(convId, "", `[image sent]: ${caption || prompt.slice(0, 100)}`, "telegram");
           auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "telegram", chat_id: String(targetChat) }, { sent: true });
           return { content: [{ type: "text" as const, text: `Image sent to Telegram chat ${targetChat}.` }] };
         }
@@ -2531,6 +2536,12 @@ const generateImageTool: AgentTool<typeof generateImageSchema> = {
       if (targetPlatform === "whatsapp" && targetChat) {
         const ok = await sendWhatsAppImage(targetChat, result.buffer, caption, result.mimeType);
         if (ok) {
+          // Log image send to conversation
+          const chatIdStr = String(targetChat);
+          const convId = chatIdStr.includes("@g.us")
+            ? `wa-group-${chatIdStr.replace("@g.us", "")}`
+            : `wa-${chatIdStr.replace(/\D/g, "")}`;
+          appendToLog(convId, "", `[image sent]: ${caption || prompt.slice(0, 100)}`, "whatsapp");
           auditToolUse("generate_image", { prompt: prompt.slice(0, 80), ratio, model, size, platform: "whatsapp", chat_id: String(targetChat) }, { sent: true });
           return { content: [{ type: "text" as const, text: `Image sent to WhatsApp chat ${targetChat}.` }] };
         }

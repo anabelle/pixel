@@ -246,43 +246,8 @@ export async function startTelegram(): Promise<void> {
       groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     }
 
+    // Log incoming photo message (like voice/audio/video_note handlers do)
     appendToLog(conversationId, formatted, "", "telegram");
-
-    // Extract chat title for context awareness
-    const chatTitle = isGroupChat
-      ? (ctx.chat as any).title ?? undefined
-      : senderName; // For DMs, use the sender's display name
-
-    // DMs: batch with 20s window (same as groups) to handle fast follow-up messages
-    if (!isGroupChat) {
-      queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
-      return;
-    }
-
-    // Groups: batch to reduce noise
-    queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
-    return;
-  });
-
-  // Handle photo messages (vision)
-  bot.on("message:photo", async (ctx) => {
-    const chatType = ctx.chat?.type;
-    const isGroupChat = chatType === "group" || chatType === "supergroup";
-    const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
-    const photos = ctx.message.photo ?? [];
-    const photo = photos[photos.length - 1];
-    if (!photo) return;
-
-    const senderName = ctx.from.username
-      ? `@${ctx.from.username}`
-      : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
-    const caption = ctx.message.caption?.trim();
-    const baseText = caption ? `Image with caption: ${caption}` : "Image received.";
-    const formatted = isGroupChat ? `${senderName}: ${baseText}` : baseText;
-
-    if (isGroupChat) {
-      groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
-    }
 
     try {
       await ctx.replyWithChatAction("typing");
@@ -328,7 +293,9 @@ export async function startTelegram(): Promise<void> {
       }
     } catch (error: any) {
       console.error(`[telegram] Image error for ${conversationId}:`, error.message);
-      await ctx.reply("Something broke while reading that image.").catch(() => {});
+      const errMsg = "Something broke while reading that image.";
+      await ctx.reply(errMsg).catch(() => {});
+      appendToLog(conversationId, formatted, errMsg, "telegram");
     }
   });
 
@@ -372,7 +339,9 @@ export async function startTelegram(): Promise<void> {
       // Transcribe audio via Gemini
       const transcription = await transcribeAudio(buffer, mimeType);
       if (!transcription) {
-        await ctx.reply("I couldn't understand that voice message. Could you type it out?");
+        const errMsg = "I couldn't understand that voice message. Could you type it out?";
+        await ctx.reply(errMsg);
+        appendToLog(conversationId, `${isGroupChat ? senderName + ": " : ""}[voice message, ${duration}s - transcription failed]`, errMsg, "telegram");
         return;
       }
 
@@ -425,7 +394,9 @@ export async function startTelegram(): Promise<void> {
       }
     } catch (error: any) {
       console.error(`[telegram] Voice message error for ${conversationId}:`, error.message);
-      await ctx.reply("Something broke while processing that voice message.").catch(() => {});
+      const errMsg = "Something broke while processing that voice message.";
+      await ctx.reply(errMsg).catch(() => {});
+      appendToLog(conversationId, "[voice message - processing error]", errMsg, "telegram");
     }
   });
 
@@ -483,7 +454,9 @@ export async function startTelegram(): Promise<void> {
           }
           return;
         }
-        await ctx.reply("I couldn't process that audio file.");
+        const errMsg = "I couldn't process that audio file.";
+        await ctx.reply(errMsg);
+        appendToLog(conversationId, `${isGroupChat ? senderName + ": " : ""}[audio file "${title}", ${duration}s - processing failed]`, errMsg, "telegram");
         return;
       }
 
@@ -516,7 +489,9 @@ export async function startTelegram(): Promise<void> {
       }
     } catch (error: any) {
       console.error(`[telegram] Audio file error for ${conversationId}:`, error.message);
-      await ctx.reply("Something broke while processing that audio file.").catch(() => {});
+      const errMsg = "Something broke while processing that audio file.";
+      await ctx.reply(errMsg).catch(() => {});
+      appendToLog(conversationId, "[audio file - processing error]", errMsg, "telegram");
     }
   });
 
@@ -599,7 +574,9 @@ export async function startTelegram(): Promise<void> {
       }
     } catch (error: any) {
       console.error(`[telegram] Video note error for ${conversationId}:`, error.message);
-      await ctx.reply("Something broke while processing that video message.").catch(() => {});
+      const errMsg = "Something broke while processing that video message.";
+      await ctx.reply(errMsg).catch(() => {});
+      appendToLog(conversationId, "[video message - processing error]", errMsg, "telegram");
     }
   });
 
@@ -847,18 +824,21 @@ async function flushChatMessages(chatId: number): Promise<void> {
       }
     } else if (isDm) {
       // Empty response on DM means LLM failed silently (e.g. 429 quota)
+      const errMsg = "algo se atoró al responder. reintento en unos segundos.";
       console.error(`[telegram] Empty response for DM ${entry.conversationId} — sending fallback`);
-      await sendWithRetry(chatId, "algo se atoró al responder. reintento en unos segundos.");
+      await sendWithRetry(chatId, errMsg);
+      appendToLog(entry.conversationId, trimmed, errMsg, "telegram");
     }
   } catch (err: any) {
     console.error(`[telegram] Chat flush failed for ${entry.conversationId}:`, err.message);
     if (isDm) {
       const code = err?.response?.error_code ?? err?.status ?? err?.code;
-      const msg = code === 429
+      const errMsg = code === 429
         ? "me quedé sin cuota por un momento. estoy reintentando en breve."
         : "algo se atoró al responder. reintento en unos segundos.";
       try {
-        await sendWithRetry(chatId, msg);
+        await sendWithRetry(chatId, errMsg);
+        appendToLog(entry.conversationId, trimmed, errMsg, "telegram");
       } catch {}
     }
   }
