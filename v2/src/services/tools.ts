@@ -11,6 +11,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, chmodSync } from "fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
@@ -1474,23 +1475,23 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
 
 // ─── ALARM CLOCK TOOLS ───────────────────────────────────────
 
-// Tool execution context — set by agent.ts before each prompt() call
-// so tools can access the current chat session info without LLM passing it
-let _toolContext: { userId?: string; platform?: string; chatId?: string } = {};
+// Tool execution context — per-request via AsyncLocalStorage
+// Prevents cross-talk between concurrent chats (e.g., WA + HTTP at once)
+const toolContext = new AsyncLocalStorage<{ userId?: string; platform?: string; chatId?: string }>();
 
 /** Set the current tool execution context (called from agent.ts before prompt) */
 export function setToolContext(ctx: { userId?: string; platform?: string; chatId?: string }): void {
-  _toolContext = ctx;
+  toolContext.enterWith(ctx);
 }
 
 /** Clear tool context after prompt completes */
 export function clearToolContext(): void {
-  _toolContext = {};
+  toolContext.enterWith({});
 }
 
 /** Get current tool context (used by research_task to determine callback chat) */
 function getToolContext(): { userId?: string; platform?: string; chatId?: string } {
-  return _toolContext;
+  return toolContext.getStore() ?? {};
 }
 
 /**
@@ -1562,7 +1563,7 @@ export const scheduleAlarmTool: AgentTool<typeof scheduleAlarmSchema> = {
   execute: async (_id, { user_id, platform: rawPlatform, platform_chat_id, raw_message, due_at, relative_time, repeat_pattern, repeat_count }) => {
     const normalizedUserId = normalizeTelegramUserId(user_id, rawPlatform);
     // Auto-fill platform_chat_id from tool context if LLM didn't provide it
-    const effectiveChatId = platform_chat_id || _toolContext.chatId || undefined;
+    const effectiveChatId = platform_chat_id || getToolContext().chatId || undefined;
 
     // Infer correct delivery platform from userId when platform is "http" (dashboard sessions)
     // Without this, reminders created via HTTP dashboard would never be delivered
@@ -2139,8 +2140,8 @@ const memorySaveTool: AgentTool<typeof memorySaveSchema> = {
   execute: async (_id, { content, type, user_id, platform }) => {
     try {
       // Use tool context for user_id/platform if not explicitly provided
-      const effectiveUserId = user_id || _toolContext.userId;
-      const effectivePlatform = platform || _toolContext.platform;
+      const effectiveUserId = user_id || getToolContext().userId;
+      const effectivePlatform = platform || getToolContext().platform;
 
       const result = await memorySave({
         content,
@@ -2176,7 +2177,7 @@ const memorySearchTool: AgentTool<typeof memorySearchSchema> = {
   parameters: memorySearchSchema,
   execute: async (_id, { query, user_id, type, limit }) => {
     try {
-      const effectiveUserId = user_id || _toolContext.userId;
+      const effectiveUserId = user_id || getToolContext().userId;
 
       const results = await memorySearch(query, {
         userId: effectiveUserId,
