@@ -26,7 +26,7 @@ import { promptWithHistory } from "../agent.js";
 import { appendToLog } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
-import { existsSync, rmSync, writeFileSync, readFileSync } from "fs";
+import { existsSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 let sock: WASocket | null = null;
@@ -35,6 +35,8 @@ let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
+const MEDIA_DIR = process.env.WHATSAPP_MEDIA_DIR ?? "/app/data/whatsapp-media";
+const MAX_VIDEO_TRANSCRIBE_BYTES = 10 * 1024 * 1024;
 
 type PendingAck = {
   resolve: (ok: boolean) => void;
@@ -139,6 +141,21 @@ async function convertWebpToJpeg(image: Buffer): Promise<Buffer | null> {
     try { rmSync(inputPath, { force: true }); } catch {}
     try { rmSync(outputPath, { force: true }); } catch {}
   }
+}
+
+function ensureDir(dir: string) {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
+
+function extensionForMime(mimeType: string): string {
+  const lower = mimeType.toLowerCase();
+  if (lower.includes("mp4")) return "mp4";
+  if (lower.includes("3gpp")) return "3gp";
+  if (lower.includes("quicktime") || lower.includes("mov")) return "mov";
+  if (lower.includes("webm")) return "webm";
+  return "bin";
 }
 
 /** Normalize WhatsApp target identifiers to a JID */
@@ -666,6 +683,117 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
               const errMsg = "Something broke while processing that voice message.";
               await sock!.sendMessage(jid, { text: errMsg });
               appendToLog(userId, "[voice message - processing error]", errMsg, "whatsapp");
+            }
+          } catch {}
+        }
+        continue;
+      }
+
+      // Handle video messages (download + optional transcription)
+      const videoMsg = msg.message?.videoMessage;
+      if (videoMsg) {
+        const caption = videoMsg.caption?.trim() ?? "";
+        const duration = videoMsg.seconds ?? 0;
+        const rawMime = videoMsg.mimetype ?? "video/mp4";
+        const mimeType = rawMime.split(";")[0].trim().toLowerCase() || "video/mp4";
+
+        try {
+          console.log(`[whatsapp] Video message from ${userId} (caption: "${caption.slice(0, 40)}", group=${isGroup})`);
+          await sock!.sendPresenceUpdate("composing", jid);
+
+          const videoBuffer = await downloadMediaMessage(msg, "buffer", {}) as Buffer;
+          const ext = extensionForMime(mimeType);
+          const subDir = isGroup ? "groups" : "dm";
+          const safeJid = jid.replace(/[@.]/g, "_");
+          const dir = join(MEDIA_DIR, subDir, safeJid);
+          ensureDir(dir);
+
+          const filename = `video-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+          const filePath = join(dir, filename);
+          writeFileSync(filePath, videoBuffer);
+
+          console.log(`[whatsapp] Video saved: ${filePath} (${videoBuffer.byteLength} bytes, ${mimeType})`);
+
+          let transcription: string | null = null;
+          if (videoBuffer.byteLength <= MAX_VIDEO_TRANSCRIBE_BYTES) {
+            const transcriptionMime = mimeType.startsWith("audio/") ? mimeType : "audio/mp4";
+            transcription = await transcribeAudio(videoBuffer, transcriptionMime);
+          } else {
+            console.log(`[whatsapp] Video too large for transcription: ${videoBuffer.byteLength} bytes`);
+          }
+
+          const baseLine = isGroup
+            ? `${msg.pushName ?? msg.key.participant?.split("@")[0] ?? "someone"}: [video message, ${duration}s]`
+            : `[video message, ${duration}s]`;
+
+          const details: string[] = [];
+          if (caption) details.push(`caption: ${caption}`);
+          details.push(`file: ${filePath}`);
+          details.push(`mime: ${mimeType}`);
+          if (transcription) {
+            details.push(`transcription: ${transcription}`);
+          } else {
+            details.push("transcription: (unavailable)");
+          }
+
+          const formatted = `${baseLine}${details.length ? " | " + details.join(" | ") : ""}`;
+
+          if (isGroup) {
+            const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
+
+            const rawResponse = await promptWithHistory(
+              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              formatted
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!rawResponse || rawResponse.includes("[SILENT]")) {
+              console.log(`[whatsapp] Group video — [SILENT]`);
+              continue;
+            }
+
+            const response = cleanResponse(rawResponse);
+            if (response) {
+              try {
+                await sock!.sendMessage(jid, { text: response });
+              } catch (sendErr: any) {
+                if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+                  groupMetadataCache.delete(jid);
+                  await new Promise(r => setTimeout(r, 2000));
+                  await sock!.sendMessage(jid, { text: response });
+                } else {
+                  throw sendErr;
+                }
+              }
+              console.log(`[whatsapp] Group video reply to ${jid} (${response.length} chars)`);
+            }
+          } else {
+            const response = await promptWithHistory(
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              formatted
+            );
+
+            await sock!.sendPresenceUpdate("paused", jid);
+
+            if (!response) {
+              const errMsg = "Brain glitch. Try again in a moment.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, formatted, errMsg, "whatsapp");
+              continue;
+            }
+
+            await sock!.sendMessage(jid, { text: response });
+            console.log(`[whatsapp] Video reply to ${userId} (${response.length} chars)`);
+          }
+        } catch (err: any) {
+          console.error(`[whatsapp] Video error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 3).join("\n"));
+          try {
+            await sock!.sendPresenceUpdate("paused", jid);
+            if (!isGroup) {
+              const errMsg = "Something broke while processing that video.";
+              await sock!.sendMessage(jid, { text: errMsg });
+              appendToLog(userId, "[video message - processing error]", errMsg, "whatsapp");
             }
           } catch {}
         }
