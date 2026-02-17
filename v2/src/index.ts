@@ -315,7 +315,7 @@ app.post("/api/whatsapp/send", async (c) => {
     if (!to || !message) {
       return c.json({ ok: false, error: "Missing 'to' and/or 'message'" }, 400);
     }
-    const isGroup = to.includes("@g.us");
+    const isGroup = /@g\.us/i.test(to) || /^wa-group-/i.test(to) || /^whatsapp-group-/i.test(to);
     let ok: boolean;
     if (isGroup) {
       ok = await sendWhatsAppGroupMessage(to, message);
@@ -325,8 +325,8 @@ app.post("/api/whatsapp/send", async (c) => {
     if (ok) {
       // Log so Pixel has memory of proactive sends
       const conversationId = isGroup
-        ? `wa-group-${to.replace("@g.us", "")}`
-        : `wa-${to.replace(/\D/g, "")}`;
+        ? `wa-group-${to.replace(/^wa-group-/i, "").replace(/^whatsapp-group-/i, "").replace(/@g\.us/i, "")}`
+        : `wa-${to.replace(/^wa-/i, "").replace(/^whatsapp-/i, "").replace(/\D/g, "")}`;
       appendToLog(conversationId, "[proactive message sent via API]", message, "whatsapp");
     }
     return c.json({ ok, to, isGroup });

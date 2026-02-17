@@ -2405,7 +2405,7 @@ const joinWhatsAppGroupTool: AgentTool<typeof joinWhatsAppGroupSchema> = {
 };
 
 const sendWhatsAppMessageSchema = Type.Object({
-  to: Type.String({ description: "Destination: phone number (e.g. 573001234567) for DMs, or group JID (e.g. 120363408642317805@g.us) for groups" }),
+  to: Type.String({ description: "Destination for WhatsApp: phone number (e.g. 573001234567), wa-<digits> chat id, wa-<digits>_lid, or JID (e.g. 120363408642317805@g.us)." }),
   message: Type.String({ description: "Text message to send" }),
 });
 
@@ -2415,7 +2415,7 @@ const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
   description: "Send a proactive WhatsApp message to a phone number (DM) or group JID.",
   parameters: sendWhatsAppMessageSchema,
   execute: async (_id, { to, message }) => {
-    const isGroup = to.includes("@g.us");
+    const isGroup = /@g\.us/i.test(to) || /^wa-group-/i.test(to) || /^whatsapp-group-/i.test(to);
     let ok: boolean;
     if (isGroup) {
       ok = await sendWhatsAppGroupMessage(to, message);
@@ -2425,8 +2425,8 @@ const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
     if (ok) {
       // Log proactive message so Pixel has memory of what it sent
       const conversationId = isGroup
-        ? `wa-group-${to.replace("@g.us", "")}`
-        : `wa-${to.replace(/\D/g, "")}`;
+        ? `wa-group-${to.replace(/^wa-group-/i, "").replace(/^whatsapp-group-/i, "").replace(/@g\.us/i, "")}`
+        : `wa-${to.replace(/^wa-/i, "").replace(/^whatsapp-/i, "").replace(/\D/g, "")}`;
       appendToLog(conversationId, "[proactive message sent via tool]", message, "whatsapp");
       return { content: [{ type: "text" as const, text: `WhatsApp message sent to ${to}` }] };
     }

@@ -26,6 +26,7 @@ import { promptWithHistory } from "../agent.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
 import { existsSync, rmSync } from "fs";
+import { join } from "path";
 
 let sock: WASocket | null = null;
 /** Mutable ref so cachedGroupMetadata closure can call sock.groupMetadata */
@@ -33,6 +34,48 @@ let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
+
+/** Normalize WhatsApp target identifiers to a JID */
+export function normalizeWhatsAppTarget(target: string): { jid: string; isGroup: boolean } | null {
+  const clean = target.trim();
+  if (!clean) return null;
+
+  const lower = clean.toLowerCase();
+
+  if (clean.includes("@g.us")) return { jid: clean, isGroup: true };
+  if (clean.includes("@lid")) return { jid: clean, isGroup: false };
+  if (clean.includes("@s.whatsapp.net")) return { jid: clean, isGroup: false };
+
+  if (lower.startsWith("wa-group-")) {
+    const groupId = clean.slice("wa-group-".length).replace(/\D/g, "");
+    if (!groupId) return null;
+    return { jid: `${groupId}@g.us`, isGroup: true };
+  }
+  if (lower.startsWith("whatsapp-group-")) {
+    const groupId = clean.slice("whatsapp-group-".length).replace(/\D/g, "");
+    if (!groupId) return null;
+    return { jid: `${groupId}@g.us`, isGroup: true };
+  }
+
+  const lidExplicit = /_lid$/i.test(clean) || /@lid/i.test(clean);
+
+  // Accept wa-<digits> or whatsapp-<digits>
+  let stripped = clean;
+  if (lower.startsWith("wa-")) stripped = clean.slice(3);
+  if (lower.startsWith("whatsapp-")) stripped = clean.slice("whatsapp-".length);
+  if (/_lid$/i.test(stripped)) stripped = stripped.replace(/_lid$/i, "");
+
+  const digits = stripped.replace(/\D/g, "");
+  if (!digits) return null;
+
+  if (lidExplicit) return { jid: `${digits}@lid`, isGroup: false };
+
+  const convDir = process.env.DATA_DIR ?? "/app/conversations";
+  const lidDir = join(convDir, `wa-${digits}_lid`);
+  if (existsSync(lidDir)) return { jid: `${digits}@lid`, isGroup: false };
+
+  return { jid: `${digits}@s.whatsapp.net`, isGroup: false };
+}
 
 /** Group metadata cache — avoids live queries on every group send */
 const groupMetadataCache = new Map<string, { metadata: GroupMetadata; timestamp: number }>();
@@ -730,11 +773,12 @@ export async function sendWhatsAppMessage(
   }
 
   try {
-    const clean = phoneNumber.trim();
-    const jid = clean.includes("@")
-      ? clean
-      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
-    await sock.sendMessage(jid, { text });
+    const normalized = normalizeWhatsAppTarget(phoneNumber);
+    if (!normalized) {
+      console.error(`[whatsapp] Failed to normalize target: ${phoneNumber}`);
+      return false;
+    }
+    await sock.sendMessage(normalized.jid, { text });
     return true;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send message to ${phoneNumber}:`, err.message);
@@ -759,11 +803,12 @@ export async function sendWhatsAppImage(
   }
 
   try {
-    const clean = target.trim();
-    const jid = clean.includes("@")
-      ? clean
-      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
-    await sock.sendMessage(jid, { image, caption, mimetype: mimeType });
+    const normalized = normalizeWhatsAppTarget(target);
+    if (!normalized) {
+      console.error(`[whatsapp] Failed to normalize image target: ${target}`);
+      return false;
+    }
+    await sock.sendMessage(normalized.jid, { image, caption, mimetype: mimeType });
     return true;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send image to ${target}:`, err.message);
@@ -786,11 +831,12 @@ export async function sendWhatsAppVoice(
   }
 
   try {
-    const clean = target.trim();
-    const jid = clean.includes("@")
-      ? clean
-      : `${clean.replace(/\D/g, "")}@s.whatsapp.net`;
-    await sock.sendMessage(jid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
+    const normalized = normalizeWhatsAppTarget(target);
+    if (!normalized) {
+      console.error(`[whatsapp] Failed to normalize voice target: ${target}`);
+      return false;
+    }
+    await sock.sendMessage(normalized.jid, { audio, mimetype: "audio/ogg; codecs=opus", ptt: true });
     return true;
   } catch (err: any) {
     console.error(`[whatsapp] Failed to send voice to ${target}:`, err.message);
@@ -812,7 +858,12 @@ export async function sendWhatsAppGroupMessage(
     return false;
   }
   try {
-    const jid = groupJid.includes("@") ? groupJid : `${groupJid}@g.us`;
+    const normalized = normalizeWhatsAppTarget(groupJid);
+    if (!normalized || !normalized.isGroup) {
+      console.error(`[whatsapp] Invalid group target: ${groupJid}`);
+      return false;
+    }
+    const jid = normalized.jid;
     try {
       await sock.sendMessage(jid, { text });
     } catch (sendErr: any) {
