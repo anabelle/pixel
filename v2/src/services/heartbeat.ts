@@ -32,6 +32,7 @@ import { canNotify, notifyOwner } from "../connectors/telegram.js";
 import { extractNotificationIds, getClawstrNotifications, getClawstrPost, replyClawstr, isSelfPost } from "./clawstr.js";
 import { extractImageUrls, fetchImages } from "./vision.js";
 import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
+import { getUnsafeReason } from "./content-filter.js";
 import { pixelTools } from "./tools.js";
 
 // ============================================================
@@ -172,7 +173,7 @@ let topicHistory: Topic[] = [];
 let lastCanvasPostTime: number | null = null;
 let lastDiscoveryTime: number | null = null;
 let discoveryRepliedIds: string[] = [];
-let discoveryQueue: { eventId: string; pubkey: string; content: string; scheduledAt: number }[] = [];
+let discoveryQueue: { eventId: string; pubkey: string; content: string; tags?: string[][]; scheduledAt: number }[] = [];
 let lastNotificationCheckTime: number | null = null;
 let lastZapCheckTime: number | null = null;
 let zapThankedIds: string[] = [];
@@ -202,7 +203,7 @@ type HeartbeatState = {
   clawstrReplyInFlight?: { id: string; at: number }[];
   lastDiscoveryTime?: number | null;
   discoveryRepliedIds?: string[];
-  discoveryQueue?: { eventId: string; pubkey: string; content: string; scheduledAt: number }[];
+  discoveryQueue?: { eventId: string; pubkey: string; content: string; tags?: string[][]; scheduledAt: number }[];
   lastNotificationCheckTime?: number | null;
   lastZapCheckTime?: number | null;
   zapThankedIds?: string[];
@@ -725,6 +726,12 @@ async function checkAndReplyToMentions(): Promise<void> {
       if (isMuted(event.pubkey)) continue; // On mute list
       if (isBotLoop(event.pubkey)) continue; // Bot loop protection
       if (!event.content || event.content.length < 3) continue; // Skip empty
+      const unsafeReason = getUnsafeReason(event.content, event.tags, { blockVideo: true });
+      if (unsafeReason) {
+        markReplied(event.id);
+        audit("content_blocked", `Mention reply blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+        continue;
+      }
       unreplied.push(event);
     }
 
@@ -958,7 +965,8 @@ async function discoveryLoop(): Promise<void> {
     const trendingTags = [...tagCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([tag]) => tag);
+      .map(([tag]) => tag)
+      .filter((tag) => !getUnsafeReason(`#${tag}`));
 
     try {
       const trendSummary = {
@@ -989,6 +997,7 @@ async function discoveryLoop(): Promise<void> {
       id: e.id,
       pubkey: e.pubkey,
       content: e.content,
+      tags: e.tags,
     }));
     enqueueDiscoveryCandidates(candidates, trendingTags, primalCandidates);
     processDiscoveryQueue(trendingTags).catch((err) => {
@@ -1044,6 +1053,13 @@ async function notificationLoop(): Promise<void> {
       if (isBotLoop(event.pubkey)) { markReplied(event.id); continue; }
       if (!event.content || event.content.length < 2) {
         markReplied(event.id);
+        continue;
+      }
+
+      const unsafeReason = getUnsafeReason(event.content, event.tags, { blockVideo: true });
+      if (unsafeReason) {
+        markReplied(event.id);
+        audit("content_blocked", `Notification reply blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
         continue;
       }
 
@@ -1220,7 +1236,15 @@ async function followLoop(): Promise<void> {
       .filter((e) => e.pubkey && e.pubkey !== pubkey)
       .filter((e) => isArtPost(e.content ?? ""))
       .filter((e) => !contacts.has(e.pubkey))
-      .filter((e) => !isMuted(e.pubkey));
+      .filter((e) => !isMuted(e.pubkey))
+      .filter((e) => {
+        const unsafeReason = getUnsafeReason(e.content ?? "", e.tags, { blockVideo: true });
+        if (unsafeReason) {
+          audit("content_blocked", `Follow candidate blocked (${unsafeReason})`, { eventId: e.id, reason: unsafeReason });
+          return false;
+        }
+        return true;
+      });
 
     const maxFollows = scaled(FOLLOW_MAX, 3);
     let followed = 0;
@@ -1383,7 +1407,15 @@ async function spotlightLoop(): Promise<void> {
     }
 
     const trending = await fetchPrimalTrending24h();
-    const candidates = trending.filter((e) => e.pubkey !== pubkey && !isMuted(e.pubkey) && e.content && e.content.length > 40);
+    const candidates = trending.filter((e) => e.pubkey !== pubkey && !isMuted(e.pubkey) && e.content && e.content.length > 40)
+      .filter((e) => {
+        const unsafeReason = getUnsafeReason(e.content ?? "", e.tags, { blockVideo: true });
+        if (unsafeReason) {
+          audit("content_blocked", `Spotlight candidate blocked (${unsafeReason})`, { eventId: e.id, reason: unsafeReason });
+          return false;
+        }
+        return true;
+      });
     if (candidates.length === 0) {
       spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
       return;
@@ -1449,10 +1481,17 @@ function enqueueDiscoveryCandidates(
     if (existing.has(event.id)) continue;
     if (lastDiscoveryTime && now - lastDiscoveryTime < DISCOVERY_COOLDOWN_MS && added > 0) break;
 
+    const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
+    if (unsafeReason) {
+      markDiscoveryReplied(event.id);
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      continue;
+    }
+
     const jitter = DISCOVERY_JITTER_MIN_MS + Math.floor(Math.random() * (DISCOVERY_JITTER_MAX_MS - DISCOVERY_JITTER_MIN_MS));
     const scheduledAt = now + jitter + added * 2_000;
 
-    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, scheduledAt });
+    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, tags: event.tags, scheduledAt });
     added++;
   }
 
@@ -1461,9 +1500,16 @@ function enqueueDiscoveryCandidates(
     if (existing.has(event.id)) continue;
     if (discoveryRepliedIds.includes(event.id)) continue;
 
+    const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
+    if (unsafeReason) {
+      markDiscoveryReplied(event.id);
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      continue;
+    }
+
     const jitter = DISCOVERY_JITTER_MIN_MS + Math.floor(Math.random() * (DISCOVERY_JITTER_MAX_MS - DISCOVERY_JITTER_MIN_MS));
     const scheduledAt = now + jitter + added * 2_000;
-    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, scheduledAt });
+    discoveryQueue.push({ eventId: event.id, pubkey: event.pubkey, content: event.content, tags: event.tags, scheduledAt });
     added++;
   }
 
@@ -1486,6 +1532,13 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
 
   const item = discoveryQueue.splice(nextIndex, 1)[0];
   saveHeartbeatState();
+
+  const unsafeReason = getUnsafeReason(item.content ?? "", item.tags, { blockVideo: true });
+  if (unsafeReason) {
+    markDiscoveryReplied(item.eventId);
+    audit("content_blocked", `Discovery blocked (${unsafeReason})`, { eventId: item.eventId, reason: unsafeReason });
+    return;
+  }
 
   if (discoveryRepliedIds.includes(item.eventId) || hasRepliedTo(item.eventId)) return;
   if (isMuted(item.pubkey)) { markDiscoveryReplied(item.eventId); return; }
@@ -1517,6 +1570,8 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   const eventStub = new NDKEvent(ndk);
   eventStub.id = item.eventId;
   eventStub.pubkey = item.pubkey;
+  eventStub.content = item.content ?? "";
+  eventStub.tags = item.tags ?? [];
 
   if (useQuote) {
     const quote = new NDKEvent(ndk);
@@ -1770,6 +1825,11 @@ function extractHashtags(event: NDKEvent): string[] {
 }
 
 async function publishReaction(ndk: NDK, event: NDKEvent): Promise<void> {
+  const unsafeReason = getUnsafeReason(event.content ?? "", event.tags);
+  if (unsafeReason) {
+    audit("content_blocked", `Reaction blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+    return;
+  }
   const reaction = new NDKEvent(ndk);
   reaction.kind = 7;
   reaction.content = "+";
@@ -1781,6 +1841,11 @@ async function publishReaction(ndk: NDK, event: NDKEvent): Promise<void> {
 }
 
 async function publishRepost(ndk: NDK, event: NDKEvent): Promise<void> {
+  const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
+  if (unsafeReason) {
+    audit("content_blocked", `Repost blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+    return;
+  }
   const repost = new NDKEvent(ndk);
   repost.kind = 6;
   const raw = (event as any).rawEvent ? (event as any).rawEvent() : (event as any).rawEvent ?? event.rawEvent ?? (event as any).event ?? null;
@@ -1822,6 +1887,12 @@ async function maybeReplyToClawstr(output: string): Promise<void> {
       }
       
       const postLower = post.toLowerCase();
+      const unsafeReason = getUnsafeReason(postLower, undefined, { blockVideo: true });
+      if (unsafeReason) {
+        markClawstrReplied(id);
+        audit("content_blocked", `Clawstr reply blocked (${unsafeReason})`, { eventRef: id, reason: unsafeReason });
+        continue;
+      }
       if (postLower.includes("/c/clawnch") || postLower.includes("!clawnch")) {
         markClawstrReplied(id);
         continue;

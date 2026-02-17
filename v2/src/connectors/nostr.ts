@@ -15,6 +15,7 @@ import NDK, {
 } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
 import { extractImageUrls, fetchImages } from "../services/vision.js";
+import { getUnsafeReason } from "../services/content-filter.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
 
 // Throttle: don't reply to the same pubkey more than once per interval
@@ -281,6 +282,12 @@ export async function startNostr(): Promise<void> {
 
     const content = event.content;
     if (!content || isBotContent(content)) return;
+
+    const unsafeReason = getUnsafeReason(content, event.tags, { blockVideo: true });
+    if (unsafeReason) {
+      markReplied(event.id);
+      return;
+    }
 
     console.log(`[nostr] Mention from ${event.pubkey.slice(0, 8)}...: ${content.slice(0, 80)}`);
 
