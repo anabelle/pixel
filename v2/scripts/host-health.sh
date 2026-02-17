@@ -30,3 +30,4 @@ fi
 
 # Ensure postgres volume ownership is correct
 /home/pixel/pixel/v2/scripts/check-postgres-perms.sh || true
+/home/pixel/pixel/v2/scripts/ensure-postgres-perms.sh || true

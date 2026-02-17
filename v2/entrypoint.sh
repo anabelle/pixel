@@ -33,4 +33,5 @@ if [ -f /app/scripts/patch-baileys-lid.js ]; then
 fi
 
 # Drop to bun user and run the app
+# Note: server registry loads from /app/servers.json at runtime via server-registry.ts
 exec su-exec bun bun run src/index.ts

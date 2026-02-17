@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-16 | Session: 46
+> Last updated: 2026-02-17 | Session: 47
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 44 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 46 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -67,23 +67,23 @@ WhatsApp/Telegram/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) �
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (31 source files, ~15,024 lines)
+### File Inventory (33 source files, ~15,953 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~1086 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
-| `src/agent.ts` | ~953 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
+| `src/index.ts` | ~1114 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
+| `src/agent.ts` | ~1005 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM + shared repliedEventIds |
-| `src/connectors/whatsapp.ts` | ~447 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
-| `src/services/tools.ts` | ~2390 | 44 tools: filesystem, bash, web, git, ssh, wp, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
+| `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
+| `src/services/tools.ts` | ~2583 | 46 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |
 | `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
 | `src/services/jobs.ts` | ~564 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
-| `src/services/reminders.ts` | ~513 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
+| `src/services/reminders.ts` | ~540 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
 | `src/services/outreach.ts` | ~397 | Proactive owner outreach — LLM-judged Telegram pings, cooldowns, dedup |
 | `src/services/cost-monitor.ts` | ~347 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware |
@@ -102,6 +102,8 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/services/tts.ts` | ~73 | Edge TTS → ffmpeg → OGG/Opus, auto language detection |
 | `src/services/blossom.ts` | ~47 | Blossom media upload for Nostr image posts |
 | `src/services/vision.ts` | ~46 | Image URL extraction for multi-modal input |
+| `src/services/google-key.ts` | ~52 | Google API key failover (primary → fallback) used by Gemini calls |
+| `src/services/server-registry.ts` | ~213 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
 
 ---
 
@@ -154,6 +156,18 @@ Same Pixel, same brain, different payment doors:
 **Treasury:** ~80,000 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ---
+## 6. SECURITY & AUTHORIZATION
+
+Pixel runs on public networks (Telegram/WhatsApp/Nostr/HTTP). Tool access is locked down at two layers:
+
+- **Tool filtering (agent-level):** the agent only receives tools allowed by `servers.json` tool tiers for the caller (`public` vs `server_admin`). Implemented via `getPermittedTools()` in `src/services/server-registry.ts` and applied in `src/agent.ts`.
+- **Runtime enforcement (tool-level):** dangerous tools enforce authorization inside the tool itself (defense-in-depth). `ssh` and `wp` require per-server authorization when `server` is used; ad-hoc host/user/key connections require a global admin.
+
+Authorization config lives in `servers.json`:
+
+- `global_admins`: full access
+- `tool_tiers.public`: safe tools for anyone
+- `servers.<name>.authorized_users/authorized_groups`: per-server access control
 
 ---
 
@@ -170,7 +184,7 @@ Same Pixel, same brain, different payment doors:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 43 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 46 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — separate from inner-life. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
@@ -196,7 +210,8 @@ Same Pixel, same brain, different payment doors:
 - **Canvas migration deferred** — works, earns sats, Socket.IO complicates Hono migration.
 - **L402 simplified (no macaroons)** — raw payment hash as token, SHA256(preimage) verification.
 - **Scoped auto-commit policy** — autonomous Syntropy commits code-only paths. NEVER data/logs/conversations/secrets.
-- **DNS bypass (CRITICAL):** tallerubens.com/dev.tallerubens.com → 68.66.224.4 in `/etc/hosts` and docker-compose `extra_hosts` to bypass Cloudflare.
+- **DNS bypass (CRITICAL):** tallerubens.com/dev.tallerubens.com/ambienteniwa.com → 68.66.224.4 in `/etc/hosts` and docker-compose `extra_hosts` to bypass Cloudflare.
+- **Multi-server SSH via server registry:** `servers.json` defines named servers (host, user, key_env, wp_path, capabilities, blocked_patterns). Loaded from `/app/servers.json` (baked into the Docker image); env var fallback exists but is optional. SSH/WP tools accept `server` param for registry lookup, with raw host/user/key fallback for ad-hoc (global admins only). `list_servers` tool exposes available servers to the agent. See `src/services/server-registry.ts`. To add a new server: (1) add entry to `servers.json`, (2) add `<NAME>_SSH_KEY` to `.env`, (3) add DNS to `extra_hosts` in docker-compose if behind CDN, (4) rebuild container.
 - **Docker socket via group_add ["988"]** — not running as root.
 - **Alpine needs bash+curl** — added to Dockerfile runtime stage.
 - **NEXT_PUBLIC_* vars are build-time only** — must rebuild to change.
@@ -227,7 +242,7 @@ Same Pixel, same brain, different payment doors:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~14.7K lines current, 16K max.
+10. **Complexity is debt.** ~15.9K lines current, 16K max.
 
 ### Anti-Patterns
 
