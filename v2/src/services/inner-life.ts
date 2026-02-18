@@ -57,6 +57,7 @@ const MAX_PROJECTS_SIZE = 4000;
 const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IDEA_GARDEN_PATH = "idea-garden.md";
 const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
+const SYNTROPY_DISPATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // ============================================================
 // State
@@ -756,6 +757,7 @@ Write in first person, lowercase, present tense.`
   await updateProjectQueue(reflections, learnings, ideas);
   await maybeCreateSkill(reflections, learnings, ideas);
   await maybeEnqueueIdeaJob();
+  await maybeDispatchToSyntropy();
 
   // Periodic consolidation after identity updates
   try {
@@ -781,6 +783,13 @@ Keep 3-5 projects max. Each entry should include:
 - title
 - why it matters (1 sentence)
 - next step (1 sentence)
+
+IMPORTANT: For projects requiring code changes or infrastructure work, prefix with [implementation]:
+* [implementation] **Title**: description
+  - why: one sentence
+  - next: concrete action
+
+Code/infra projects get dispatched to Syntropy (coding models). Research projects use Pixel's job queue.
 
 Current queue:
 ${existing || "(empty)"}
@@ -903,9 +912,72 @@ async function maybeEnqueueIdeaJob(): Promise<void> {
 
   const seed = ready[0];
   const prompt = `Research and propose next steps for this idea seed.\n\nSeed: ${seed.title}\nOrigin: ${seed.origin}\nNotes: ${seed.notes.slice(0, 3).join("; ")}\n\nOutput: 4-6 bullet points with practical next steps and risks.`;
-  enqueueJob(prompt, ["web_fetch", "read_file"]);
+  enqueueJob(prompt, ["web_fetch", "read_file"], { internal: true, label: "idea_research" });
   writeJson(metaPath, { lastJobAt: Date.now(), lastSeed: seed.title });
   audit("tool_use", `Idea job queued for seed: ${seed.title}`, { seed: seed.title });
+}
+
+async function maybeDispatchToSyntropy(): Promise<void> {
+  const projects = readLivingDoc("projects.md");
+  if (!projects.includes("[implementation]")) return;
+
+  const metaPath = join(DATA_DIR, "project-dispatch.json");
+  const meta = readJson<{ lastDispatchAt?: number; dispatchedProject?: string }>(metaPath, {});
+  const last = meta.lastDispatchAt ?? 0;
+  if (Date.now() - last < SYNTROPY_DISPATCH_COOLDOWN_MS) return;
+
+  const lines = projects.split("\n");
+  const implementationProjects: Array<{ title: string; lineIndex: number }> = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = line.match(/^[*-]\s+\[implementation\]\s+\*\*([^*]+)\*\*:\s*(.+)$/);
+    if (match) {
+      implementationProjects.push({
+        title: match[1].trim(),
+        lineIndex: i,
+      });
+    }
+  }
+
+  if (implementationProjects.length === 0) {
+    console.log("[inner-life] No implementation projects found for Syntropy dispatch");
+    return;
+  }
+
+  const project = implementationProjects[0];
+  if (meta.dispatchedProject && meta.dispatchedProject === project.title) {
+    console.log(`[inner-life] Skipping Syntropy dispatch (already sent): ${project.title}`);
+    return;
+  }
+
+  let why = "";
+  let next = "";
+  for (let i = project.lineIndex + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) break;
+    if (/^[*-]\s+/.test(line)) break;
+    if (line.includes("why:")) why = line.split("why:")[1]?.trim() || "";
+    if (line.includes("next:")) next = line.split("next:")[1]?.trim() || "";
+  }
+
+  const message = `PROJECT: ${project.title}\nWHY: ${why || "See projects.md"}\nNEXT: ${next || "Define and implement"}\n\nImplement this project. Commit working code. Verify by chatting with Pixel.`;
+
+  const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
+  const entry = {
+    timestamp: new Date().toISOString(),
+    priority: "normal",
+    message,
+  };
+
+  try {
+    writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+    writeJson(metaPath, { lastDispatchAt: Date.now(), dispatchedProject: project.title });
+    audit("tool_use", `Project dispatched to Syntropy: ${project.title}`);
+    console.log(`[inner-life] Dispatched project to Syntropy: ${project.title}`);
+  } catch (err: any) {
+    console.error(`[inner-life] Failed to dispatch to Syntropy: ${err.message}`);
+  }
 }
 
 // ============================================================
