@@ -24,6 +24,7 @@ export function initRevenue(database: PostgresJsDatabase<typeof schema>): void {
 export interface RevenueEntry {
   source: string;
   amountSats: number;
+  amountUsd?: number | string;
   userId?: string;
   description?: string;
   txHash?: string;
@@ -45,17 +46,30 @@ export async function recordRevenue(entry: RevenueEntry): Promise<void> {
     await db.insert(revenue).values({
       source: entry.source,
       amountSats: entry.amountSats,
+      amountUsd: entry.amountUsd ?? null,
       userId: entry.userId ?? null,
       description: entry.description ?? null,
       txHash: entry.txHash ?? null,
     });
-    console.log(`[revenue] Recorded: ${entry.source} — ${entry.amountSats} sats`);
-    audit("revenue", `${entry.source}: ${entry.amountSats} sats`, { source: entry.source, amountSats: entry.amountSats, userId: entry.userId, description: entry.description });
-    alertOwner("revenue", `${entry.amountSats} sats from ${entry.source}${entry.description ? ` — ${entry.description}` : ""}`, { source: entry.source, amountSats: entry.amountSats }).catch(() => {});
+    const amountLabel = entry.amountUsd ? `$${entry.amountUsd} USD` : `${entry.amountSats} sats`;
+    console.log(`[revenue] Recorded: ${entry.source} — ${amountLabel}`);
+    audit("revenue", `${entry.source}: ${amountLabel}`, {
+      source: entry.source,
+      amountSats: entry.amountSats,
+      amountUsd: entry.amountUsd,
+      userId: entry.userId,
+      description: entry.description,
+    });
+    alertOwner(
+      "revenue",
+      `${amountLabel} from ${entry.source}${entry.description ? ` — ${entry.description}` : ""}`,
+      { source: entry.source, amountSats: entry.amountSats, amountUsd: entry.amountUsd }
+    ).catch(() => {});
   } catch (err: any) {
     console.error("[revenue] Failed to record:", err.message);
     // Still log it even if DB fails
-    console.log(`[revenue] (fallback log) ${entry.source}: ${entry.amountSats} sats — ${entry.description}`);
+    const amountLabel = entry.amountUsd ? `$${entry.amountUsd} USD` : `${entry.amountSats} sats`;
+    console.log(`[revenue] (fallback log) ${entry.source}: ${amountLabel} — ${entry.description}`);
   }
 }
 

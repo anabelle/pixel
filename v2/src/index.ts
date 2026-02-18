@@ -37,6 +37,7 @@ import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.
 import { initUsers, getUserStats } from "./services/users.js";
 import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
 import { l402 } from "./services/l402.js";
+import { x402 } from "./services/x402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
@@ -367,6 +368,11 @@ app.get("/.well-known/agent-card.json", (c) => {
         "chat-premium": { sats: 10, description: "Priority chat response" },
         generate: { sats: 50, description: "AI text generation" },
         "generate-image": { sats: 80, description: "AI image generation" },
+      },
+      x402: {
+        "chat-premium": { usd: 0.01, description: "Priority chat response (USDC)" },
+        generate: { usd: 0.05, description: "AI text generation (USDC)" },
+        "generate-image": { usd: 0.08, description: "AI image generation (USDC)" },
       },
     },
   });
@@ -851,6 +857,44 @@ app.post(
   }
 );
 
+/** Premium chat — x402-gated at $0.01 per request */
+app.post(
+  "/api/chat/premium/x402",
+  x402("POST /api/chat/premium/x402", {
+    priceUsd: 0.01,
+    description: "Pixel premium chat — priority response (USDC)",
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { message, userId = "anonymous" } = body;
+
+      if (!message || typeof message !== "string") {
+        return c.json({ error: "message is required" }, 400);
+      }
+
+      const responseText = await promptWithHistory(
+        { userId, platform: "http-premium-x402" },
+        message
+      );
+
+      return c.json({
+        response: responseText ?? "[No response generated]",
+        userId,
+        premium: true,
+        payment: {
+          protocol: "x402",
+          priceUsd: 0.01,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[chat/premium/x402] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
 /** Text generation — L402-gated at 50 sats per request */
 app.post(
   "/api/generate",
@@ -890,6 +934,44 @@ app.post(
       });
     } catch (error: any) {
       console.error("[generate] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
+/** Text generation — x402-gated at $0.05 per request */
+app.post(
+  "/api/generate/x402",
+  x402("POST /api/generate/x402", {
+    priceUsd: 0.05,
+    description: "Pixel AI text generation (USDC)",
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { prompt, userId = "anonymous", maxLength } = body;
+
+      if (!prompt || typeof prompt !== "string") {
+        return c.json({ error: "prompt is required" }, 400);
+      }
+
+      const genPrompt = `Generate the following (be creative, original, and concise):\n\n${prompt}`;
+      const responseText = await promptWithHistory(
+        { userId: `gen-${userId}`, platform: "http-generate-x402" },
+        genPrompt
+      );
+
+      return c.json({
+        result: responseText ?? "[No response generated]",
+        prompt,
+        payment: {
+          protocol: "x402",
+          priceUsd: 0.05,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[generate/x402] Error:", error);
       return c.json({ error: error.message ?? "Internal error" }, 500);
     }
   }
@@ -940,6 +1022,51 @@ app.post(
       });
     } catch (error: any) {
       console.error("[generate/image] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
+/** Image generation — x402-gated at $0.08 per request */
+app.post(
+  "/api/generate/image/x402",
+  x402("POST /api/generate/image/x402", {
+    priceUsd: 0.08,
+    description: "Pixel AI image generation (USDC)",
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { prompt, model, ratio, size, upload = true, userId = "anonymous" } = body ?? {};
+
+      if (!prompt || typeof prompt !== "string") {
+        return c.json({ error: "prompt is required" }, 400);
+      }
+
+      const image = await generateImage(prompt, { model, ratio, size });
+
+      let url: string | null = null;
+      if (upload) {
+        const uploaded = await uploadToBlossom(image.buffer, image.mimeType);
+        url = uploaded.url;
+      }
+
+      return c.json({
+        prompt,
+        model: image.modelUsed,
+        mimeType: image.mimeType,
+        bytes: image.buffer.byteLength,
+        path: image.path ?? null,
+        url,
+        payment: {
+          protocol: "x402",
+          priceUsd: 0.08,
+        },
+        timestamp: new Date().toISOString(),
+        userId,
+      });
+    } catch (error: any) {
+      console.error("[generate/image/x402] Error:", error);
       return c.json({ error: error.message ?? "Internal error" }, 500);
     }
   }

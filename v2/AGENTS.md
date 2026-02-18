@@ -22,7 +22,7 @@
 | Twitter/X (@PixelSurvivor) | ✅ Live — cookie auth, mention polling, rate-limited posting, read-only default |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
-| x402 | 📋 Researched, needs @x402/hono + Base wallet |
+| x402 | ✅ Live — /api/chat/premium/x402 ($0.01), /api/generate/x402 ($0.05), /api/generate/image/x402 ($0.08) USDC on Base |
 | Skills system | ✅ 5 skills loaded (revenue, image-gen, resource, self-architecture + 1 auto-generated) |
 | Inner life | ✅ Running (reflect/learn/ideate/evolve on heartbeat cycles) |
 | Outreach | ✅ 4h cycle, LLM-judged owner pings |
@@ -31,7 +31,7 @@
 | Canvas migration | ❌ Deferred (V1 canvas works, earns sats) |
 | Sandbox container | ❌ Not started |
 
-**Next action:** x402 revenue door, GitHub issue tracking
+**Next action:** GitHub issue tracking, end-to-end x402 payment test with funded wallet
 
 ---
 
@@ -68,7 +68,7 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (35 source files, ~17,673 lines)
+### File Inventory (36 source files, ~18,070 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -97,6 +97,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/services/clawstr.ts` | ~168 | Clawstr CLI wrapper — docker-in-docker, config at `/app/data/.clawstr` (mounted from `data/clawstr`), 6h check cycle |
 | `src/services/image-gen.ts` | ~145 | Gemini image generation service |
 | `src/services/revenue.ts` | ~141 | PostgreSQL revenue tracking |
+| `src/services/x402.ts` | ~134 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
 | `src/services/primal.ts` | ~136 | Primal Cache API for trending Nostr posts |
 | `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log |
 | `src/services/audio.ts` | ~132 | Audio transcription via Gemini 2.0 Flash REST API |
@@ -122,6 +123,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `drizzle-orm` + `postgres` | Type-safe ORM |
 | `node-edge-tts` | Free TTS (Microsoft Edge endpoint) |
 | `@sinclair/typebox` | Tool schema definitions |
+| `@coinbase/x402` + `@x402/*` | x402 USDC payment protocol (CDP facilitator, JWT auth, Base mainnet) |
 
 ### AI Providers
 
@@ -151,7 +153,7 @@ Same Pixel, same brain, different payment doors:
 | LNPixels Canvas | Lightning pay-per-pixel | 1-10 sats/pixel | ✅ Live (81K+ sats) |
 | NIP-90 DVM | Lightning invoice | 100 sats/job | ✅ Live |
 | L402 HTTP API | Lightning micropayment | 10-50 sats/call | ✅ Live |
-| x402 HTTP API | USDC on Base | $0.001-0.10/call | 📋 Researched |
+| x402 HTTP API | USDC on Base | $0.01-0.08/call | ✅ Live (CDP facilitator) |
 | Nostr zaps | Tips | Variable | ✅ Organic |
 | WhatsApp/Telegram | Lightning QR / tips | Variable | ⚠️ Needs users |
 
@@ -247,7 +249,7 @@ Authorization config lives in `servers.json`:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~17.7K lines current, 16K soft limit exceeded (Twitter integration).
+10. **Complexity is debt.** ~18K lines current, 16K soft limit exceeded (Twitter integration).
 
 ### Anti-Patterns
 

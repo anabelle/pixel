@@ -25,7 +25,11 @@
     "qrcode-terminal": "^0.12.0",
     "node-html-parser": "^7.0.2",
     "node-edge-tts": "^1.2.10",
-    "@the-convocation/twitter-scraper": "^0.21.1"
+    "@the-convocation/twitter-scraper": "^0.21.1",
+    "@coinbase/x402": "^2.1.0",
+    "@x402/core": "^2.3.0",
+    "@x402/evm": "^2.3.0",
+    "@x402/hono": "^2.3.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
