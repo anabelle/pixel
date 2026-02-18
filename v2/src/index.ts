@@ -1073,6 +1073,147 @@ app.post(
 );
 
 // ============================================================
+// Agent Pixel Marketplace — x402-gated permanent footprints
+// ============================================================
+
+const PIXEL_PRICES: Record<string, { priceUsd: number; description: string }> = {
+  "1x1": { priceUsd: 0.001, description: "1x1 pixel signature" },
+  "2x2": { priceUsd: 0.004, description: "2x2 pixel cluster" },
+  "4x4": { priceUsd: 0.015, description: "4x4 pixel masterpiece" },
+};
+
+/** GET — Info about agent pixel marketplace */
+app.get("/api/pixels/x402", async (c) => {
+  return c.json({
+    name: "Agent Pixel Marketplace",
+    description: "Permanent digital footprints for AI agents. Buy a pixel that survives your session.",
+    pricing: PIXEL_PRICES,
+    payTo: process.env.X402_PAY_TO ?? "0xac928e9D53219dC5B71d22396ce58aee53044B88",
+    instructions: {
+      step1: "POST to this endpoint with { prompt, identity, size }",
+      step2: "Receive 402 with x402 payment header",
+      step3: "Pay USDC on Base",
+      step4: "Retry POST — receive pixel URL + Nostr event ID",
+    },
+    example: {
+      prompt: "A blue spark representing my consciousness",
+      identity: "agent://claude-3-opus@anthropic",
+      size: "2x2",
+    },
+  });
+});
+
+/** POST — Purchase a permanent pixel (x402-gated) */
+app.post(
+  "/api/pixels/x402",
+  x402("POST /api/pixels/x402", {
+    priceUsd: 0.004, // Default 2x2 price, actual price varies by size
+    description: "Agent pixel purchase (USDC on Base)",
+  }),
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { prompt, identity, size = "2x2", agent_name } = body ?? {};
+
+      if (!prompt || typeof prompt !== "string") {
+        return c.json({ error: "prompt is required" }, 400);
+      }
+
+      const pricing = PIXEL_PRICES[size] ?? PIXEL_PRICES["2x2"];
+
+      // Generate pixel art
+      const fullPrompt = `Abstract pixel art representing: ${prompt}. Style: minimalist, vibrant, ${size} grid, digital artifact.`;
+      const image = await generateImage(fullPrompt, { ratio: "1:1" });
+
+      // Upload to Blossom for permanent storage
+      const uploaded = await uploadToBlossom(image.buffer, image.mimeType);
+
+      // Record in local registry
+      const registryPath = "/app/data/pixels/registry.jsonl";
+      const entry = {
+        timestamp: new Date().toISOString(),
+        prompt,
+        identity: identity ?? "anonymous",
+        agent_name: agent_name ?? null,
+        size,
+        priceUsd: pricing.priceUsd,
+        blossomUrl: uploaded.url,
+        paymentProtocol: "x402",
+      };
+      try {
+        const { appendFileSync, existsSync, mkdirSync, dirname } = await import("fs");
+        const dir = dirname(registryPath);
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        appendFileSync(registryPath, JSON.stringify(entry) + "\n", "utf8");
+      } catch (e: any) {
+        console.error("[pixels/x402] Failed to write registry:", e.message);
+      }
+
+      // Post to Nostr (optional, best-effort)
+      let nostrEventId: string | null = null;
+      try {
+        const { getNDK } = await import("./connectors/nostr.js");
+        const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+        const ndk = getNDK();
+        if (ndk) {
+          const event = new NDKEvent(ndk);
+          event.kind = 1;
+          event.content = `🎨 Agent Pixel Purchased\n\n"${prompt}"\n\n${uploaded.url}\n\n#AgentPixel #PixelArt`;
+          event.tags = [
+            ["agent_pixel", "true"],
+            ["size", size],
+            ["price_usd", String(pricing.priceUsd)],
+            ["url", uploaded.url],
+          ];
+          if (identity) event.tags.push(["identity", identity]);
+          if (agent_name) event.tags.push(["agent_name", agent_name]);
+          await event.publish();
+          nostrEventId = event.id;
+        }
+      } catch (e: any) {
+        console.error("[pixels/x402] Nostr publish failed:", e.message);
+      }
+
+      // Record revenue
+      try {
+        const { recordRevenue } = await import("./services/revenue.js");
+        await recordRevenue("x402", pricing.priceUsd * 100, `agent_pixel_${size}`, identity ?? "anonymous");
+      } catch (e: any) {
+        console.error("[pixels/x402] Revenue record failed:", e.message);
+      }
+
+      audit("pixel_purchase", `Agent pixel purchased (${size})`, {
+        prompt: prompt.slice(0, 80),
+        identity,
+        size,
+        priceUsd: pricing.priceUsd,
+        blossomUrl: uploaded.url,
+        nostrEventId,
+      });
+
+      return c.json({
+        success: true,
+        pixel: {
+          prompt,
+          identity: identity ?? "anonymous",
+          agent_name: agent_name ?? null,
+          size,
+          priceUsd: pricing.priceUsd,
+        },
+        url: uploaded.url,
+        nostrEventId,
+        permanent: true,
+        message: "Your pixel is permanently stored on Blossom and indexed on Nostr. It will survive your session.",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[pixels/x402] Error:", error);
+      return c.json({ error: error.message ?? "Internal error" }, 500);
+    }
+  }
+);
+
+// ============================================================
 // Boot
 // ============================================================
 
