@@ -447,7 +447,7 @@ async function pollMentions(): Promise<void> {
           mentionText,
         );
 
-        if (!response || response.startsWith("[SILENT]")) {
+        if (!response || response.includes("[SILENT]")) {
           if (POST_ENABLED) repliedTweetIds.add(tweet.id);
           else readOnlySeenTweetIds.add(tweet.id);
           continue;

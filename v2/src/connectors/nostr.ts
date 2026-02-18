@@ -330,8 +330,8 @@ export async function startNostr(): Promise<void> {
         images.length > 0 ? images : undefined
       );
 
-      if (!response) {
-        markReplied(event.id); // Don't retry empty responses
+      if (!response || response.includes("[SILENT]")) {
+        markReplied(event.id); // Don't retry empty or silent responses
         return;
       }
 
@@ -397,7 +397,7 @@ export async function startNostr(): Promise<void> {
           images.length > 0 ? images : undefined
         );
 
-        if (!response) return;
+        if (!response || response.includes("[SILENT]")) return;
 
         // Encrypt and send DM reply
         const recipient = await ndk.getUser({ pubkey: event.pubkey });
