@@ -57,8 +57,6 @@ fi
 log "UPDATE: rebuilding pixel container"
 docker compose -f v2/docker-compose.yml up -d --build pixel
 
-log "UPDATE: ensuring postgres volume ownership"
-/home/pixel/pixel/v2/scripts/check-postgres-perms.sh || true
-/home/pixel/pixel/v2/scripts/ensure-postgres-perms.sh || true
+# Note: postgres now uses a named volume (not bind mount), so no permission fixes needed
 
 log "OK: update complete"

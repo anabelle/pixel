@@ -28,6 +28,4 @@ if [ "$DISK_USED_PCT" -ge 85 ]; then
   log "docker prune complete"
 fi
 
-# Ensure postgres volume ownership is correct
-/home/pixel/pixel/v2/scripts/check-postgres-perms.sh || true
-/home/pixel/pixel/v2/scripts/ensure-postgres-perms.sh || true
+# Note: postgres now uses a named volume (not bind mount), so no permission fixes needed

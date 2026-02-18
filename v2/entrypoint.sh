@@ -7,13 +7,10 @@ set -e
 
 # Fix ownership on all writable mount points
 # These are bind-mounted from the host and may be root-owned after rebuild
-# IMPORTANT: /app/data/postgres is mounted by the postgres container (UID 70)
-# — we must NOT chown it to bun or postgres breaks
 chown -R bun:bun /app/conversations /app/skills /app/tools /app/external 2>/dev/null || true
 
-# Chown /app/data but skip the postgres subdirectory
-find /app/data -maxdepth 0 -exec chown bun:bun {} \; 2>/dev/null || true
-find /app/data -mindepth 1 -maxdepth 1 ! -name postgres -exec chown -R bun:bun {} \; 2>/dev/null || true
+# Chown /app/data (postgres now uses named volume, so no conflict)
+chown -R bun:bun /app/data 2>/dev/null || true
 
 # Add bun user to docker group (GID from group_add) so it can use docker.sock
 DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "")
