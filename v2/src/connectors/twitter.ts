@@ -92,7 +92,7 @@ let lastPostTime = 0;
 let postsToday = 0;
 let postsDayStart = 0; // timestamp of when we started counting
 let twitterUserId = ""; // numeric ID, resolved at boot via API v2
-let mentionSinceId = ""; // pagination cursor for mention polling
+let mentionSinceId: string | null = null; // pagination cursor for mention polling
 const repliedTweetIds = new Set<string>();
 const readOnlySeenTweetIds = new Set<string>();
 const REPLIED_IDS_PATH = "/app/data/twitter-replied.json";
@@ -128,12 +128,16 @@ async function loadCookies(): Promise<boolean> {
 }
 
 function loadRepliedIds(): void {
-  if (!existsSync(REPLIED_IDS_PATH)) return;
+  if (!existsSync(REPLIED_IDS_PATH)) {
+    mentionSinceId = null;
+    return;
+  }
   try {
     const raw = readFileSync(REPLIED_IDS_PATH, "utf-8");
     const data = JSON.parse(raw);
     if (Array.isArray(data)) {
       data.forEach((id) => repliedTweetIds.add(id));
+      mentionSinceId = null;
       return;
     }
     const replied: string[] = Array.isArray(data?.replied) ? data.replied : [];
@@ -141,7 +145,14 @@ function loadRepliedIds(): void {
     replied.forEach((id) => repliedTweetIds.add(id));
     readOnly.forEach((id) => readOnlySeenTweetIds.add(id));
     if (data?.sinceId) mentionSinceId = data.sinceId;
-  } catch { /* ignore */ }
+    else mentionSinceId = null;
+  } catch {
+    mentionSinceId = null;
+  }
+}
+
+function resetMentionSinceIdIfEmpty(): void {
+  // Deprecated: loadRepliedIds() now handles empty/no-file reset
 }
 
 function saveRepliedIds(): void {
@@ -232,6 +243,11 @@ function canPost(): { ok: boolean; reason?: string } {
   if (postsToday >= MAX_POSTS_PER_DAY) return { ok: false, reason: `Daily limit (${MAX_POSTS_PER_DAY}) reached` };
   if (Date.now() - lastPostTime < MIN_POST_GAP_MS) return { ok: false, reason: "Min 2h gap between posts" };
   return { ok: true };
+}
+
+/** Check if posting is allowed right now (rate limits + enable flag). */
+export function canPostTweet(): { ok: boolean; reason?: string } {
+  return canPost();
 }
 
 // ============================================================
@@ -350,6 +366,7 @@ export function getTwitterStatus(): {
   username: string;
   apiV2: boolean;
   userId: string;
+  mentionSinceId: string | null;
 } {
   return {
     connected: running,
@@ -359,6 +376,7 @@ export function getTwitterStatus(): {
     username: TWITTER_USERNAME,
     apiV2: hasApiV2Creds,
     userId: twitterUserId,
+    mentionSinceId,
   };
 }
 

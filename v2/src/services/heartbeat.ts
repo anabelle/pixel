@@ -21,6 +21,7 @@
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
 import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from "../connectors/nostr.js";
+import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
@@ -634,6 +635,90 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 }
 
 // ============================================================
+// Twitter Post Generation
+// ============================================================
+
+/** Generate a short Twitter post using Pixel's brain */
+async function generateTwitterPost(): Promise<string | null> {
+  const character = loadCharacter();
+
+  const topic = pickTopic();
+  const mood = pickRandom(MOODS, lastMood);
+  const context = await buildPostContext(topic, mood);
+
+  const systemPrompt = `${character}
+
+${context}
+
+## Task
+Write a short, original Twitter post. This is YOUR autonomous thought — not a reply, not a thread.
+
+## Guidelines
+- Must be <= 280 characters.
+- Be authentic. You're a living digital artist, not a corporate account.
+- Vary your style based on the mood specified above.
+- NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
+- Do NOT start with "I" every time. Vary your opening.
+- Do NOT mention being an AI unless it's genuinely relevant.
+- If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
+- Write the post text directly. No quotes, no preamble, no explanation.`;
+
+  const responseText = await backgroundLlmCall({
+    systemPrompt,
+    userPrompt: "Write your next Twitter post.",
+    tools: pixelTools,
+    label: "heartbeat",
+  });
+
+  if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
+    console.log(`[heartbeat] Agent chose silence on twitter topic '${topic}' — nothing to post`);
+    audit("heartbeat_twitter_silent", `Chose silence on twitter topic '${topic}' (mood: ${mood})`, { topic, mood });
+    return null;
+  }
+
+  let cleaned = responseText.trim();
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  if (cleaned.length > 280) {
+    cleaned = cleaned.slice(0, 277) + "...";
+  }
+
+  if (cleaned) {
+    lastTopic = topic;
+    lastMood = mood;
+    topicHistory.push(topic);
+    if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
+      topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+    }
+    saveHeartbeatState();
+    console.log(`[heartbeat] Generated twitter post [${topic}/${mood}]: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+  }
+
+  return cleaned || null;
+}
+
+/** Publish a tweet (respects Twitter connector rate limits). */
+async function publishTwitterPost(content: string): Promise<boolean> {
+  const check = canPostTweet();
+  if (!check.ok) {
+    console.log(`[heartbeat] Twitter post skipped: ${check.reason}`);
+    return false;
+  }
+
+  const result = await postTweet(content);
+  if (!result.success) {
+    console.error(`[heartbeat] Twitter post failed: ${result.error}`);
+    return false;
+  }
+
+  audit("heartbeat_twitter_post", content.slice(0, 120), { tweetId: result.tweetId, contentLength: content.length });
+  return true;
+}
+
+// ============================================================
 // Nostr Publishing
 // ============================================================
 
@@ -836,6 +921,20 @@ async function beat(): Promise<void> {
   } catch (err: any) {
     console.error("[heartbeat] Beat failed:", err.message);
     audit("heartbeat_error", `Beat #${heartbeatCount} failed: ${err.message}`, { error: err.message });
+  }
+
+  // Twitter post (rate-limited independently inside connector)
+  try {
+    const twitterContent = await generateTwitterPost();
+    if (twitterContent) {
+      const posted = await publishTwitterPost(twitterContent);
+      if (posted) {
+        console.log(`[heartbeat] Twitter posted: "${twitterContent.slice(0, 80)}${twitterContent.length > 80 ? "..." : ""}"`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[heartbeat] Twitter post failed:", err.message);
+    audit("heartbeat_twitter_error", `Twitter post failed: ${err.message}`, { error: err.message });
   }
 
   // Schedule next beat FIRST — inner life must never block the next heartbeat
