@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-17 | Session: 48
+> Last updated: 2026-02-18 | Session: 49
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 46 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 46 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -125,7 +125,7 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) first → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
+- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) for priority users → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Public users use OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). promptWithHistory handles fallback transparently.
 - **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)

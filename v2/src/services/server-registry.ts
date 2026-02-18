@@ -153,6 +153,23 @@ export function isElevatedUser(userId: string | undefined): boolean {
 }
 
 /**
+ * Check if a userId should get priority model access.
+ * True for: global admins, users authorized on ANY server, members of authorized groups.
+ */
+export function isPriorityUser(userId: string | undefined): boolean {
+  if (!userId) return false;
+  if (isGlobalAdmin(userId)) return true;
+
+  const config = loadConfig();
+  for (const server of Object.values(config.servers)) {
+    if (server.authorized_users.includes(userId)) return true;
+    if (server.authorized_groups.includes(userId)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Filter tools based on the caller's authorization level.
  *
  * - Global admins & server admins: get ALL tools (public + server_admin)

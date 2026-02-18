@@ -17,7 +17,7 @@ import { getInnerLifeContext } from "./services/inner-life.js";
 import { memorySave } from "./services/memory.js";
 import { getRelevantMemories } from "./services/memory.js";
 import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
-import { getPermittedTools } from "./services/server-registry.js";
+import { getPermittedTools, isPriorityUser } from "./services/server-registry.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
@@ -175,6 +175,11 @@ function getPixelModel() {
   return getModel(provider as any, modelId);
 }
 
+/** Non-priority model — OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). */
+function getNonPriorityModel() {
+  return makeOpenRouterModel("z-ai/glm-4.5-air:free");
+}
+
 /** Background model — GLM-4.7 (reasoning, fast enough for background).
  * backgroundLlmCall() cascade: getSimpleModel → getFallbackModel(1..4) */
 function getSimpleModel() {
@@ -192,14 +197,14 @@ function getDmModel() {
 
 /** Fallback cascade — Google models, ordered by quality (all free tier, cost is $0).
  * Flash 3 first (best quality/$), then 2.5 Pro (strongest reasoner), then 2.5 Flash, then 2.0 Flash. */
-function getFallbackModel(level: number = 1) {
-  switch (level) {
-    case 1: return getModel("google" as any, "gemini-3-flash-preview"); // best quality/price
-    case 2: return getModel("google" as any, "gemini-2.5-pro");         // strongest reasoner
-    case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
-    default: return getModel("google" as any, "gemini-2.0-flash");      // always works
-  }
-}
+  function getFallbackModel(level: number = 1) {
+   switch (level) {
+     case 1: return getModel("google" as any, "gemini-3-flash-preview"); // best quality/price
+     case 2: return getModel("google" as any, "gemini-2.5-pro");         // strongest reasoner
+     case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
+     default: return getModel("google" as any, "gemini-2.0-flash");      // always works
+   }
+ }
 
 /** Vision-capable model — Gemini 2.5 Flash (reasoning-capable, good quality) */
 function getVisionModel() {
@@ -470,10 +475,12 @@ export async function promptWithHistory(
 
   // Select model: vision-capable model when images present, DM override, background, or default
   const hasImages = images && images.length > 0;
+  const isPriority = isPriorityUser(userId);
   const selectedModel = hasImages ? getVisionModel()
     : options.modelOverride === "dm" ? getDmModel()
     : options.modelOverride === "background" ? getSimpleModel()
-    : getPixelModel();
+    : isPriority ? getPixelModel()
+    : getNonPriorityModel();
 
   if (hasImages) {
     console.log(`[agent] Vision request from ${userId} — using Gemini 2.5 Flash for image analysis`);
@@ -481,14 +488,15 @@ export async function promptWithHistory(
 
   // Filter tools based on user authorization level
   const permittedTools = getPermittedTools(userId, pixelTools);
-  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools`);
+  const toolsForModel = permittedTools;
+  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model tier: ${isPriority ? "priority" : "public"}`);
 
   const agent = new Agent({
     initialState: {
       systemPrompt,
       model: selectedModel,
       thinkingLevel: "high",
-      tools: permittedTools,
+      tools: toolsForModel,
     },
     getApiKey: async (provider: string) => resolveApiKey(provider),
     convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
@@ -574,7 +582,7 @@ export async function promptWithHistory(
   // GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
   const MAX_RETRIES = 4;
   let responseText = "";
-  let usedModelId = process.env.AI_MODEL ?? "gemini-3-flash-preview"; // Track which model actually responded
+  let usedModelId = selectedModel?.id ?? (process.env.AI_MODEL ?? "gemini-3-flash-preview"); // Track which model actually responded
 
   // Set tool context so schedule_alarm can auto-fill chatId
   setToolContext({ userId, platform, chatId });
@@ -594,7 +602,7 @@ export async function promptWithHistory(
         systemPrompt,
         model: retryModel,
         thinkingLevel: "high",
-        tools: permittedTools,
+        tools: toolsForModel,
       },
       getApiKey: async (provider: string) => resolveApiKey(provider),
       convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),

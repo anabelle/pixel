@@ -9,6 +9,8 @@
  */
 
 import { audit } from "./audit.js";
+import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { costs } from "../db.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -44,10 +46,20 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   'glm-4.6': { input: 0, output: 0, free: true },
   'glm-4.7': { input: 0, output: 0, free: true },
   'glm-5': { input: 0, output: 0, free: true },
+  // OpenRouter Z.AI free models
+  'z-ai/glm-4.5-air:free': { input: 0, output: 0, free: true },
 };
 
 const DATA_DIR = process.env.DATA_DIR ?? '/app/data';
 const COSTS_FILE = join(DATA_DIR, 'costs.json');
+
+// Optional DB persistence (initialized in index.ts)
+let db: PostgresJsDatabase<typeof schema> | null = null;
+
+export function initCostMonitor(database: PostgresJsDatabase<typeof schema>): void {
+  db = database;
+  console.log("[cost-monitor] DB persistence enabled");
+}
 
 class CostMonitor {
   private entries: CostEntry[] = [];
@@ -113,15 +125,29 @@ class CostMonitor {
                            model.includes('gemini-2.5') ? 'gemini-2.5-flash' :
                            model.includes('gemini-2.0-flash-lite') ? 'gemini-2.0-flash-lite' :
                            model.includes('gemini-2.0') ? 'gemini-2.0-flash' :
-                           model.startsWith('glm-') ? model : model;  // GLM models: pass through unchanged
+                           model.startsWith('glm-') ? model : model;
     
+    const timestamp = new Date().toISOString();
     this.entries.push({
       model: normalizedModel,
       inputTokens,
       outputTokens,
-      timestamp: new Date().toISOString(),
+      timestamp,
       task
     });
+
+    // Persist to DB (non-blocking)
+    if (db) {
+      db.insert(costs).values({
+        model: normalizedModel,
+        inputTokens,
+        outputTokens,
+        task,
+        createdAt: new Date(timestamp),
+      }).catch((err: any) => {
+        console.error("[cost-monitor] DB insert failed:", err?.message ?? err);
+      });
+    }
     
     const now = Date.now();
     

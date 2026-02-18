@@ -41,7 +41,7 @@ import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
 import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
 import { startJobs, enqueueJob, getRecentJobs, stopJobs, markRunningJobsFailed } from "./services/jobs.js";
-import { costMonitor } from "./services/cost-monitor.js";
+import { costMonitor, initCostMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
 import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
@@ -666,6 +666,28 @@ app.get("/api/costs/history", (c) => {
   });
 });
 
+/** Cost history from DB (latest entries) */
+app.get("/api/costs/db", requireOwnerNostrAuth, async (c) => {
+  const limitRaw = parseInt(c.req.query("limit") ?? "200", 10);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 200, 1), 500);
+
+  try {
+    const rows = await db
+      .select()
+      .from(schema.costs)
+      .orderBy(desc(schema.costs.createdAt))
+      .limit(limit);
+
+    return c.json({
+      entries: rows,
+      count: rows.length,
+    });
+  } catch (err: any) {
+    console.error("[costs] Failed to fetch DB costs:", err?.message ?? err);
+    return c.json({ error: "Failed to fetch costs" }, 500);
+  }
+});
+
 /** Skills metadata + list of skill files */
 app.get("/api/skills", (c) => {
   const meta = readJsonFile<Record<string, unknown>>(join(DATA_DIR, "skills.json"));
@@ -981,6 +1003,16 @@ async function boot() {
     `;
     await sql`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE status = 'active'`;
     await sql`
+      CREATE TABLE IF NOT EXISTS costs (
+        id SERIAL PRIMARY KEY,
+        model TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        task TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    await sql`
       CREATE TABLE IF NOT EXISTS user_links (
         id SERIAL PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -1000,6 +1032,9 @@ async function boot() {
 
     // Initialize reminder service
     initReminders(db);
+
+    // Initialize cost monitoring persistence
+    initCostMonitor(db);
 
     // Initialize memory system (pgvector)
     await initMemory(db, sql);

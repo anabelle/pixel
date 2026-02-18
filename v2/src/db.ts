@@ -101,6 +101,16 @@ export const reminders = pgTable("reminders", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/** Cost monitoring entries (per LLM call) */
+export const costs = pgTable("costs", {
+  id: serial("id").primaryKey(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull(),
+  outputTokens: integer("output_tokens").notNull(),
+  task: text("task").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 /**
  * Long-term memories (pgvector-backed)
  * 
