@@ -182,6 +182,13 @@ notify_owner_and_retry() {
 }
 
 select_model() {
+  # First choice: opencode/glm-5-free (promo, maximize free tokens)
+  if model_exists "opencode/glm-5-free"; then
+    echo "opencode/glm-5-free"
+    return 0
+  fi
+
+  # Fallback: Z.AI paid GLM-5
   if probe_zai; then
     echo "zai-coding-plan/glm-5"
     return 0
