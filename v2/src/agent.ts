@@ -23,7 +23,6 @@ import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
-const DM_MODEL_ID = process.env.DM_MODEL || process.env.AI_MODEL || "gemini-3-flash-preview";
 
 // Track message count per user for periodic memory extraction
 const userMessageCounts = new Map<string, number>();
@@ -189,11 +188,6 @@ function getSimpleModel() {
 }
 
 /** Get the DM-specific model — same as conversations */
-function getDmModel() {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "zai") return getPixelModel();
-  return getModel(provider as any, DM_MODEL_ID);
-}
 
 /** Fallback cascade — Google models, ordered by quality (all free tier, cost is $0).
  * Flash 3 first (best quality/$), then 2.5 Pro (strongest reasoner), then 2.5 Flash, then 2.0 Flash. */
@@ -436,8 +430,8 @@ export interface PixelAgentOptions {
   chatId?: string | number;
   /** Human-readable chat name (group title or DM contact name) */
   chatTitle?: string;
-  /** Override model selection: "dm" uses getDmModel(), "background" uses getSimpleModel() */
-  modelOverride?: "dm" | "background" | undefined;
+  /** Override model selection: "background" uses getSimpleModel() */
+  modelOverride?: "background" | undefined;
 }
 
 /**
@@ -477,7 +471,6 @@ export async function promptWithHistory(
   const hasImages = images && images.length > 0;
   const isPriority = isPriorityUser(userId);
   const selectedModel = hasImages ? getVisionModel()
-    : options.modelOverride === "dm" ? getDmModel()
     : options.modelOverride === "background" ? getSimpleModel()
     : isPriority ? getPixelModel()
     : getNonPriorityModel();

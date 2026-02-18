@@ -833,7 +833,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
     ? joined.slice(-CHAT_BATCH_MAX_CHARS)
     : joined;
 
-  // DMs: send the batched messages as a single user message with DM model
+  // DMs: send the batched messages as a single user message
   // Groups: wrap in batch context and allow [SILENT]
   const prompt = isDm
     ? trimmed
@@ -842,7 +842,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
   try {
     await botInstance?.api.sendChatAction(chatId, "typing");
     const response = await promptWithHistory(
-      { userId: entry.conversationId, platform: "telegram", chatId, chatTitle, ...(isDm ? { modelOverride: "dm" as const } : {}) },
+      { userId: entry.conversationId, platform: "telegram", chatId, chatTitle },
       prompt
     );
 
