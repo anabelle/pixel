@@ -353,6 +353,7 @@ async function fireReminderCore(reminder: ReminderRecord, now: Date): Promise<vo
     `[ALARM — internal, do NOT show this tag to the user]`,
     `You previously set a reminder on ${reminder.createdAt.toISOString()}:`,
     `"${reminder.rawMessage}"`,
+    `Scheduled for: ${reminder.dueAt.toISOString()}`,
     `It is now ${now.toISOString()}.`,
     `Deliver this reminder to the user in a friendly, natural way. Be brief (1-3 sentences).`,
     `Do NOT include any metadata, timestamps, or the word "ALARM" in your reply.`,
