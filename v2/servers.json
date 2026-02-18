@@ -54,7 +54,11 @@
       "notify_owner",
       "syntropy_notify",
       "update_missions",
-      "update_monologue"
+      "update_monologue",
+      "post_tweet",
+      "search_tweets",
+      "read_tweet",
+      "twitter_status"
     ],
     "server_admin": [
       "ssh",

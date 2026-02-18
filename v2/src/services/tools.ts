@@ -27,6 +27,7 @@ import { generateImage } from "./image-gen.js";
 import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
+import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -2573,6 +2574,75 @@ const generateImageTool: AgentTool<typeof generateImageSchema> = {
   },
 };
 
+// ─── TWITTER/X TOOLS ──────────────────────────────────────────
+
+const tweetSchema = Type.Object({
+  text: Type.String({ description: "Tweet text (max 280 chars)" }),
+  reply_to_id: Type.Optional(Type.String({ description: "Tweet ID to reply to (optional)" })),
+});
+
+const postTweetTool: AgentTool<typeof tweetSchema> = {
+  name: "post_tweet",
+  label: "Post Tweet",
+  description: "Post a tweet to X/Twitter as @PixelSurvivor. Max 280 chars. Respects rate limits (5/day, 2h gap). Only works when TWITTER_POST_ENABLE=true. Call ONCE per tweet.",
+  parameters: tweetSchema,
+  execute: async (_id, { text, reply_to_id }) => {
+    const result = await postTweet(text, reply_to_id);
+    auditToolUse("post_tweet", { text: text.slice(0, 80), reply_to_id }, result);
+    return { content: [{ type: "text" as const, text: result.success ? `Tweet posted${result.tweetId ? ` (ID: ${result.tweetId})` : ""}` : `Failed: ${result.error}` }] };
+  },
+};
+
+const searchTweetsSchema = Type.Object({
+  query: Type.String({ description: "Search query (hashtags, keywords, @mentions)" }),
+  limit: Type.Optional(Type.Number({ description: "Max results (default 10, max 20)" })),
+});
+
+const searchTweetsTool: AgentTool<typeof searchTweetsSchema> = {
+  name: "search_tweets",
+  label: "Search Tweets",
+  description: "Search X/Twitter for tweets matching a query. Returns recent tweets with text, author, likes, retweets.",
+  parameters: searchTweetsSchema,
+  execute: async (_id, { query, limit }) => {
+    const results = await searchTwitter(query, Math.min(limit ?? 10, 20));
+    auditToolUse("search_tweets", { query, limit }, { count: results.length });
+    if (results.length === 0) return { content: [{ type: "text" as const, text: "No tweets found." }] };
+    const formatted = results.map((t: any) => `@${t.username}: ${t.text} [❤️${t.likes} 🔄${t.retweets}]`).join("\n\n");
+    return { content: [{ type: "text" as const, text: formatted }] };
+  },
+};
+
+const readTweetSchema = Type.Object({
+  tweet_id: Type.String({ description: "The tweet ID to fetch" }),
+});
+
+const readTweetTool: AgentTool<typeof readTweetSchema> = {
+  name: "read_tweet",
+  label: "Read Tweet",
+  description: "Read a specific tweet by its ID. Returns full tweet details.",
+  parameters: readTweetSchema,
+  execute: async (_id, { tweet_id }) => {
+    const tweet = await getTweet(tweet_id);
+    auditToolUse("read_tweet", { tweet_id }, { found: !!tweet });
+    if (!tweet) return { content: [{ type: "text" as const, text: "Tweet not found or error fetching." }] };
+    return { content: [{ type: "text" as const, text: `@${tweet.username} (${tweet.name}): ${tweet.text}\n❤️ ${tweet.likes} 🔄 ${tweet.retweets} 💬 ${tweet.replies}` }] };
+  },
+};
+
+const twitterStatusSchema = Type.Object({});
+
+const twitterStatusTool: AgentTool<typeof twitterStatusSchema> = {
+  name: "twitter_status",
+  label: "Twitter Status",
+  description: "Check Twitter/X connector status: connected, posting enabled, posts today, rate limits.",
+  parameters: twitterStatusSchema,
+  execute: async () => {
+    const status = getTwitterStatus();
+    auditToolUse("twitter_status", {}, status);
+    return { content: [{ type: "text" as const, text: JSON.stringify(status, null, 2) }] };
+  },
+};
+
 // ─── EXPORT ALL TOOLS ─────────────────────────────────────────
 
 export const pixelTools = [
@@ -2625,6 +2695,10 @@ export const pixelTools = [
   sendTelegramMessageTool,
   updateMissionsTool,
   updateMonologueTool,
+  postTweetTool,
+  searchTweetsTool,
+  readTweetTool,
+  twitterStatusTool,
 ];
 
 // Map of tool names to their implementations
@@ -2644,6 +2718,10 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   memory_delete: memoryDeleteTool,
   introspect: introspectTool,
   generate_image: generateImageTool,
+  post_tweet: postTweetTool,
+  search_tweets: searchTweetsTool,
+  read_tweet: readTweetTool,
+  twitter_status: twitterStatusTool,
 };
 
 /**

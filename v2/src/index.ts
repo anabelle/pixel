@@ -30,6 +30,7 @@ import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
 import { startNostr } from "./connectors/nostr.js";
 import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr, sendWhatsAppMessage, sendWhatsAppGroupMessage } from "./connectors/whatsapp.js";
+import { startTwitter, getTwitterStatus, stopTwitter } from "./connectors/twitter.js";
 import { getConversationStats, appendToLog } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
@@ -172,6 +173,7 @@ app.get("/health", (c) => {
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
     whatsapp: getWhatsAppStatus(),
+    twitter: getTwitterStatus(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -1109,6 +1111,12 @@ async function boot() {
     console.error("[boot] WhatsApp failed to start:", err.message);
   }
 
+  try {
+    await startTwitter();
+  } catch (err: any) {
+    console.error("[boot] Twitter failed to start:", err.message);
+  }
+
   console.log("[boot] Pixel V2 is alive.");
   console.log();
   audit("boot", "Pixel V2 is alive — all services started");
@@ -1131,6 +1139,7 @@ function gracefulShutdown(signal: string): void {
   stopHeartbeat();
   stopDigest();
   stopOutreach();
+  stopTwitter();
 
   // Mark any in-flight jobs as failed so they don't get stuck
   try {

@@ -8,7 +8,7 @@
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 46 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 50 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -19,6 +19,7 @@
 | Telegram (@PixelSurvival_bot) | ✅ Live — vision, voice, groups, notify_owner |
 | Nostr (NDK) | ✅ Live — mentions, DMs, DVM, engagement |
 | WhatsApp (Baileys) | ✅ Live — voice, QR pairing at /v2/api/whatsapp/qr |
+| Twitter/X (@PixelSurvivor) | ✅ Live — cookie auth, mention polling, rate-limited posting, read-only default |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
 | x402 | 📋 Researched, needs @x402/hono + Base wallet |
@@ -40,7 +41,7 @@ Pixel is a **living digital artist and AI assistant** across multiple platforms.
 
 **The one-liner:** "The street artist who learned to code. Lives on every platform, creates for anyone who asks, gets paid in whatever currency you've got."
 
-**Pixel IS:** A character with opinions, art, and voice. Reachable on WhatsApp, Telegram, Instagram, Nostr, HTTP. Bitcoin-native (Lightning, USDC, zaps). Self-evolving — writes its own tools and skills.
+**Pixel IS:** A character with opinions, art, and voice. Reachable on WhatsApp, Telegram, Twitter, Instagram, Nostr, HTTP. Bitcoin-native (Lightning, USDC, zaps). Self-evolving — writes its own tools and skills.
 
 **Pixel is NOT:** A generic chatbot. A SaaS product. A framework. An academic exercise.
 
@@ -62,23 +63,24 @@ Pixel is a **living digital artist and AI assistant** across multiple platforms.
 ### Single-Brain, Many-Doors Pattern
 
 ```
-WhatsApp/Telegram/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) → PostgreSQL
+WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-core) → PostgreSQL
 ```
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (33 source files, ~15,953 lines)
+### File Inventory (35 source files, ~17,483 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~1114 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, error handlers |
+| `src/index.ts` | ~1166 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, error handlers |
 | `src/agent.ts` | ~1005 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~392 | NDK mentions + DMs + DVM + shared repliedEventIds |
 | `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
-| `src/services/tools.ts` | ~2583 | 46 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen |
+| `src/connectors/twitter.ts` | ~409 | @the-convocation/twitter-scraper — cookie auth, mention polling w/ jitter, rate-limited posting, disk-persisted rate limits |
+| `src/services/tools.ts` | ~2750 | 50 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |
 | `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
@@ -184,7 +186,7 @@ Authorization config lives in `servers.json`:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 46 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 50 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — separate from inner-life. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.

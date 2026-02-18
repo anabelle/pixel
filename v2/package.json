@@ -24,7 +24,8 @@
     "@hapi/boom": "^10.0.0",
     "qrcode-terminal": "^0.12.0",
     "node-html-parser": "^7.0.2",
-    "node-edge-tts": "^1.2.10"
+    "node-edge-tts": "^1.2.10",
+    "@the-convocation/twitter-scraper": "^0.21.1"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
