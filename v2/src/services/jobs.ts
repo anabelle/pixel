@@ -94,6 +94,16 @@ function logJob(entry: JobEntry): void {
   }
 }
 
+function cleanupCompletedJobs(): void {
+  const jobs = loadJobs();
+  const before = jobs.length;
+  const active = jobs.filter((j) => j.status === "pending" || j.status === "running");
+  if (active.length < before) {
+    saveJobs(active);
+    console.log(`[jobs] Cleaned up ${before - active.length} completed/failed job(s) from queue (history in jobs.jsonl)`);
+  }
+}
+
 function cleanupWhatsAppMedia(): void {
   if (!existsSync(WHATSAPP_MEDIA_DIR)) return;
   const now = Date.now();
@@ -516,6 +526,8 @@ async function runNextJob(): Promise<void> {
     await deliverJobResult(next).catch((err) =>
       console.error("[jobs] deliverJobResult error:", err.message)
     );
+    // Remove completed/failed jobs from queue (history preserved in jobs.jsonl)
+    cleanupCompletedJobs();
   }
 }
 
@@ -527,10 +539,20 @@ function scheduleDailyJob(): void {
 
   const delay = next.getTime() - now.getTime();
   setTimeout(() => {
-    enqueueJob(
-      "Write a concise daily ecosystem report based on local signals. Use read_file to read /app/data/nostr-trends.json and /app/data/clawstr-trends.txt if available. 4-6 bullets max.",
-      ["read_file"]
+    // Dedup: don't queue if a pending daily ecosystem job already exists
+    const jobs = loadJobs();
+    const hasPendingDaily = jobs.some(
+      (j) => j.status === "pending" && j.prompt.includes("daily ecosystem report")
     );
+    if (!hasPendingDaily) {
+      enqueueJob(
+        "Write a concise daily ecosystem report based on local signals. Use read_file to read /app/data/nostr-trends.json and /app/data/clawstr-trends.txt if available. 4-6 bullets max.",
+        ["read_file"],
+        { internal: true, label: "daily_ecosystem_report" }
+      );
+    } else {
+      console.log("[jobs] Skipping daily ecosystem job (already pending)");
+    }
     scheduleDailyJob();
   }, delay);
 }
@@ -620,6 +642,7 @@ export function stopJobs(): void {
 export function startJobs(): void {
   if (jobTimer) return;
   recoverStaleJobs();
+  cleanupCompletedJobs(); // Clean up accumulated completed/failed jobs
   cleanupWhatsAppMedia();
   scheduleDailyJob();
   const tick = async () => {
