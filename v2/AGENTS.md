@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-18 | Session: 50
+> Last updated: 2026-02-18 | Session: 51
 
 ---
 
@@ -219,7 +219,7 @@ Authorization config lives in `servers.json`:
 - **Docker socket via group_add ["988"]** — not running as root.
 - **Alpine needs bash+curl** — added to Dockerfile runtime stage.
 - **NEXT_PUBLIC_* vars are build-time only** — must rebuild to change.
-- **Postgres volume ownership:** `/home/pixel/pixel/v2/data/postgres` must be `999:999`. Auto-checked daily via `v2/scripts/check-postgres-perms.sh` (called by `host-health.sh` and `auto-update.sh`).
+- **Postgres uses named volume:** `postgres-v2-data` (Docker managed). No permission issues — isolated from pixel container. Old bind mount caused recurring UID conflicts when pixel (1000) touched shared `./data/postgres` directory.
 - **V2 DB credentials:** user=`pixel`, password=`pixel`, database=`pixel_v2`, container=`postgres-v2` (port 5433). Access: `docker compose -f v2/docker-compose.yml exec postgres-v2 psql -U pixel -d pixel_v2`.
 - **Alarm platform inference:** `schedule_alarm` auto-remaps `platform: http` → correct platform based on userId prefix (`tg-` → telegram, `wa-` → whatsapp, `nostr-` → nostr). Prevents undeliverable reminders from HTTP dashboard sessions.
 - **Alarm recovery sweep:** `schedulerLoop()` runs a recovery sweep every tick — non-recurring reminders stuck as `active` with `lastFiredAt >= dueAt` are auto-marked `fired`. Prevents orphaned reminders from container crashes between the optimistic lock and status update.
@@ -259,3 +259,21 @@ Authorization config lives in `servers.json`:
 - DON'T rewrite this file from scratch — evolve it
 - DON'T ignore normie interfaces for crypto features
 - DON'T forget Pixel is a CHARACTER, not infrastructure
+
+---
+
+## 10. LESSONS LEARNED
+
+### Session 51: Postgres Permission Recurrence
+
+**Problem:** Postgres DB errors kept recurring despite fix scripts running daily. Error: `could not open file "global/pg_filenode.map": Permission denied`.
+
+**Root cause:** Both pixel and postgres containers shared the same bind-mounted directory `./data/postgres`. When pixel container (UID 1000) touched any file in `/app/data`, it changed ownership from 999:999 (postgres) to 1000:1000.
+
+**Failed attempts:**
+- Permission fix scripts (`check-postgres-perms.sh`, `ensure-postgres-perms.sh`) — worked temporarily but issue recurred
+- Entrypoint logic to skip postgres directory — didn't prevent all touches
+
+**Solution:** Use Docker named volume for postgres instead of bind mount. Named volumes are managed by Docker with proper ownership semantics and are isolated from other containers.
+
+**Lesson:** When two containers need access to the same data, use named volumes or separate bind mounts. Never share a subdirectory of another container's bind mount.
