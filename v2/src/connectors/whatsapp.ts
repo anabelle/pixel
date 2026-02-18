@@ -228,6 +228,103 @@ interface WaBatchEntry {
 }
 const waGroupBuffers = new Map<string, WaBatchEntry>();
 
+// DM batching — same pattern as groups
+interface WaDmBatchEntry {
+  items: string[];
+  timer: ReturnType<typeof setTimeout> | null;
+  jid: string;
+  conversationId: string;
+}
+const waDmBuffers = new Map<string, WaDmBatchEntry>();
+
+/** Queue a DM message for batched processing */
+function queueDmMessage(jid: string, conversationId: string, line: string): void {
+  const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId };
+  entry.items.push(line);
+
+  if (entry.items.length > WA_BATCH_MAX) {
+    entry.items = entry.items.slice(-WA_BATCH_MAX);
+  }
+
+  if (entry.timer) clearTimeout(entry.timer);
+
+  entry.timer = setTimeout(() => {
+    flushDmMessages(jid).catch((err) => {
+      console.error("[whatsapp] DM flush failed:", err.message);
+    });
+  }, WA_BATCH_WINDOW_MS);
+
+  waDmBuffers.set(jid, entry);
+}
+
+/** Flush batched DM messages */
+async function flushDmMessages(jid: string): Promise<void> {
+  const entry = waDmBuffers.get(jid);
+  if (!entry || entry.items.length === 0) return;
+
+  const items = entry.items.slice();
+  entry.items = [];
+  entry.timer = null;
+  waDmBuffers.set(jid, entry);
+
+  const joined = items.join("\n");
+  const trimmed = joined.length > WA_BATCH_MAX_CHARS
+    ? joined.slice(-WA_BATCH_MAX_CHARS)
+    : joined;
+
+  try {
+    await sock?.sendPresenceUpdate("composing", jid);
+
+    const response = await promptWithHistory(
+      { userId: entry.conversationId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+      trimmed
+    );
+
+    await sock?.sendPresenceUpdate("paused", jid);
+
+    if (!response) {
+      const errMsg = "Brain glitch. Try again in a moment.";
+      await sock!.sendMessage(jid, { text: errMsg });
+      return;
+    }
+
+    // Check if user asked for voice reply
+    const wantsVoice = /\b(h[aá]blame|mand[aá]?me? (?:un )?(?:audio|voz|nota de voz)|send (?:me )?(?:a )?(?:voice|audio)|speak|respond(?:e|é)? (?:con|en|with) (?:voz|audio|voice))\b/i.test(trimmed);
+    if (wantsVoice && isSuitableForVoice(response)) {
+      try {
+        const voiceBuffer = await textToSpeech(response);
+        if (voiceBuffer) {
+          await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+          await sock!.sendMessage(jid, { text: response }).catch(() => {});
+          console.log(`[whatsapp] DM voice reply to ${jid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
+          return;
+        }
+      } catch (ttsErr: any) {
+        console.error(`[whatsapp] DM TTS failed, falling back:`, ttsErr.message);
+      }
+    }
+
+    try {
+      await sock!.sendMessage(jid, { text: response });
+    } catch (sendErr: any) {
+      if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
+        console.log(`[whatsapp] DM send failed (${sendErr.message}) — retrying...`);
+        await new Promise(r => setTimeout(r, 2000));
+        await sock!.sendMessage(jid, { text: response });
+      } else {
+        throw sendErr;
+      }
+    }
+
+    console.log(`[whatsapp] DM reply to ${jid} (${response.length} chars, ${items.length} msgs batched)`);
+  } catch (err: any) {
+    console.error(`[whatsapp] DM flush error for ${jid}:`, err.message);
+    try {
+      await sock?.sendPresenceUpdate("paused", jid);
+    } catch {}
+  }
+}
+
 /** Queue a group message for batched processing */
 function queueGroupMessage(groupJid: string, conversationId: string, line: string): void {
   const entry = waGroupBuffers.get(groupJid) ?? { items: [], timer: null, groupJid, conversationId };
@@ -950,66 +1047,9 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         continue;
       }
 
-      // ─── DM MESSAGES: direct prompt (unchanged) ───────────────
+      // ─── DM MESSAGES: batch with 20s window ───────────────────
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
-
-      try {
-        // Show typing indicator
-        await sock!.sendPresenceUpdate("composing", jid);
-
-        const response = await promptWithHistory(
-          { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
-          text
-        );
-
-        // Clear typing indicator
-        await sock!.sendPresenceUpdate("paused", jid);
-
-        if (!response) {
-          const errMsg = "Brain glitch. Try again in a moment.";
-          await sock!.sendMessage(jid, { text: errMsg });
-          appendToLog(userId, text, errMsg, "whatsapp");
-          continue;
-        }
-
-        // Check if user asked for voice reply (text → voice on request)
-        const wantsVoice = /\b(h[aá]blame|mand[aá]?me? (?:un )?(?:audio|voz|nota de voz)|send (?:me )?(?:a )?(?:voice|audio)|speak|respond(?:e|é)? (?:con|en|with) (?:voz|audio|voice))\b/i.test(text);
-        if (wantsVoice && isSuitableForVoice(response)) {
-          try {
-            const voiceBuffer = await textToSpeech(response);
-            if (voiceBuffer) {
-              await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
-              await sock!.sendMessage(jid, { text: response }).catch(() => {});
-              console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
-              continue;
-            }
-          } catch (ttsErr: any) {
-            console.error(`[whatsapp] TTS failed on text request, falling back:`, ttsErr.message);
-          }
-        }
-
-        try {
-          await sock!.sendMessage(jid, { text: response });
-        } catch (sendErr: any) {
-          if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
-            console.log(`[whatsapp] DM send failed (${sendErr.message}) — retrying...`);
-            await new Promise(r => setTimeout(r, 2000));
-            await sock!.sendMessage(jid, { text: response });
-          } else {
-            throw sendErr;
-          }
-        }
-
-        console.log(`[whatsapp] Replied to ${userId} (${response.length} chars)`);
-      } catch (err: any) {
-        console.error(`[whatsapp] Error for ${userId}:`, err.message, err.stack?.split("\n").slice(0, 5).join("\n"));
-        try {
-          await sock!.sendPresenceUpdate("paused", jid);
-          const errMsg = "Something broke. I'll be back in a moment.";
-          await sock!.sendMessage(jid, { text: errMsg });
-          appendToLog(userId, text, errMsg, "whatsapp");
-        } catch {}
-      }
+      queueDmMessage(jid, userId, text);
     }
   });
 

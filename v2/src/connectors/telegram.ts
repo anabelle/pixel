@@ -248,35 +248,12 @@ export async function startTelegram(): Promise<void> {
 
     appendToLog(conversationId, formatted, "", "telegram");
 
-    try {
-      await ctx.replyWithChatAction("typing");
-      const chatTitle = isGroupChat
-        ? (ctx.chat as any).title ?? undefined
-        : senderName;
+    // Batch all messages (DMs and groups) with 20s window
+    const chatTitle = isGroupChat
+      ? (ctx.chat as any).title ?? undefined
+      : senderName;
 
-      const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
-        formatted
-      );
-
-      if (!response || response.includes("[SILENT]")) {
-        return;
-      }
-
-      if (response.length <= 4096) {
-        await ctx.reply(response);
-      } else {
-        const chunks = splitMessage(response, 4096);
-        for (const chunk of chunks) {
-          await ctx.reply(chunk);
-        }
-      }
-    } catch (error: any) {
-      console.error(`[telegram] Text error for ${conversationId}:`, error.message);
-      const errMsg = "Something broke while reading that message.";
-      await ctx.reply(errMsg).catch(() => {});
-      appendToLog(conversationId, formatted, errMsg, "telegram");
-    }
+    queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
   });
 
   // Handle photo messages (image vision)
