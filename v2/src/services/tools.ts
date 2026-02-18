@@ -2512,6 +2512,87 @@ const updateMonologueTool: AgentTool<typeof updateMonologueSchema> = {
   },
 };
 
+// ─── MISSION MANAGEMENT TOOLS ───────────────────────────────────────
+
+const listMissionsSchema = Type.Object({});
+
+const listMissionsTool: AgentTool<typeof listMissionsSchema> = {
+  name: "list_missions",
+  label: "List Active Missions",
+  description: "List all active missions from the global missions file. Use this to see what tasks you're tracking across conversations.",
+  parameters: listMissionsSchema,
+  execute: async () => {
+    const path = "/app/data/active_missions.md";
+    try {
+      const { existsSync, readFileSync } = await import("fs");
+      if (!existsSync(path)) {
+        return { content: [{ type: "text" as const, text: "No active missions file found." }] };
+      }
+      const content = readFileSync(path, "utf8").trim();
+      if (!content || content.length < 50) {
+        return { content: [{ type: "text" as const, text: "No active missions." }] };
+      }
+      return { content: [{ type: "text" as const, text: content }] };
+    } catch (err: any) {
+      return { content: [{ type: "text" as const, text: `Failed to read missions: ${err.message}` }] };
+    }
+  },
+};
+
+const completeMissionSchema = Type.Object({
+  mission_text: Type.String({ description: "Text snippet identifying the mission to complete (will be moved to completed section)" }),
+  notes: Type.Optional(Type.String({ description: "Optional notes about completion" })),
+});
+
+const completeMissionTool: AgentTool<typeof completeMissionSchema> = {
+  name: "complete_mission",
+  label: "Complete Mission",
+  description: "Mark a mission as completed. Moves it from active to completed section in the missions file.",
+  parameters: completeMissionSchema,
+  execute: async (_id, { mission_text, notes }) => {
+    const path = "/app/data/active_missions.md";
+    try {
+      const { existsSync, readFileSync, writeFileSync } = await import("fs");
+      if (!existsSync(path)) {
+        return { content: [{ type: "text" as const, text: "No active missions file found." }] };
+      }
+      
+      let content = readFileSync(path, "utf8");
+      const lines = content.split("\n");
+      const missionIdx = lines.findIndex(l => l.toLowerCase().includes(mission_text.toLowerCase()));
+      
+      if (missionIdx === -1) {
+        return { content: [{ type: "text" as const, text: `Mission not found: "${mission_text}"` }] };
+      }
+      
+      const missionLine = lines[missionIdx];
+      
+      // Remove the mission from its current position
+      lines.splice(missionIdx, 1);
+      
+      // Find or create completed section
+      let completedIdx = lines.findIndex(l => l.includes("## Completed"));
+      if (completedIdx === -1) {
+        // Add completed section at the end
+        lines.push("\n## Completed");
+        completedIdx = lines.length - 1;
+      }
+      
+      // Add completion note and move mission
+      const completionNote = notes ? ` [COMPLETED: ${notes}]` : " [COMPLETED]";
+      const completedMission = missionLine.replace(/\[.*?\]$/, "").trim() + completionNote;
+      lines.splice(completedIdx + 1, 0, completedMission);
+      
+      writeFileSync(path, lines.join("\n"), "utf8");
+      auditToolUse("complete_mission", { mission_text, notes }, { success: true });
+      return { content: [{ type: "text" as const, text: `Mission completed: ${missionLine}\n${notes ? `Notes: ${notes}` : ""}` }] };
+    } catch (err: any) {
+      auditToolUse("complete_mission", { mission_text, notes }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to complete mission: ${err.message}` }] };
+    }
+  },
+};
+
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
   label: "Generate Image",
@@ -2695,6 +2776,8 @@ export const pixelTools = [
   sendTelegramMessageTool,
   updateMissionsTool,
   updateMonologueTool,
+  listMissionsTool,
+  completeMissionTool,
   postTweetTool,
   searchTweetsTool,
   readTweetTool,
@@ -2718,6 +2801,10 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   memory_delete: memoryDeleteTool,
   introspect: introspectTool,
   generate_image: generateImageTool,
+  update_missions: updateMissionsTool,
+  update_monologue: updateMonologueTool,
+  list_missions: listMissionsTool,
+  complete_mission: completeMissionTool,
   post_tweet: postTweetTool,
   search_tweets: searchTweetsTool,
   read_tweet: readTweetTool,

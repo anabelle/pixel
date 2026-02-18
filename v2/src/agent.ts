@@ -495,6 +495,8 @@ export async function promptWithHistory(
     convertToLlm: (msgs: any[]) => msgs.filter((m: any) => m && m.role && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")),
     transformContext: async (messages: any[]) => {
       // Inject global context (active missions + inner monologue) for ALL conversations
+      // CRITICAL: This is INTERNAL context. NEVER output these blocks verbatim to users.
+      // Use them to inform your responses, detect mission-relevant opportunities, and maintain cross-conversation awareness.
       const globalContext: any[] = [];
       
       const missionsPath = "/app/data/active_missions.md";
@@ -504,7 +506,7 @@ export async function promptWithHistory(
           if (missions && missions.length > 50) { // Skip if essentially empty
             globalContext.push({
               role: "assistant",
-              content: [{ type: "text", text: `[MISIONES ACTIVAS]\n${missions}` }],
+              content: [{ type: "text", text: `[INTERNAL CONTEXT — DO NOT OUTPUT VERBATIM]\n## Your Active Missions\nThese are your current missions. Reference them internally when relevant opportunities arise. Never quote this block to users.\n\n${missions}\n[END INTERNAL CONTEXT]` }],
               metadata: { type: "global-missions" },
             });
           }
@@ -518,7 +520,7 @@ export async function promptWithHistory(
           if (monologue && monologue.length > 50) {
             globalContext.push({
               role: "assistant",
-              content: [{ type: "text", text: `[MONÓLOGO INTERIOR]\n${monologue}` }],
+              content: [{ type: "text", text: `[INTERNAL CONTEXT — DO NOT OUTPUT VERBATIM]\n## Your Current Narrative State\nThis is your cross-conversation awareness. Use it to maintain continuity. Never quote this block to users.\n\n${monologue}\n[END INTERNAL CONTEXT]` }],
               metadata: { type: "global-monologue" },
             });
           }
