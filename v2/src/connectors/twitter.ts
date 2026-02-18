@@ -1,18 +1,21 @@
 /**
- * Twitter/X Connector — @the-convocation/twitter-scraper wired to Pi agent-core
+ * Twitter/X Connector — hybrid scraper + API v2
  *
- * Pattern: cookie-cached Scraper → poll mentions → reply via promptWithHistory
- * Exports: startTwitter(), postTweet(), searchTwitter(), getTwitterStatus()
+ * Scraper: cookie-cached login, getTweet(), sendTweet() (GraphQL endpoints still work)
+ * API v2: OAuth 1.0a signed — mentions polling, search (scraper search returns 404 since Feb 2026)
+ *
+ * Pattern: receive mention → identify user → load context → prompt agent → reply
+ * Exports: startTwitter(), postTweet(), searchTwitter(), getTweet(), getTwitterStatus()
  *
  * Safety: TWITTER_POST_ENABLE=false for read-only mode (default).
  * Rate limits: 5 posts/day, 2h minimum gap between posts.
- * Cookies cached at /app/data/twitter-cookies.json to avoid repeated logins.
  */
 
-import { Scraper, SearchMode } from "@the-convocation/twitter-scraper";
+import { Scraper } from "@the-convocation/twitter-scraper";
 import { promptWithHistory } from "../agent.js";
 import { audit } from "../services/audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import crypto from "crypto";
 
 // ============================================================
 // Configuration
@@ -29,6 +32,55 @@ const MENTION_POLL_MS = 15 * 60 * 1000; // 15 minutes
 const MENTION_POLL_STARTUP_MS = 5 * 60 * 1000; // 5 min after boot
 const MAX_MENTION_REPLIES_PER_CYCLE = 3;
 
+// Twitter API v2 credentials (OAuth 1.0a)
+const API_KEY = process.env.TWITTER_API_KEY ?? "";
+const API_SECRET = process.env.TWITTER_API_SECRET_KEY ?? "";
+const ACCESS_TOKEN = process.env.TWITTER_ACCESS_TOKEN ?? "";
+const ACCESS_SECRET = process.env.TWITTER_ACCESS_TOKEN_SECRET ?? "";
+const hasApiV2Creds = !!(API_KEY && API_SECRET && ACCESS_TOKEN && ACCESS_SECRET);
+
+// ============================================================
+// OAuth 1.0a signing (for Twitter API v2)
+// ============================================================
+
+function percentEncode(str: string): string {
+  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+function generateOAuthHeader(method: string, url: string, params: Record<string, string> = {}): string {
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: API_KEY,
+    oauth_nonce: crypto.randomBytes(16).toString("hex"),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: ACCESS_TOKEN,
+    oauth_version: "1.0",
+  };
+  const allParams = { ...params, ...oauthParams };
+  const sortedKeys = Object.keys(allParams).sort();
+  const paramString = sortedKeys.map((k) => `${percentEncode(k)}=${percentEncode(allParams[k])}`).join("&");
+  const baseString = `${method.toUpperCase()}&${percentEncode(url)}&${percentEncode(paramString)}`;
+  const signingKey = `${percentEncode(API_SECRET)}&${percentEncode(ACCESS_SECRET)}`;
+  const signature = crypto.createHmac("sha1", signingKey).update(baseString).digest("base64");
+  oauthParams["oauth_signature"] = signature;
+  const parts = Object.keys(oauthParams).sort().map((k) => `${percentEncode(k)}="${percentEncode(oauthParams[k])}"`);
+  return `OAuth ${parts.join(", ")}`;
+}
+
+/** Make an authenticated Twitter API v2 request */
+async function twitterApiV2(method: string, url: string, params: Record<string, string> = {}): Promise<{ ok: boolean; status: number; data: any; rateLimitRemaining?: number; rateLimitReset?: number }> {
+  const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  const fullUrl = qs ? `${url}?${qs}` : url;
+  const authHeader = generateOAuthHeader(method, url, params);
+  const resp = await fetch(fullUrl, { headers: { Authorization: authHeader } });
+  const body = await resp.text();
+  let data: any;
+  try { data = JSON.parse(body); } catch { data = body; }
+  const rateLimitRemaining = parseInt(resp.headers.get("x-rate-limit-remaining") ?? "", 10) || undefined;
+  const rateLimitReset = parseInt(resp.headers.get("x-rate-limit-reset") ?? "", 10) || undefined;
+  return { ok: resp.ok, status: resp.status, data, rateLimitRemaining, rateLimitReset };
+}
+
 // ============================================================
 // State
 // ============================================================
@@ -39,6 +91,8 @@ let mentionTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPostTime = 0;
 let postsToday = 0;
 let postsDayStart = 0; // timestamp of when we started counting
+let twitterUserId = ""; // numeric ID, resolved at boot via API v2
+let mentionSinceId = ""; // pagination cursor for mention polling
 const repliedTweetIds = new Set<string>();
 const readOnlySeenTweetIds = new Set<string>();
 const REPLIED_IDS_PATH = "/app/data/twitter-replied.json";
@@ -86,6 +140,7 @@ function loadRepliedIds(): void {
     const readOnly: string[] = Array.isArray(data?.readOnly) ? data.readOnly : [];
     replied.forEach((id) => repliedTweetIds.add(id));
     readOnly.forEach((id) => readOnlySeenTweetIds.add(id));
+    if (data?.sinceId) mentionSinceId = data.sinceId;
   } catch { /* ignore */ }
 }
 
@@ -94,7 +149,7 @@ function saveRepliedIds(): void {
     // Keep only last 500 in each bucket
     const replied = [...repliedTweetIds].slice(-500);
     const readOnly = [...readOnlySeenTweetIds].slice(-500);
-    writeFileSync(REPLIED_IDS_PATH, JSON.stringify({ replied, readOnly }));
+    writeFileSync(REPLIED_IDS_PATH, JSON.stringify({ replied, readOnly, sinceId: mentionSinceId }));
   } catch { /* ignore */ }
 }
 
@@ -183,23 +238,35 @@ function canPost(): { ok: boolean; reason?: string } {
 // Public API
 // ============================================================
 
-/** Post a tweet. Respects rate limits and read-only mode. */
+/** Post a tweet via API v2. Respects rate limits and read-only mode. */
 export async function postTweet(text: string, replyToId?: string): Promise<{ success: boolean; error?: string; tweetId?: string }> {
   const check = canPost();
   if (!check.ok) return { success: false, error: check.reason };
-  if (!scraper || !(await scraper.isLoggedIn())) {
-    if (!(await ensureLoggedIn())) return { success: false, error: "Not logged in" };
-  }
+  if (!hasApiV2Creds) return { success: false, error: "No API v2 credentials" };
 
   try {
-    const response = await scraper!.sendTweet(text, replyToId);
-    // sendTweet returns a Response object in newer versions
-    const json = await response.json() as any;
-    const tweetId = json?.data?.create_tweet?.tweet_results?.result?.rest_id;
+    const url = "https://api.twitter.com/2/tweets";
+    const body: any = { text };
+    if (replyToId) body.reply = { in_reply_to_tweet_id: replyToId };
+
+    // OAuth 1.0a for POST: sign only OAuth params, not JSON body
+    const authHeader = generateOAuthHeader("POST", url);
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json() as any;
+    if (!resp.ok) {
+      const errMsg = json?.detail || json?.title || JSON.stringify(json).slice(0, 200);
+      audit("twitter_error", `Post failed (${resp.status}): ${errMsg}`);
+      return { success: false, error: errMsg };
+    }
+
+    const tweetId = json?.data?.id;
     lastPostTime = Date.now();
     postsToday++;
     saveRateLimitState();
-    await saveCookies();
     audit("twitter_post", `Posted tweet${replyToId ? ` (reply to ${replyToId})` : ""}: ${text.slice(0, 80)}...`);
     return { success: true, tweetId };
   } catch (err: any) {
@@ -208,27 +275,40 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
   }
 }
 
-/** Search tweets. Read-only, no auth required but better results when logged in. */
+/** Search tweets via API v2 (falls back to scraper if no API creds). */
 export async function searchTwitter(query: string, limit = 10): Promise<any[]> {
-  if (!scraper || !(await scraper.isLoggedIn())) {
-    if (!(await ensureLoggedIn())) return [];
-  }
+  if (!hasApiV2Creds) return [];
   try {
-    const results: any[] = [];
-    const tweets = scraper!.searchTweets(query, limit, SearchMode.Latest);
-    for await (const tweet of tweets) {
-      results.push({
-        id: tweet.id,
-        text: tweet.text,
-        username: tweet.username,
-        name: tweet.name,
-        likes: tweet.likes,
-        retweets: tweet.retweets,
-        timeParsed: tweet.timeParsed,
-      });
-      if (results.length >= limit) break;
+    const params: Record<string, string> = {
+      query,
+      max_results: String(Math.min(limit, 100)),
+      "tweet.fields": "author_id,created_at,public_metrics,conversation_id",
+      "expansions": "author_id",
+      "user.fields": "username,name",
+    };
+    const { ok, status, data, rateLimitReset } = await twitterApiV2("GET", "https://api.twitter.com/2/tweets/search/recent", params);
+    if (!ok) {
+      if (status === 429 && rateLimitReset) {
+        const waitSec = Math.max(0, rateLimitReset - Math.floor(Date.now() / 1000));
+        console.error(`[twitter] Search rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
+      } else {
+        console.error(`[twitter] API v2 search failed (${status}):`, JSON.stringify(data).slice(0, 200));
+      }
+      return [];
     }
-    return results;
+    const users = new Map<string, { username: string; name: string }>();
+    if (data.includes?.users) {
+      for (const u of data.includes.users) users.set(u.id, { username: u.username, name: u.name });
+    }
+    return (data.data ?? []).map((t: any) => ({
+      id: t.id,
+      text: t.text,
+      username: users.get(t.author_id)?.username ?? t.author_id,
+      name: users.get(t.author_id)?.name ?? "",
+      likes: t.public_metrics?.like_count ?? 0,
+      retweets: t.public_metrics?.retweet_count ?? 0,
+      timeParsed: t.created_at ? new Date(t.created_at) : null,
+    }));
   } catch (err: any) {
     console.error("[twitter] Search failed:", err.message);
     return [];
@@ -268,74 +348,109 @@ export function getTwitterStatus(): {
   postsToday: number;
   maxPostsPerDay: number;
   username: string;
+  apiV2: boolean;
+  userId: string;
 } {
   return {
-    connected: scraper !== null && running,
+    connected: running,
     postEnabled: POST_ENABLED,
     postsToday,
     maxPostsPerDay: MAX_POSTS_PER_DAY,
     username: TWITTER_USERNAME,
+    apiV2: hasApiV2Creds,
+    userId: twitterUserId,
   };
 }
 
 // ============================================================
-// Mention polling (read-only engagement)
+// Mention polling via API v2
 // ============================================================
 
 async function pollMentions(): Promise<void> {
-  if (!scraper || !(await scraper.isLoggedIn())) return;
+  if (!hasApiV2Creds || !twitterUserId) return;
 
   try {
-    const query = `@${TWITTER_USERNAME}`;
-    const results: any[] = [];
-    const tweets = scraper.searchTweets(query, 20, SearchMode.Latest);
+    const params: Record<string, string> = {
+      max_results: "20",
+      "tweet.fields": "author_id,created_at,conversation_id,in_reply_to_user_id",
+      "expansions": "author_id",
+      "user.fields": "username,name",
+    };
+    if (mentionSinceId) params.since_id = mentionSinceId;
 
-    for await (const tweet of tweets) {
-      if (!tweet.id || repliedTweetIds.has(tweet.id) || readOnlySeenTweetIds.has(tweet.id)) continue;
-      // Skip our own tweets
-      if (tweet.username?.toLowerCase() === TWITTER_USERNAME.toLowerCase()) continue;
-      results.push(tweet);
-      if (results.length >= MAX_MENTION_REPLIES_PER_CYCLE) break;
+    const { ok, status, data, rateLimitReset } = await twitterApiV2("GET", `https://api.twitter.com/2/users/${twitterUserId}/mentions`, params);
+    if (!ok) {
+      if (status === 429 && rateLimitReset) {
+        const waitSec = Math.max(0, rateLimitReset - Math.floor(Date.now() / 1000));
+        console.log(`[twitter] Mention poll rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
+      } else {
+        console.error(`[twitter] Mention poll API error (${status}):`, JSON.stringify(data).slice(0, 200));
+      }
+      return;
     }
 
-    if (results.length === 0) return;
-    console.log(`[twitter] Found ${results.length} new mention(s)`);
+    const tweets = data.data ?? [];
+    if (tweets.length === 0) return;
 
-    for (const tweet of results) {
+    // Build user lookup from expansions
+    const users = new Map<string, { username: string; name: string }>();
+    if (data.includes?.users) {
+      for (const u of data.includes.users) users.set(u.id, { username: u.username, name: u.name });
+    }
+
+    // Update sinceId to newest tweet (first in list — API returns newest first)
+    const newestId = data.meta?.newest_id;
+    if (newestId) {
+      mentionSinceId = newestId;
+      saveRepliedIds(); // persist sinceId immediately
+    }
+
+    // Filter and process
+    const toProcess: Array<{ id: string; text: string; username: string; authorId: string }> = [];
+    for (const t of tweets) {
+      if (repliedTweetIds.has(t.id) || readOnlySeenTweetIds.has(t.id)) continue;
+      const user = users.get(t.author_id);
+      const username = user?.username ?? t.author_id;
+      if (username.toLowerCase() === TWITTER_USERNAME.toLowerCase()) continue;
+      toProcess.push({ id: t.id, text: t.text, username, authorId: t.author_id });
+      if (toProcess.length >= MAX_MENTION_REPLIES_PER_CYCLE) break;
+    }
+
+    if (toProcess.length === 0) return;
+    console.log(`[twitter] Found ${toProcess.length} new mention(s) via API v2`);
+
+    for (const tweet of toProcess) {
       try {
         const userId = `twitter-${tweet.username}`;
         const mentionText = `[Twitter mention from @${tweet.username}]: ${tweet.text}`;
 
-        const response = await promptWithHistory({
-          userId,
-          platform: "twitter",
-          message: mentionText,
-        });
+        const response = await promptWithHistory(
+          { userId, platform: "twitter" },
+          mentionText,
+        );
 
         if (!response || response.startsWith("[SILENT]")) {
-          // Mark as seen even in read-only to avoid repeated processing
-          if (POST_ENABLED) repliedTweetIds.add(tweet.id!);
-          else readOnlySeenTweetIds.add(tweet.id!);
+          if (POST_ENABLED) repliedTweetIds.add(tweet.id);
+          else readOnlySeenTweetIds.add(tweet.id);
           continue;
         }
 
-        // Truncate to 280 chars for Twitter
         const replyText = response.length > 280 ? response.slice(0, 277) + "..." : response;
 
-        if (POST_ENABLED && tweet.id) {
+        if (POST_ENABLED) {
           const result = await postTweet(replyText, tweet.id);
           if (result.success) {
             console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
-            repliedTweetIds.add(tweet.id!);
+            repliedTweetIds.add(tweet.id);
           } else {
             console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
           }
         } else {
           console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
-          if (tweet.id) readOnlySeenTweetIds.add(tweet.id);
+          readOnlySeenTweetIds.add(tweet.id);
         }
       } catch (err: any) {
-        console.error(`[twitter] Error replying to mention:`, err.message);
+        console.error(`[twitter] Error processing mention ${tweet.id}:`, err.message, err.stack?.split("\n").slice(0, 3).join(" | "));
       }
     }
 
@@ -375,26 +490,61 @@ export async function startTwitter(): Promise<void> {
     return;
   }
 
+  // Scraper auth (for getTweet, sendTweet — GraphQL endpoints still work)
   const loggedIn = await ensureLoggedIn();
   if (!loggedIn) {
-    console.log("[twitter] Failed to authenticate — Twitter disabled");
-    return;
+    console.log("[twitter] Scraper auth failed — posting disabled, API v2 may still work");
+  }
+
+  // Resolve numeric user ID via API v2 for mention polling (cached to disk)
+  const USER_ID_PATH = "/app/data/twitter-userid.json";
+  if (hasApiV2Creds) {
+    // Try disk cache first
+    try {
+      if (existsSync(USER_ID_PATH)) {
+        const cached = JSON.parse(readFileSync(USER_ID_PATH, "utf-8"));
+        if (cached.username === TWITTER_USERNAME && cached.id) {
+          twitterUserId = cached.id;
+          console.log(`[twitter] User ID from cache: ${twitterUserId}`);
+        }
+      }
+    } catch { /* ignore */ }
+
+    // If not cached, resolve via API
+    if (!twitterUserId) {
+      try {
+        const { ok, data } = await twitterApiV2("GET", `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`);
+        if (ok && data?.data?.id) {
+          twitterUserId = data.data.id;
+          writeFileSync(USER_ID_PATH, JSON.stringify({ username: TWITTER_USERNAME, id: twitterUserId }));
+          console.log(`[twitter] Resolved user ID: ${twitterUserId}`);
+        } else {
+          console.error("[twitter] Failed to resolve user ID:", JSON.stringify(data).slice(0, 200));
+        }
+      } catch (err: any) {
+        console.error("[twitter] User ID lookup failed:", err.message);
+      }
+    }
+  } else {
+    console.log("[twitter] No API v2 credentials — mention polling & search disabled");
   }
 
   running = true;
   loadRepliedIds();
   loadRateLimitState();
-  // Initialize postsDayStart only if not loaded from disk
   if (!postsDayStart) postsDayStart = Date.now();
 
   console.log(`[twitter] Connected as @${TWITTER_USERNAME}`);
   console.log(`[twitter] Posting: ${POST_ENABLED ? "ENABLED" : "READ-ONLY"}`);
-  console.log(`[twitter] Mention poll every ${MENTION_POLL_MS / 60_000} min`);
+  console.log(`[twitter] API v2: ${hasApiV2Creds ? "available" : "not configured"} | User ID: ${twitterUserId || "unknown"}`);
+  console.log(`[twitter] Mention poll every ${MENTION_POLL_MS / 60_000} min${mentionSinceId ? ` (since_id: ${mentionSinceId})` : ""}`);
 
   // Start mention polling with startup delay
-  mentionTimer = setTimeout(mentionLoop, MENTION_POLL_STARTUP_MS);
+  if (twitterUserId) {
+    mentionTimer = setTimeout(mentionLoop, MENTION_POLL_STARTUP_MS);
+  }
 
-  audit("twitter_boot", `Twitter connected as @${TWITTER_USERNAME} (posting: ${POST_ENABLED})`);
+  audit("twitter_boot", `Twitter connected as @${TWITTER_USERNAME} (posting: ${POST_ENABLED}, api_v2: ${hasApiV2Creds})`);
 }
 
 export function stopTwitter(): void {

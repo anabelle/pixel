@@ -17,6 +17,7 @@ import { promptWithHistory } from "../agent.js";
 import { extractImageUrls, fetchImages } from "../services/vision.js";
 import { getUnsafeReason } from "../services/content-filter.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 
 // Throttle: don't reply to the same pubkey more than once per interval
 const replyThrottle = new Map<string, number>();
@@ -29,6 +30,32 @@ let sharedPubkey: string | null = null;
 // Shared set of event IDs we've already replied to — prevents double-replies
 // between the real-time mention subscription and the heartbeat engagement loop
 const repliedEventIds = new Set<string>();
+const REPLIED_IDS_PATH = "/app/data/nostr-replied.json";
+
+/** Load replied event IDs from disk (survives container restarts) */
+function loadRepliedIds(): void {
+  if (!existsSync(REPLIED_IDS_PATH)) return;
+  try {
+    const ids: string[] = JSON.parse(readFileSync(REPLIED_IDS_PATH, "utf-8"));
+    if (Array.isArray(ids)) ids.forEach((id) => repliedEventIds.add(id));
+    console.log(`[nostr] Loaded ${repliedEventIds.size} replied event IDs from disk`);
+  } catch { /* ignore */ }
+}
+
+/** Save replied event IDs to disk (keep last 1000) */
+export function saveRepliedIds(): void {
+  try {
+    const ids = [...repliedEventIds].slice(-1000);
+    writeFileSync(REPLIED_IDS_PATH, JSON.stringify(ids));
+  } catch { /* ignore */ }
+}
+
+// Debounced save — don't write to disk on every single markReplied call
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedSaveRepliedIds(): void {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveTimer = null; saveRepliedIds(); }, 10_000);
+}
 
 // ============================================================
 // Mute List (NIP-51 kind 10000)
@@ -130,12 +157,13 @@ export function hasRepliedTo(eventId: string): boolean {
 /** Mark an event as replied to (called by heartbeat engagement loop) */
 export function markReplied(eventId: string): void {
   repliedEventIds.add(eventId);
-  // Prune old entries (keep last 500)
-  if (repliedEventIds.size > 500) {
+  // Prune old entries (keep last 1000)
+  if (repliedEventIds.size > 1000) {
     const arr = [...repliedEventIds];
     repliedEventIds.clear();
-    for (const id of arr.slice(-500)) repliedEventIds.add(id);
+    for (const id of arr.slice(-1000)) repliedEventIds.add(id);
   }
+  debouncedSaveRepliedIds();
 }
 
 /**
@@ -212,6 +240,9 @@ function isThrottled(pubkey: string): boolean {
 
 /** Start the Nostr connector */
 export async function startNostr(): Promise<void> {
+  // Load previously replied event IDs from disk (survives container restarts)
+  loadRepliedIds();
+
   const nsec = process.env.NOSTR_PRIVATE_KEY;
   if (!nsec) {
     console.log("[nostr] No NOSTR_PRIVATE_KEY set, skipping");
