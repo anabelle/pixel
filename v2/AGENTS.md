@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-18 | Session: 49
+> Last updated: 2026-02-18 | Session: 50
 
 ---
 
@@ -22,7 +22,7 @@
 | Twitter/X (@PixelSurvivor) | ✅ Live — cookie auth, mention polling, rate-limited posting, read-only default |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
-| x402 | ✅ Live — /api/chat/premium/x402 ($0.01), /api/generate/x402 ($0.05), /api/generate/image/x402 ($0.08) USDC on Base |
+| x402 | ✅ Live + Tested — /api/chat/premium/x402 ($0.01), /api/generate/x402 ($0.05), /api/generate/image/x402 ($0.08) USDC on Base. E2E verified 2026-02-18. |
 | Skills system | ✅ 5 skills loaded (revenue, image-gen, resource, self-architecture + 1 auto-generated) |
 | Inner life | ✅ Running (reflect/learn/ideate/evolve on heartbeat cycles) |
 | Outreach | ✅ 4h cycle, LLM-judged owner pings |
@@ -31,7 +31,7 @@
 | Canvas migration | ❌ Deferred (V1 canvas works, earns sats) |
 | Sandbox container | ❌ Not started |
 
-**Next action:** GitHub issue tracking, end-to-end x402 payment test with funded wallet
+**Next action:** GitHub issue tracking, Instagram integration
 
 ---
 

@@ -3,6 +3,9 @@
  *
  * Hono integration for the x402 payment protocol.
  * Uses @coinbase/x402 for CDP facilitator authentication (JWT-based).
+ *
+ * NOTE: CDP facilitator rejects self-payments (payer === payTo) with invalid_payload.
+ * Clients must use a different wallet than the payTo address. Tested 2026-02-18.
  */
 
 import type { MiddlewareHandler } from "hono";
