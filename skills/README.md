@@ -18,11 +18,7 @@ Custom skills for Pixel agent, installed via [skills.sh](https://skills.sh).
 - **executing-plans** — Breaking down plans into actionable steps
 - **systematic-debugging** — Methodical troubleshooting approach
 - **writing-plans** — Creating structured, actionable plans
-
-### Infrastructure & DevOps
-- **self-service-infrastructure** — IaC patterns, Terraform/Pulumi modules, self-service portals
-- **monorepo-workflows** — CI/CD, versioning, publishing for monorepo environments
-- **backup-disaster-recovery** — DR plans, restore procedures, data protection strategies
+- **git-safety** — Automatic validation before git push/merge/force operations
 
 ### Agent Utilities
 - **find-skills** — Discover and install new skills from skills.sh
