@@ -18,3 +18,14 @@ Guides natural promotion of revenue-generating services during conversations and
 - For DVM jobs: mention when Nostr users discuss AI services or data processing
 - Never hard-sell. The best promotion is demonstrating quality, then mentioning the door is open
 - Track what actually converts — if someone clicks through, remember that in their memory
+
+## Related Skill Graph
+
+For sales-specific claims and outreach mechanics, traverse the **sales domain** at `skills/domains/sales/`:
+
+- **Opening pitches:** [[interés-del-cliente-requiere-pitch-completo-inmediatamente]] — when interest appears, deliver full pitch
+- **Closing loops:** [[value-to-invoice-bridge]] — after delivery, ask for payment
+- **Follow-up discipline:** [[follow-up-usar-alarmas-no-memoria]] — schedule reminders, never rely on memory
+- **Zero-sats awareness:** [[zero-sats-pattern-requires-direct-asks]] — when revenue is 0, every interaction needs an ask
+
+Start at `skills/domains/sales/index.md` to navigate the full sales domain.
