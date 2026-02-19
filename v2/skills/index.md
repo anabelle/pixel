@@ -12,6 +12,7 @@ Structured knowledge for autonomous operation. Navigate, don't memorize.
 ## Methodology
 
 - [[methodology/]] — research claims that justify decisions
+- [[methodology/skill-evolution-protocol]] — how I create and update my own skills
 
 ## Operations
 
