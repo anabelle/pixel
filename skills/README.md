@@ -18,7 +18,6 @@ Custom skills for Pixel agent, installed via [skills.sh](https://skills.sh).
 - **executing-plans** — Breaking down plans into actionable steps
 - **systematic-debugging** — Methodical troubleshooting approach
 - **writing-plans** — Creating structured, actionable plans
-- **git-safety** — Automatic validation before git push/merge/force operations
 
 ### Agent Utilities
 - **find-skills** — Discover and install new skills from skills.sh
