@@ -9,7 +9,7 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { readFileSync, existsSync, readdirSync } from "fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { loadContext, saveContext, appendToLog, loadMemory, saveMemory, needsCompaction, getMessagesForCompaction, saveCompactedContext, loadGroupSummary, saveGroupSummary } from "./conversations.js";
 import { trackUser } from "./services/users.js";
@@ -21,6 +21,7 @@ import { getPermittedTools, isPriorityUser } from "./services/server-registry.js
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
+import { getSkillGraph, discoverRelevantSkills, formatSkillsForInjection, getSkillGraphStats } from "./services/skill-graph.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -68,7 +69,19 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
-  const skills = loadSkills();
+
+  // Use skill graph for context-aware skill loading
+  let skills = "";
+  try {
+    const graph = await getSkillGraph();
+    const relevantSkills = discoverRelevantSkills(graph, conversationHint || "");
+    if (relevantSkills.length > 0) {
+      skills = formatSkillsForInjection(relevantSkills);
+      console.log(`[agent] Injected ${relevantSkills.length} relevant skills for hint: "${(conversationHint || "").slice(0, 50)}..."`);
+    }
+  } catch (err: any) {
+    console.error("[agent] Skill graph discovery failed:", err.message);
+  }
 
   // Retrieve relevant long-term memories from pgvector
   let longTermMemory = "";
@@ -745,6 +758,13 @@ export async function promptWithHistory(
     }
   }
 
+  // Capture observation if friction detected (async, non-blocking)
+  if (responseText && agent.state?.messages) {
+    captureObservation(agent.state.messages as any[], userId, platform).catch((err) => {
+      console.error(`[agent] Observation capture failed for ${userId}:`, err.message);
+    });
+  }
+
   return responseText || "";
   } finally {
     clearToolContext();
@@ -947,6 +967,77 @@ Be concise. This summary will be used as context for future conversations.`,
     // Summary generation crashed — ABORT compaction entirely.
     // Don't destroy conversation history just because the LLM is down.
     console.error(`[agent] Compaction ABORTED for ${userId} — summary failed: ${err.message}. Context preserved intact.`);
+  }
+}
+
+/**
+ * Capture an observation from conversation friction.
+ * Called at the end of promptWithHistory if friction signals are detected.
+ */
+async function captureObservation(messages: any[], userId: string, platform: string): Promise<void> {
+  try {
+    const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+    const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
+    
+    if (!lastUserMsg || !lastAssistantMsg) return;
+    
+    const userText = typeof lastUserMsg.content === "string" 
+      ? lastUserMsg.content 
+      : lastUserMsg.content?.filter((b: any) => b.type === "text").map((b: any) => b.text).join("") || "";
+    
+    const assistantText = typeof lastAssistantMsg.content === "string"
+      ? lastAssistantMsg.content
+      : lastAssistantMsg.content?.filter((b: any) => b.type === "text").map((b: any) => b.text).join("") || "";
+    
+    // Only capture if there's friction signals
+    const frictionSignals = /\b(forgot|confused|wrong|error|should have|didn't|failed|mistake|olvidé|confundí|error|debí|no pude|fallé|didn't remember|can't recall|don't know who|who is|who's that)\b/i;
+    if (!frictionSignals.test(userText) && !frictionSignals.test(assistantText)) return;
+    
+    // Ask LLM to extract observation
+    const OBSERVATION_PROMPT = `Extract a one-sentence observation about what friction or learning occurred in this conversation.
+
+Format: Single sentence describing the friction, pattern break, or learning.
+
+If no significant friction occurred, respond with exactly: "no friction"
+
+User: ${userText.substring(0, 500)}
+Assistant: ${assistantText.substring(0, 500)}`;
+
+    const observation = await backgroundLlmCall({
+      systemPrompt: "You extract concise observations about conversation frictions.",
+      userPrompt: OBSERVATION_PROMPT,
+      label: "observation_capture",
+      timeoutMs: 30_000,
+    });
+    
+    if (!observation || observation.toLowerCase().includes("no friction")) return;
+    
+    // Ensure observations directory exists
+    const observationsDir = join(process.cwd(), "external/pixel/skills/arscontexta/ops/observations");
+    if (!existsSync(observationsDir)) {
+      mkdirSync(observationsDir, { recursive: true });
+    }
+    
+    // Write observation
+    const timestamp = Date.now();
+    const filename = `${timestamp}.md`;
+    const filepath = join(observationsDir, filename);
+    
+    const content = `---
+captured: ${new Date().toISOString()}
+user: ${userId}
+platform: ${platform}
+---
+
+${observation.trim()}
+`;
+    
+    writeFileSync(filepath, content);
+    console.log(`[agent] Observation captured: ${observation.substring(0, 60)}...`);
+    audit("observation_captured", `Observation: ${observation.substring(0, 100)}`, { userId, platform });
+    
+  } catch (err: any) {
+    console.error("[agent] Observation capture failed:", err.message);
   }
 }
 

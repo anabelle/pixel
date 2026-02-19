@@ -32,6 +32,7 @@ import { audit } from "./audit.js";
 import { enqueueJob } from "./jobs.js";
 import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } from "./memory.js";
 import { pixelTools } from "./tools.js";
+import { rebuildSkillGraph } from "./skill-graph.js";
 
 
 // ============================================================
@@ -40,13 +41,14 @@ import { pixelTools } from "./tools.js";
 
 const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
-const SKILLS_DIR = process.env.SKILLS_DIR ?? "./skills";
+const SKILLS_DIR = process.env.SKILLS_DIR ?? "./external/pixel/skills/arscontexta";
 
 // Phase frequencies (run every N heartbeat cycles)
 const REFLECT_EVERY = 3;
 const LEARN_EVERY = 2;
 const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
+const DERIVE_EVERY = 6;
 
 // Maximum document sizes (in characters) to prevent bloat
 const MAX_REFLECTIONS_SIZE = 6000;
@@ -980,6 +982,168 @@ async function maybeDispatchToSyntropy(): Promise<void> {
   }
 }
 
+/**
+ * Derive new skill claims from observations and tensions.
+ * Runs every 6 heartbeat cycles.
+ */
+async function deriveClaims(): Promise<void> {
+  try {
+    const observationsDir = join(SKILLS_DIR, "ops/observations");
+    const tensionsDir = join(SKILLS_DIR, "ops/tensions");
+    const domainsDir = join(SKILLS_DIR, "domains");
+    
+    // Read unprocessed observations
+    const observations: string[] = [];
+    if (existsSync(observationsDir)) {
+      const files = readdirSync(observationsDir)
+        .filter(f => f.endsWith(".md"))
+        .sort()
+        .reverse()
+        .slice(0, 10);
+      
+      for (const file of files) {
+        const content = readFileSync(join(observationsDir, file), "utf-8");
+        observations.push(content);
+      }
+    }
+    
+    if (observations.length === 0) {
+      console.log("[inner-life] No observations to derive from");
+      return;
+    }
+    
+    // Read unprocessed tensions
+    const tensions: string[] = [];
+    if (existsSync(tensionsDir)) {
+      const files = readdirSync(tensionsDir)
+        .filter(f => f.endsWith(".md"))
+        .sort()
+        .reverse()
+        .slice(0, 5);
+      
+      for (const file of files) {
+        const content = readFileSync(join(tensionsDir, file), "utf-8");
+        tensions.push(content);
+      }
+    }
+    
+    // Derive claims via LLM
+    const DERIVATION_PROMPT = `You are deriving new skill claims from observations and tensions.
+
+Observations (recent frictions):
+${observations.join("\n\n---\n\n")}
+
+Tensions (contradictions detected):
+${tensions.length > 0 ? tensions.join("\n\n---\n\n") : "(none)"}
+
+Task: Extract 0-2 claim-worthy patterns from these observations.
+
+For each pattern, provide:
+1. **Title** (kebab-case, e.g., "identity-lookup-requires-explicit-save")
+2. **Domain** (sales, technical, revenue, creative, self)
+3. **Description** (one sentence for YAML frontmatter)
+4. **Body** (2-4 sentences explaining the claim)
+5. **Related claims** (wiki link format: [[claim-name]])
+
+Format your response as:
+---
+CLAIM 1:
+title: ...
+domain: ...
+description: ...
+body: ...
+related: [[...]], [[...]]
+---
+
+If no clear patterns emerge, respond with: "NO CLAIMS"
+
+Focus on:
+- Repeated frictions (same mistake multiple times)
+- Tensions between claims and reality
+- Missing knowledge that caused failure`;
+
+    const derivation = await backgroundLlmCall({
+      systemPrompt: DERIVATION_PROMPT,
+      userPrompt: "Derive claims from the observations above.",
+      label: "derive_claims",
+      timeoutMs: 60_000,
+    });
+    
+    if (!derivation || derivation.includes("NO CLAIMS")) {
+      console.log("[inner-life] No claims derived this cycle");
+      return;
+    }
+    
+    // Parse and write claims
+    const claimBlocks = derivation.split(/---\s*CLAIM \d+:/i).filter(Boolean);
+    let claimsCreated = 0;
+    
+    for (const block of claimBlocks) {
+      const titleMatch = block.match(/title:\s*(.+)/i);
+      const domainMatch = block.match(/domain:\s*(.+)/i);
+      const descMatch = block.match(/description:\s*(.+)/i);
+      const bodyMatch = block.match(/body:\s*([\s\S]+?)(?=related:|$)/i);
+      const relatedMatch = block.match(/related:\s*(.+)/i);
+      
+      if (!titleMatch || !domainMatch) continue;
+      
+      const title = titleMatch[1].trim().toLowerCase().replace(/\s+/g, "-");
+      const domain = domainMatch[1].trim().toLowerCase();
+      const description = descMatch?.[1]?.trim() || "";
+      const body = bodyMatch?.[1]?.trim() || "";
+      const related = relatedMatch?.[1]?.trim() || "";
+      
+      // Ensure domain directory exists
+      const domainPath = join(domainsDir, domain);
+      if (!existsSync(domainPath)) {
+        mkdirSync(domainPath, { recursive: true });
+      }
+      
+      // Write claim
+      const filepath = join(domainPath, `${title}.md`);
+      const content = `---
+description: ${description}
+kind: claim
+topics: [[${domain}]]
+---
+
+# ${titleMatch[1].trim()}
+
+${body}
+
+## Related Claims
+${related}
+`;
+      
+      writeFileSync(filepath, content);
+      console.log(`[inner-life] Claim derived: ${title} → ${domain}/`);
+      audit("claim_derived", `Claim: ${title} → ${domain}/`, { title, domain });
+      claimsCreated++;
+    }
+    
+    // Update learnings.md
+    const learningsPath = join(DATA_DIR, "learnings.md");
+    const timestamp = new Date().toISOString().split("T")[0];
+    const learningEntry = `\n## ${timestamp} — derivation cycle\n\nDerived ${claimsCreated} claim(s) from ${observations.length} observation(s).`;
+    
+    ensureDataDir();
+    if (existsSync(learningsPath)) {
+      const existing = readFileSync(learningsPath, "utf-8");
+      writeFileSync(learningsPath, existing + learningEntry);
+    } else {
+      writeFileSync(learningsPath, `# Learnings\n${learningEntry}`);
+    }
+    
+    // Rebuild skill graph to include new claims
+    await rebuildSkillGraph();
+    console.log(`[inner-life] Skill graph rebuilt with ${claimsCreated} new claim(s)`);
+    
+  } catch (err: any) {
+    console.error("[inner-life] Derivation failed:", err.message);
+    audit("inner_life_error", `Derivation failed: ${err.message}`, { phase: "derive", error: err.message });
+  }
+}
+
 // ============================================================
 // Public API
 // ============================================================
@@ -1037,6 +1201,18 @@ export async function runInnerLifeCycle(): Promise<void> {
     } catch (err: any) {
       console.error("[inner-life] EVOLVE phase failed:", err.message);
       audit("inner_life_error", `EVOLVE failed: ${err.message}`, { phase: "evolve", error: err.message });
+    }
+  }
+
+  // Derive claims every 6 cycles — extract patterns from observations
+  if (cycleCount % DERIVE_EVERY === 0) {
+    try {
+      await deriveClaims();
+      console.log("[inner-life] DERIVE phase completed");
+      audit("inner_life_derive", `DERIVE completed (cycle ${cycleCount})`);
+    } catch (err: any) {
+      console.error("[inner-life] DERIVE phase failed:", err.message);
+      audit("inner_life_error", `DERIVE failed: ${err.message}`, { phase: "derive", error: err.message });
     }
   }
 }

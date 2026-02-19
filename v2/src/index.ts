@@ -36,6 +36,7 @@ import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./se
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { initUsers, getUserStats } from "./services/users.js";
 import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
+import { getSkillGraph, getSkillGraphStats } from "./services/skill-graph.js";
 import { l402 } from "./services/l402.js";
 import { x402 } from "./services/x402.js";
 import { getInnerLifeStatus } from "./services/inner-life.js";
@@ -1372,6 +1373,15 @@ async function boot() {
 
   // Start reminder scheduler
   startReminders();
+
+  // Initialize skill graph
+  try {
+    const graph = await getSkillGraph();
+    const stats = getSkillGraphStats();
+    console.log(`[boot] Skill graph ready: ${stats.nodeCount} nodes, ${stats.indexSize} index entries`);
+  } catch (err: any) {
+    console.error("[boot] Skill graph init failed:", err.message);
+  }
 
   try {
     await startWhatsApp();
