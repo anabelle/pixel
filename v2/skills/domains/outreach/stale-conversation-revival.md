@@ -9,11 +9,15 @@
 - **This is your FIRST follow-up attempt** (max 2 total)
 
 **When NOT to revive (silence is respect):**
-- You've already sent 2+ messages without response → stop
+- You've already sent 2+ messages without response → **HARD STOP**
 - User explicitly said "not interested" or "maybe later" → wait for them
 - Your last message had no pending question or expectation → conversation closed
 - It's been more than 7 days → conversation died, reviving is spam
 - Your last message was already a follow-up → next one feels desperate
+- **User doesn't exist in database → never responded at all → STOP**
+
+**CRITICAL: This is not optional.**
+Violation example: Movimiento 360 outreach sent 4-5 messages to users who never responded. That's harassment, not persistence. The skill failed because it wasn't enforced.
 
 **Process:**
 1. Review conversation context
