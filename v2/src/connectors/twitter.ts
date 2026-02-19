@@ -13,6 +13,7 @@
 
 import { Scraper } from "@the-convocation/twitter-scraper";
 import { promptWithHistory } from "../agent.js";
+import { appendToLog } from "../conversations.js";
 import { audit } from "../services/audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import crypto from "crypto";
@@ -458,12 +459,14 @@ async function pollMentions(): Promise<void> {
         if (POST_ENABLED) {
           const result = await postTweet(replyText, tweet.id);
           if (result.success) {
+            appendToLog(userId, mentionText, replyText, "twitter");
             console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
             repliedTweetIds.add(tweet.id);
           } else {
             console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
           }
         } else {
+          appendToLog(userId, mentionText, replyText, "twitter");
           console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
           readOnlySeenTweetIds.add(tweet.id);
         }
