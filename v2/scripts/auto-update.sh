@@ -20,6 +20,11 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0
 fi
 
+# Auto-sync arscontexta skills before update checks
+if [ -x "/home/pixel/pixel/v2/scripts/auto-commit-skills.sh" ]; then
+  /home/pixel/pixel/v2/scripts/auto-commit-skills.sh || true
+fi
+
 # Avoid updates when there are local changes
 if ! git diff --quiet || ! git diff --cached --quiet; then
   log "SKIP: working tree has local changes"

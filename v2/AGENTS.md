@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-18 | Session: 51
+> Last updated: 2026-02-19 | Session: 52
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 50 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 56 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -23,7 +23,7 @@
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
 | x402 | ✅ Live + Tested — /api/chat/premium/x402 ($0.01), /api/generate/x402 ($0.05), /api/generate/image/x402 ($0.08) USDC on Base. E2E verified 2026-02-18. |
-| Skills system | ✅ 5 skills loaded (revenue, image-gen, resource, self-architecture + 1 auto-generated) |
+| Skills system | ✅ Skill-graph (arscontexta + marketplace). Observations + claim derivation. |
 | Inner life | ✅ Running (reflect/learn/ideate/evolve on heartbeat cycles) |
 | Outreach | ✅ 4h cycle, LLM-judged owner pings |
 | Syntropy↔Pixel | ✅ Bidirectional (debrief + mailbox + cron monitor) |
@@ -68,21 +68,22 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (36 source files, ~18,070 lines)
+### File Inventory (37 source files, ~19,216 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~1173 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
-| `src/agent.ts` | ~1005 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skills loading, memory extraction, context compaction |
+| `src/index.ts` | ~1451 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
+| `src/agent.ts` | ~1167 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skill-graph injection, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
 | `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
 | `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~430 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
 | `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
 | `src/connectors/twitter.ts` | ~559 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
-| `src/services/tools.ts` | ~2750 | 50 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter |
+| `src/services/tools.ts` | ~2839 | 56 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
-| `src/services/inner-life.ts` | ~1023 | Autonomous reflection, learning, ideation, identity evolution. Has pixelTools. |
+| `src/services/inner-life.ts` | ~1271 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
+| `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
 | `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
 | `src/services/jobs.ts` | ~564 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
 | `src/services/reminders.ts` | ~540 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
@@ -188,10 +189,12 @@ Authorization config lives in `servers.json`:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 50 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 56 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
-- **Skills in buildSystemPrompt()** — separate from inner-life. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
+- **Skills in buildSystemPrompt()** — skill-graph injects relevant arscontexta + marketplace nodes. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
+- **Canonical skill paths:** arscontexta at `/app/external/pixel/skills/arscontexta` (runtime). Marketplace skills at `/app/skills`. `v2/skills` is archival only.
+- **Observation pruning:** keep latest 50 obs, derive claims every 6 cycles.
 - **Compaction ABORTS on failure** — never saves blank summaries. Bloated context is infinitely better than amnesia.
 - **Context compaction at 40 messages.** Summarizes older messages beyond recent 20.
 - **Memory extraction every 5th message per user.** Extracts facts → `memory.md`.
@@ -249,7 +252,7 @@ Authorization config lives in `servers.json`:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~18K lines current, 16K soft limit exceeded (Twitter integration).
+10. **Complexity is debt.** ~19.2K lines current, 16K soft limit exceeded (Twitter integration).
 
 ### Anti-Patterns
 

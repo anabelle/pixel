@@ -30,7 +30,7 @@ export interface SkillGraph {
 // ─── Configuration ──────────────────────────────────────────────
 
 const SKILLS_DIR = process.env.SKILLS_DIR || "/app/external/pixel/skills/arscontexta";
-const MARKETPLACE_DIR = process.env.MARKETPLACE_DIR || "/app/external/pixel/skills";
+const MARKETPLACE_DIR = process.env.MARKETPLACE_DIR || "/app/skills";
 const CACHE_PATH = process.env.SKILL_GRAPH_CACHE || "/app/data/skill-graph-cache.json";
 const WIKI_LINK_REGEX = /\[\[([^\]\|]+)(?:\|[^\]]+)?\]\]/g;  // [[link]] or [[link|display]]
 

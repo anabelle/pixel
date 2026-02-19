@@ -21,7 +21,7 @@
  * The output feeds into heartbeat post generation and agent system prompts.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join } from "path";
 import { loadCharacter } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -49,6 +49,7 @@ const LEARN_EVERY = 2;
 const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 const DERIVE_EVERY = 6;
+const OBSERVATION_KEEP_COUNT = 50;
 
 // Maximum document sizes (in characters) to prevent bloat
 const MAX_REFLECTIONS_SIZE = 6000;
@@ -992,18 +993,22 @@ async function deriveClaims(): Promise<void> {
     const tensionsDir = join(SKILLS_DIR, "ops/tensions");
     const domainsDir = join(SKILLS_DIR, "domains");
     
-    // Read unprocessed observations
-    const observations: string[] = [];
+    // Read recent observations (latest 10)
+    const observations: { name: string; content: string; mtimeMs: number }[] = [];
     if (existsSync(observationsDir)) {
       const files = readdirSync(observationsDir)
         .filter(f => f.endsWith(".md"))
-        .sort()
-        .reverse()
+        .map((name) => {
+          const fullPath = join(observationsDir, name);
+          const stat = statSync(fullPath);
+          return { name, fullPath, mtimeMs: stat.mtimeMs };
+        })
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
         .slice(0, 10);
-      
+
       for (const file of files) {
-        const content = readFileSync(join(observationsDir, file), "utf-8");
-        observations.push(content);
+        const content = readFileSync(file.fullPath, "utf-8");
+        observations.push({ name: file.name, content, mtimeMs: file.mtimeMs });
       }
     }
     
@@ -1012,7 +1017,7 @@ async function deriveClaims(): Promise<void> {
       return;
     }
     
-    // Read unprocessed tensions
+    // Read recent tensions
     const tensions: string[] = [];
     if (existsSync(tensionsDir)) {
       const files = readdirSync(tensionsDir)
@@ -1031,7 +1036,7 @@ async function deriveClaims(): Promise<void> {
     const DERIVATION_PROMPT = `You are deriving new skill claims from observations and tensions.
 
 Observations (recent frictions):
-${observations.join("\n\n---\n\n")}
+${observations.map(o => o.content).join("\n\n---\n\n")}
 
 Tensions (contradictions detected):
 ${tensions.length > 0 ? tensions.join("\n\n---\n\n") : "(none)"}
@@ -1134,6 +1139,9 @@ ${related}
       writeFileSync(learningsPath, `# Learnings\n${learningEntry}`);
     }
     
+    // Prune observations (keep latest 50)
+    pruneObservations(observationsDir, OBSERVATION_KEEP_COUNT);
+
     // Rebuild skill graph to include new claims
     await rebuildSkillGraph();
     console.log(`[inner-life] Skill graph rebuilt with ${claimsCreated} new claim(s)`);
@@ -1141,6 +1149,30 @@ ${related}
   } catch (err: any) {
     console.error("[inner-life] Derivation failed:", err.message);
     audit("inner_life_error", `Derivation failed: ${err.message}`, { phase: "derive", error: err.message });
+  }
+}
+
+function pruneObservations(observationsDir: string, keepCount: number): void {
+  if (!existsSync(observationsDir)) return;
+
+  const files = readdirSync(observationsDir)
+    .filter((f) => f.endsWith(".md"))
+    .map((name) => {
+      const fullPath = join(observationsDir, name);
+      const stat = statSync(fullPath);
+      return { name, fullPath, mtimeMs: stat.mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  if (files.length <= keepCount) return;
+
+  const toDelete = files.slice(keepCount);
+  for (const file of toDelete) {
+    try {
+      unlinkSync(file.fullPath);
+    } catch (err: any) {
+      console.error(`[inner-life] Failed to prune observation ${file.name}:`, err.message);
+    }
   }
 }
 

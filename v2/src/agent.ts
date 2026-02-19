@@ -990,8 +990,9 @@ async function captureObservation(messages: any[], userId: string, platform: str
       : lastAssistantMsg.content?.filter((b: any) => b.type === "text").map((b: any) => b.text).join("") || "";
     
     // Only capture if there's friction signals
-    const frictionSignals = /\b(forgot|confused|wrong|error|should have|didn't|failed|mistake|olvidé|confundí|error|debí|no pude|fallé|didn't remember|can't recall|don't know who|who is|who's that)\b/i;
-    if (!frictionSignals.test(userText) && !frictionSignals.test(assistantText)) return;
+    const userFrictionSignals = /\b(forgot|confused|wrong|error|should have|didn't|failed|mistake|olvidé|confundí|debí|no pude|fallé|didn't remember|can't recall|don't know who|who is|who's that)\b/i;
+    const assistantFrictionSignals = /\b(i (forgot|was wrong|made a mistake|missed that|didn't realize|didn't catch|should have)|me equivoqué|me confundí|se me pasó|no me di cuenta)\b/i;
+    if (!userFrictionSignals.test(userText) && !assistantFrictionSignals.test(assistantText)) return;
     
     // Ask LLM to extract observation
     const OBSERVATION_PROMPT = `Extract a one-sentence observation about what friction or learning occurred in this conversation.
