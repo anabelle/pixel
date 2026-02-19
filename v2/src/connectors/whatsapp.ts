@@ -285,6 +285,7 @@ async function flushDmMessages(jid: string): Promise<void> {
     if (!response) {
       const errMsg = "Brain glitch. Try again in a moment.";
       await sock!.sendMessage(jid, { text: errMsg });
+      appendToLog(entry.conversationId, trimmed, errMsg, "whatsapp");
       return;
     }
 
@@ -719,6 +720,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
                   if (voiceBuffer) {
                     await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
                     await sock!.sendMessage(jid, { text: response }).catch(() => {});
+                    appendToLog(conversationId, formatted, response, "whatsapp");
                     console.log(`[whatsapp] Group voice-to-voice reply to ${jid} (${voiceBuffer.byteLength} bytes)`);
                     continue;
                   }
