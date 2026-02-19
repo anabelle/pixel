@@ -296,6 +296,7 @@ async function flushDmMessages(jid: string): Promise<void> {
         if (voiceBuffer) {
           await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
           await sock!.sendMessage(jid, { text: response }).catch(() => {});
+          appendToLog(entry.conversationId, trimmed, response, "whatsapp");
           console.log(`[whatsapp] DM voice reply to ${jid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
           return;
         }
@@ -316,6 +317,7 @@ async function flushDmMessages(jid: string): Promise<void> {
       }
     }
 
+    appendToLog(entry.conversationId, trimmed, response, "whatsapp");
     console.log(`[whatsapp] DM reply to ${jid} (${response.length} chars, ${items.length} msgs batched)`);
   } catch (err: any) {
     console.error(`[whatsapp] DM flush error for ${jid}:`, err.message);
@@ -387,6 +389,7 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
           if (voiceBuffer) {
             await sock!.sendMessage(groupJid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
             await sock!.sendMessage(groupJid, { text: response }).catch(() => {});
+            appendToLog(entry.conversationId, trimmed, response, "whatsapp");
             console.log(`[whatsapp] Group voice reply to ${groupJid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
             return;
           }
@@ -407,6 +410,7 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
           throw sendErr;
         }
       }
+      appendToLog(entry.conversationId, trimmed, response, "whatsapp");
       console.log(`[whatsapp] Group reply to ${groupJid} (${response.length} chars, ${items.length} msgs batched)`);
     }
   } catch (err: any) {
@@ -734,6 +738,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
                   throw sendErr;
                 }
               }
+              appendToLog(conversationId, formatted, response, "whatsapp");
               console.log(`[whatsapp] Group voice reply to ${jid} (${response.length} chars)`);
             }
           } else {
@@ -761,6 +766,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
                   await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
                   // Also send text for accessibility
                   await sock!.sendMessage(jid, { text: response }).catch(() => {});
+                  appendToLog(userId, formatted, response, "whatsapp");
                   console.log(`[whatsapp] Voice reply to ${userId} (${voiceBuffer.byteLength} bytes)`);
                   continue;
                 }
@@ -770,6 +776,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             }
 
             await sock!.sendMessage(jid, { text: response });
+            appendToLog(userId, formatted, response, "whatsapp");
             console.log(`[whatsapp] Replied to voice from ${userId} (${response.length} chars)`);
           }
         } catch (err: any) {
@@ -863,6 +870,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
                   throw sendErr;
                 }
               }
+              appendToLog(conversationId, formatted, response, "whatsapp");
               console.log(`[whatsapp] Group video reply to ${jid} (${response.length} chars)`);
             }
           } else {
@@ -881,6 +889,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             }
 
             await sock!.sendMessage(jid, { text: response });
+            appendToLog(userId, formatted, response, "whatsapp");
             console.log(`[whatsapp] Video reply to ${userId} (${response.length} chars)`);
           }
         } catch (err: any) {
@@ -950,6 +959,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
                   throw sendErr;
                 }
               }
+              appendToLog(conversationId, line, response, "whatsapp");
               console.log(`[whatsapp] Group image reply to ${jid} (${response.length} chars)`);
             }
           } else {
@@ -972,6 +982,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             }
 
             await sock!.sendMessage(jid, { text: response });
+            appendToLog(userId, baseText, response, "whatsapp");
             console.log(`[whatsapp] Image reply to ${userId} (${response.length} chars)`);
           }
         } catch (err: any) {
