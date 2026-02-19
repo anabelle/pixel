@@ -1,0 +1,5 @@
+packages:
+  - 'lnpixels/*'
+  - 'pixel-agent'
+  - 'pixel-landing'
+  # syntropy-core is managed independently via Bun to avoid workspace version conflicts

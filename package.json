@@ -1,0 +1,76 @@
+{
+  "name": "pixel-ecosystem",
+  "version": "1.0.0",
+  "description": "Master repository for the Pixel ecosystem - AI agents, collaborative art, and Lightning Network integration",
+  "private": true,
+  "packageManager": "pnpm@8.15.0",
+  "workspaces": [
+    "lnpixels",
+    "pixel-landing"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "doctor": "node scripts/diagnostics/doctor.js",
+    "dev": "npm run doctor && concurrently \"pnpm -F lnpixels dev\" \"pnpm dev:agent\" \"pnpm -F pixel-landing dev\" \"pnpm dev:syntropy\"",
+    "dev:agent": "cd pixel-agent && npx @elizaos/cli@latest dev",
+    "dev:syntropy": "cd syntropy-core && bun run dev",
+    "test": "pnpm -F lnpixels test && pnpm test:agent && pnpm test:syntropy",
+    "test:agent": "cd pixel-agent && bun test src/diary/__tests__/diary-service.test.ts",
+    "test:syntropy": "cd syntropy-core && bun test",
+    "build": "pnpm -F lnpixels build && pnpm -F pixel-landing build && pnpm -F syntropy-core build && npm run build:agent",
+    "build:agent": "cd pixel-agent && bun run build",
+    "lint": "pnpm -F lnpixels lint && pnpm -F pixel-landing lint && pnpm -F syntropy-core lint",
+    "clean": "pnpm -F lnpixels clean && pnpm clean:agent && pnpm -F pixel-landing clean && pnpm -F syntropy-core clean",
+    "clean:agent": "cd pixel-agent && rm -rf node_modules dist",
+    "clean:syntropy": "cd syntropy-core && rm -rf node_modules dist",
+    "install:agent": "cd pixel-agent && bun install",
+    "install:syntropy": "cd syntropy-core && bun install",
+    "deploy:setup": "mkdir -p logs && pnpm install && pnpm install:agent && pnpm build",
+    "deploy:production": "git pull --recurse-submodules && pnpm install && pnpm install:agent && pnpm build && ./scripts/safe-deploy.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anabelle/pixel.git"
+  },
+  "keywords": [
+    "ai-agents",
+    "pixel-art",
+    "lightning-network",
+    "bitcoin",
+    "nostr",
+    "collaborative",
+    "elizaos",
+    "canvas",
+    "digital-art"
+  ],
+  "author": "Pixel <pixel@example.com>",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.5.0"
+  },
+  "lint-staged": {
+    "syntropy-core/src/**/*.{ts,js}": [
+      "pnpm -F syntropy-core lint",
+      "pnpm -F syntropy-core test"
+    ],
+    "pixel-landing/src/**/*.{ts,tsx,js,jsx}": [
+      "pnpm -F pixel-landing lint"
+    ],
+    "lnpixels/api/src/**/*.{ts,js}": [
+      "pnpm -F lnpixels lint"
+    ],
+    "pixel-agent/src/**/*.{ts,js}": [
+      "npm run test:agent"
+    ]
+  }
+}

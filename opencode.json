@@ -1,0 +1,32 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "syntropy-admin": {
+      "description": "VPS administration and research agent for Syntropy — full access to manage Pixel infrastructure",
+      "mode": "all",
+      "temperature": 0.2,
+      "steps": 100,
+      "tools": {
+        "bash": true,
+        "read": true,
+        "write": true,
+        "edit": true,
+        "grep": true,
+        "glob": true,
+        "webfetch": true,
+        "websearch": true,
+        "patch": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": "allow",
+        "edit": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "external_directory": "allow"
+      },
+      "color": "#8B5CF6",
+      "prompt": "{file:./opencode-agents/syntropy-admin.md}"
+    }
+  }
+}

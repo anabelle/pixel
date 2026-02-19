@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+
+echo "🔍 Running Pre-Commit Checks..."
+
+# 1. Run lint-staged for affected files
+npx lint-staged || { echo "❌ Linting/Testing failed. Commit aborted."; exit 1; }
+
+# 2. Submodule sanity check (optional but good for agentic efficiency)
+# Check if any submodules have unpushed commits
+if git submodule status | grep -q "^+"; then
+  echo "⚠️  NOTE: You have unpushed submodule changes."
+fi
+
+echo "✅ All checks passed."

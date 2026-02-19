@@ -1,0 +1,127 @@
+name: Deploy Pixel Ecosystem to Production
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Prevent concurrent deployments
+concurrency:
+  group: production_deploy
+  cancel-in-progress: false
+
+env:
+  VPS_USER: pixel
+  VPS_HOST: 65.181.125.80
+
+jobs:
+  # Skip deployment if commit is from Syntropy Bot (server-side commits)
+  check_author:
+    name: Check Commit Author
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Check if human commit
+        id: check
+        run: |
+          AUTHOR="${{ github.event.head_commit.author.name }}"
+          MESSAGE="${{ github.event.head_commit.message }}"
+          
+          # Skip if authored by Syntropy or has skip marker
+          if [[ "$AUTHOR" == *"Syntropy"* ]] || [[ "$MESSAGE" == *"[skip cd]"* ]] || [[ "$MESSAGE" == *"[skip ci]"* ]]; then
+            echo "Skipping deploy: commit from Syntropy or has skip marker"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "Human commit detected, proceeding with deploy"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          fi
+
+  validate:
+    name: Validate Syntropy Core
+    needs: check_author
+    if: needs.check_author.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      # Only run syntropy-core tests (they don't need external services)
+      - name: Install Syntropy dependencies
+        run: cd syntropy-core && bun install
+      - name: Run Syntropy Tests
+        run: cd syntropy-core && bun test
+
+  deploy_to_vps:
+    name: Deploy to VPS
+    needs: [check_author, validate]
+    if: needs.check_author.outputs.should_deploy == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via Git Strategy
+        run: |
+          echo "🚀 Deploying to VPS..."
+          
+          ssh ${{ env.VPS_USER }}@${{ env.VPS_HOST }} "bash -s" << 'EOF'
+            set -e
+            cd /home/pixel/pixel || exit 1
+            
+            echo "📥 Fetching latest code..."
+            git fetch origin master
+            git reset --hard origin/master
+            
+            echo "📦 Updating submodules..."
+            git submodule update --init --recursive
+            
+            echo "🔧 Fixing git remote URLs for SSH push..."
+            # git reset restores HTTPS push URLs, but we need SSH for deploy key auth
+            git remote set-url --push origin git@github.com:anabelle/pixel.git
+            for dir in lnpixels pixel-agent pixel-landing syntropy-core; do
+              if [ -d "$dir/.git" ] || [ -f "$dir/.git" ]; then
+                cd "$dir"
+                git remote set-url origin git@github.com:anabelle/${dir}.git 2>/dev/null || true
+                git remote set-url --push origin git@github.com:anabelle/${dir}.git 2>/dev/null || true
+                cd /home/pixel/pixel
+              fi
+            done
+            
+            echo "🏗️  Rebuilding containers..."
+            docker compose build syntropy agent web landing
+            
+            echo "🔄 Restarting services..."
+            docker compose up -d --remove-orphans
+            
+            echo "⏳ Waiting for services to start..."
+            sleep 10
+            
+            echo "🔄 Reloading nginx..."
+            docker exec pixel-nginx-1 nginx -s reload || docker restart pixel-nginx-1
+            
+            echo "🧹 Cleaning up..."
+            docker image prune -f
+            
+            echo "🔐 Fixing file permissions for Syntropy..."
+            # These files need to be writable by Syntropy (runs as uid 1000)
+            chown pixel:pixel /home/pixel/pixel/REFACTOR_QUEUE.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/CONTINUITY.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/NOTIFICATIONS.md 2>/dev/null || true
+            chown pixel:pixel /home/pixel/pixel/IDEAS.md 2>/dev/null || true
+            chmod 664 /home/pixel/pixel/REFACTOR_QUEUE.md 2>/dev/null || true
+            chmod 664 /home/pixel/pixel/CONTINUITY.md 2>/dev/null || true
+            
+            echo "✅ Deployment complete!"
+          EOF

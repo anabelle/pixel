@@ -1,0 +1,123 @@
+{
+  "global_admins": [
+    "tg-892935151",
+    "wa-573108077316",
+    "wa-224343506325521",
+    "nostr-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+    "nostr-dm-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+    "syntropy-admin",
+    "syntropy",
+    "pixel-self"
+  ],
+  "tool_tiers": {
+    "public": [
+      "check_health",
+      "web_fetch",
+      "web_search",
+      "list_servers",
+      "memory_search",
+      "memory_save",
+      "memory_update",
+      "memory_delete",
+      "read_logs",
+      "read_file",
+      "generate_image",
+      "send_voice",
+      "send_whatsapp_message",
+      "send_telegram_message",
+      "join_whatsapp_group",
+      "schedule_alarm",
+      "list_alarms",
+      "list_all_alarms",
+      "cancel_alarm",
+      "cancel_all_alarms",
+      "modify_alarm",
+      "list_chats",
+      "find_chat",
+      "research_task",
+      "introspect",
+      "clawstr_feed",
+      "clawstr_post",
+      "clawstr_reply",
+      "clawstr_notifications",
+      "clawstr_upvote",
+      "clawstr_search",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "git_show",
+      "git_branch",
+      "git_clone",
+      "git_pull",
+      "git_push",
+      "git_commit",
+      "notify_owner",
+      "syntropy_notify",
+      "update_missions",
+      "update_monologue",
+      "post_tweet",
+      "search_tweets",
+      "read_tweet",
+      "twitter_status"
+    ],
+    "server_admin": [
+      "ssh",
+      "wp",
+      "bash",
+      "write_file",
+      "edit_file"
+    ]
+  },
+  "servers": {
+    "tallerubens": {
+      "label": "Taller Rubens (WordPress)",
+      "host": "68.66.224.4",
+      "user": "talleru",
+      "key_env": "TALLERUBENS_SSH_KEY",
+      "wp_path": "~/public_html",
+      "capabilities": ["ssh", "wp"],
+      "authorized_users": [
+        "wa-573153353120",
+        "wa-573214100915",
+        "wa-86505003417712",
+        "wa-8465481265353"
+      ],
+      "authorized_groups": [
+        "tg-group--4839030836"
+      ],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/(?!tmp|home/talleru)",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        "shutdown",
+        "reboot",
+        "init\\s+[06]"
+      ]
+    },
+    "ambienteniwa": {
+      "label": "Ambiente Niwa (WordPress)",
+      "host": "68.66.224.4",
+      "user": "niwa",
+      "key_env": "AMBIENTENIWA_SSH_KEY",
+      "wp_path": "~/public_html",
+      "capabilities": ["ssh", "wp"],
+      "authorized_users": [
+        "wa-50672330211",
+        "wa-143430835556577"
+      ],
+      "authorized_groups": [
+        "wa-group-120363408642317805"
+      ],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/(?!tmp|home/niwa)",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        "shutdown",
+        "reboot",
+        "init\\s+[06]"
+      ]
+    }
+  }
+}

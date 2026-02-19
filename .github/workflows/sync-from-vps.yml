@@ -1,0 +1,73 @@
+name: Sync from VPS
+
+# This workflow syncs changes that Syntropy makes on the VPS back to GitHub
+# It runs on a schedule and does NOT trigger deploy (uses [skip cd] marker)
+
+on:
+  schedule:
+    # Every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force sync even if no changes detected'
+        required: false
+        default: 'false'
+
+env:
+  VPS_USER: pixel
+  VPS_HOST: 65.181.125.80
+
+jobs:
+  sync_from_vps:
+    name: Sync VPS → GitHub
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Configure Git
+        run: |
+          git config user.name "Syntropy Bot"
+          git config user.email "bot@syntropy.io"
+
+      - name: Fetch VPS state
+        run: |
+          # Add VPS as remote
+          git remote add vps ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/home/pixel/pixel || true
+          
+          # Fetch from VPS
+          git fetch vps master
+          
+          # Check if there are differences
+          CHANGES=$(git diff HEAD..vps/master --stat | wc -l)
+          
+          if [ "$CHANGES" -gt "0" ] || [ "${{ github.event.inputs.force }}" == "true" ]; then
+            echo "Changes detected on VPS, syncing..."
+            
+            # Merge VPS changes
+            git merge vps/master --no-edit -m "[skip cd] Sync from VPS $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            
+            # Update submodule pointers
+            git submodule update --remote --merge
+            git add .
+            git diff --cached --quiet || git commit -m "[skip cd] Update submodule pointers"
+            
+            # Push to GitHub
+            git push origin master
+            
+            echo "✅ Sync complete!"
+          else
+            echo "No changes from VPS, skipping sync"
+          fi

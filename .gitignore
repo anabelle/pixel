@@ -1,0 +1,88 @@
+backups/
+
+# Dependencies
+node_modules/
+dist/
+build/
+.turbo/
+.lesshst
+
+# Package managers
+pnpm-lock.yaml
+.pnpm/
+.pnpm-store/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.test
+
+# Logs
+*.log
+logs/
+
+# Database and Data
+*.db
+*.sqlite
+data/*
+!data/research-*.md
+!data/monitor-*.md
+!data/diary-archive/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime
+*.pid
+*.seed
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+
+# Temporary output files
+*_output.txt
+*_out.txt
+worker-output-*.txt
+out.txt
+err.txt
+
+# PM2
+.pm2/
+
+# Backup files
+*.bak
+backup.sql
+
+# Ideas documentation
+docs/ideas/
+
+# Config directories
+.config/
+
+.bash_history
+.bash_logout
+.bashrc
+.bun/
+.cache/
+.gitconfig
+.local/
+.npm/
+.nvm/
+.opencode/
+.profile
+.ssh/
+.sudo_as_admin_successful
+certbot/
