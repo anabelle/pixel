@@ -1,32 +1,26 @@
 /**
  * Lightning Service — Invoice creation and payment verification
  *
- * Uses LNURL-pay via Pixel's Lightning address to:
- * - Create invoices for DVM jobs, tips, and API usage
- * - Verify payments via LNURL-verify
+ * Uses Nakapay API for reliable payment verification:
+ * - Create invoices via Nakapay payment requests
+ * - Verify payments via Nakapay status endpoint
  * - Track revenue in PostgreSQL
  *
- * No NWC connection needed — works with any LNURL-pay compatible wallet.
- * Can upgrade to NWC later for full wallet control.
- *
- * UNITS NOTE:
- * - LNURL-pay spec uses millisatoshis for minSendable/maxSendable
- * - @getalby/lightning-tools lnurlpData.min/max are in millisats
- * - requestInvoice({satoshi: N}) expects sats (converts internally)
- * - All Pixel APIs use sats as the unit
+ * Nakapay provides LNURL-pay with proper verification support,
+ * unlike Wallet of Satoshi which doesn't support LNURL-verify.
  */
 
-import { LightningAddress } from "@getalby/lightning-tools";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
 
-// Cache the LightningAddress instance
-let lnAddress: LightningAddress | null = null;
-let lnInitialized = false;
+const NAKAPAY_API_KEY = process.env.NAKAPAY_API_KEY;
+const NAKAPAY_DESTINATION_WALLET = process.env.NAKAPAY_DESTINATION_WALLET;
+const NAKAPAY_API_BASE = "https://api.nakapay.app/api/v1";
+const NAKAPAY_MIN_SATS = 21;
 
-// Cache verify URL template for payment verification
-// Maps paymentHash → { verifyUrl, amountSats, description }
+// Cache payment requests for verification
+// Maps paymentHash → { nakapayId, amountSats, description }
 interface InvoiceCache {
+  nakapayId: string;
   verifyUrl: string;
   amountSats: number;
   description?: string;
@@ -34,6 +28,8 @@ interface InvoiceCache {
 const invoiceCache = new Map<string, InvoiceCache>();
 const MAX_VERIFY_CACHE = 500;
 const INVOICE_CACHE_PATH = process.env.INVOICE_CACHE_PATH || "/app/data/invoice-cache.json";
+
+let nakapayInitialized = false;
 
 /** Load invoice cache from disk */
 function loadInvoiceCache(): void {
@@ -64,46 +60,14 @@ function saveInvoiceCache(): void {
       data[hash] = entry;
     }
     writeFileSync(INVOICE_CACHE_PATH, JSON.stringify(data, null, 2), "utf-8");
-    console.log(`[lightning] Saved ${invoiceCache.size} invoices to cache`);
   } catch (err: any) {
     console.error(`[lightning] Failed to save invoice cache:`, err.message);
   }
 }
 
-/** Get or create the LightningAddress instance */
-async function getLnAddress(): Promise<LightningAddress | null> {
-  if (lnAddress && lnInitialized) return lnAddress;
-
-  const address =
-    process.env.LIGHTNING_ADDRESS ??
-    process.env.NEXT_PUBLIC_LIGHTNING_ADDRESS ??
-    process.env.NAKAPAY_DESTINATION_WALLET;
-
-  if (!address) {
-    console.log("[lightning] No LIGHTNING_ADDRESS set, skipping");
-    return null;
-  }
-
-  try {
-    lnAddress = new LightningAddress(address);
-    await lnAddress.fetch();
-    lnInitialized = true;
-
-    // min/max from LNURL-pay are in millisats — convert for display
-    const minMsat = lnAddress.lnurlpData?.min ?? 1000;
-    const maxMsat = lnAddress.lnurlpData?.max ?? 1_000_000_000;
-    console.log(`[lightning] Initialized: ${address}`);
-    console.log(
-      `[lightning] Min: ${Math.ceil(minMsat / 1000)} sats, Max: ${Math.floor(maxMsat / 1000)} sats`
-    );
-    // Log available LNURL-pay capabilities
-    console.log(`[lightning] LNURL-pay callback: ${lnAddress.lnurlpData?.callback ?? "none"}`);
-    console.log(`[lightning] LNURL-pay allowsVerify: ${(lnAddress as any).lnurlpData?.allowsVerify ?? "unknown"}`);
-    return lnAddress;
-  } catch (err: any) {
-    console.error(`[lightning] Failed to initialize ${address}:`, err.message);
-    return null;
-  }
+/** Check if Nakapay is configured */
+function isNakapayConfigured(): boolean {
+  return !!(NAKAPAY_API_KEY && NAKAPAY_DESTINATION_WALLET);
 }
 
 /** Invoice with payment tracking info */
@@ -112,14 +76,14 @@ export interface LightningInvoice {
   paymentHash: string;
   amountSats: number;
   description?: string;
-  verify?: string; // LNURL-verify URL
+  verify?: string; // Nakapay status URL
   expiresAt?: number; // Unix timestamp
 }
 
 /**
- * Create a Lightning invoice via LNURL-pay
+ * Create a Lightning invoice via Nakapay API
  *
- * @param amountSats - Amount in satoshis (must be within wallet's min/max)
+ * @param amountSats - Amount in satoshis (minimum 21 sats)
  * @param comment - Optional comment/description for the invoice
  * @returns LightningInvoice or null if failed
  */
@@ -127,74 +91,62 @@ export async function createInvoice(
   amountSats: number,
   comment?: string
 ): Promise<LightningInvoice | null> {
-  const ln = await getLnAddress();
-  if (!ln) return null;
-
-  // min/max are in millisats — convert to sats for comparison
-  const minSats = Math.ceil((ln.lnurlpData?.min ?? 1000) / 1000);
-  const maxSats = Math.floor((ln.lnurlpData?.max ?? 1_000_000_000) / 1000);
-
-  if (amountSats < minSats) {
-    console.log(
-      `[lightning] Amount ${amountSats} sats below minimum ${minSats} sats, adjusting`
-    );
-    amountSats = minSats;
-  }
-  if (amountSats > maxSats) {
-    console.error(
-      `[lightning] Amount ${amountSats} sats exceeds maximum ${maxSats} sats`
-    );
+  if (!isNakapayConfigured()) {
+    console.error("[lightning] Nakapay not configured. Set NAKAPAY_API_KEY and NAKAPAY_DESTINATION_WALLET");
     return null;
   }
 
+  // Enforce minimum
+  if (amountSats < NAKAPAY_MIN_SATS) {
+    console.log(`[lightning] Amount ${amountSats} sats below minimum ${NAKAPAY_MIN_SATS} sats, adjusting`);
+    amountSats = NAKAPAY_MIN_SATS;
+  }
+
   try {
-    // requestInvoice expects satoshi in sats (converts to millisats internally)
-    const invoice = await ln.requestInvoice({
-      satoshi: amountSats,
-      comment: comment ?? `Pixel — ${amountSats} sats`,
+    const response = await fetch(`${NAKAPAY_API_BASE}/payment-requests`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${NAKAPAY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        amount: amountSats,
+        description: comment || `Pixel - ${amountSats} sats`,
+      }),
     });
 
-    // Debug: log full invoice response
-    console.log(`[lightning] Invoice response keys: ${Object.keys(invoice).join(", ")}`);
-    console.log(`[lightning] Invoice verify: ${invoice.verify ?? "undefined"}`);
-    console.log(`[lightning] Invoice paymentHash: ${invoice.paymentHash.slice(0, 16)}...`);
-
-    // Cache the verify URL and amount for later payment verification
-    let verifyUrl = invoice.verify;
-    
-    // Fallback: construct verify URL from callback if provider doesn't return one
-    // Many LNURL-pay providers support checking status via callback + payment_hash
-    if (!verifyUrl && ln.lnurlpData?.callback) {
-      const callbackBase = ln.lnurlpData.callback;
-      // Try common verify URL patterns
-      verifyUrl = `${callbackBase}&payment_hash=${invoice.paymentHash}`;
-      console.log(`[lightning] Constructed fallback verify URL from callback`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[lightning] Nakapay create invoice failed: ${response.status} ${errorText}`);
+      return null;
     }
 
-    if (verifyUrl) {
-      // Evict old entries
+    const data = await response.json();
+    console.log(`[lightning] Nakapay response: id=${data.id} hash=${data.paymentHash?.slice(0, 16)}... invoice=${data.invoice?.slice(0, 20)}...`);
+
+    // Cache for verification
+    if (data.paymentHash && data.id) {
       if (invoiceCache.size > MAX_VERIFY_CACHE) {
         const first = invoiceCache.keys().next().value;
         if (first) invoiceCache.delete(first);
       }
-      invoiceCache.set(invoice.paymentHash, {
-        verifyUrl,
+      invoiceCache.set(data.paymentHash, {
+        nakapayId: data.id,
+        verifyUrl: `${NAKAPAY_API_BASE}/payment-requests/${data.id}`,
         amountSats,
         description: comment,
       });
       saveInvoiceCache();
-      console.log(`[lightning] Cached invoice ${invoice.paymentHash.slice(0, 16)}... for later verification`);
-    } else {
-      console.log(`[lightning] WARNING: No verify URL available - payment verification will not work for this invoice`);
+      console.log(`[lightning] Cached invoice ${data.paymentHash.slice(0, 16)}... for later verification`);
     }
 
     return {
-      paymentRequest: invoice.paymentRequest,
-      paymentHash: invoice.paymentHash,
+      paymentRequest: data.invoice || data.paymentRequest || data.bolt11,
+      paymentHash: data.paymentHash,
       amountSats,
       description: comment,
-      verify: invoice.verify ?? undefined,
-      expiresAt: invoice.expiryDate ? Math.floor(invoice.expiryDate.getTime() / 1000) : undefined,
+      verify: `${NAKAPAY_API_BASE}/payment-requests/${data.id}`,
+      expiresAt: data.expiresAt ? Math.floor(new Date(data.expiresAt).getTime() / 1000) : undefined,
     };
   } catch (err: any) {
     console.error("[lightning] Failed to create invoice:", err.message);
@@ -203,75 +155,58 @@ export async function createInvoice(
 }
 
 /**
- * Verify if a payment has been received
- *
- * Uses the cached verify URL from the original invoice creation.
- * For providers without native verify support, uses callback URL with payment_hash.
- *
- * LIMITATION: Wallet of Satoshi does not support LNURL-verify. Payments cannot
- * be automatically verified. Consider switching to a provider that supports
- * LNURL-verify (like Alby, Blink, or a self-hosted LND node).
+ * Verify if a payment has been received via Nakapay status endpoint
  *
  * @param paymentHash - The payment hash from createInvoice()
- * @returns { paid, preimage, amountSats, description } — paid is true if settled
+ * @returns { paid, preimage, amountSats, description } - paid is true if settled
  */
 export async function verifyPayment(
   paymentHash: string
 ): Promise<{ paid: boolean; preimage?: string; amountSats?: number; description?: string }> {
   const cached = invoiceCache.get(paymentHash);
   if (!cached) {
-    // Only log once per hash to avoid spam during polling loops
     if (!(verifyPayment as any).__warned?.has(paymentHash)) {
       if (!(verifyPayment as any).__warned) (verifyPayment as any).__warned = new Set();
       (verifyPayment as any).__warned.add(paymentHash);
-      console.log(`[lightning] No invoice cached for ${paymentHash.slice(0, 16)}... (suppressing further logs)`);
+      console.log(`[lightning] No invoice cached for ${paymentHash.slice(0, 16)}...`);
     }
     return { paid: false };
   }
 
   try {
-    console.log(`[lightning] Verifying payment ${paymentHash.slice(0, 16)}... via ${cached.verifyUrl.slice(0, 60)}...`);
-    const response = await fetch(cached.verifyUrl);
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log(`[lightning] Verify response: ${JSON.stringify(data).slice(0, 200)}`);
-      
-      // Check for provider-specific error responses (WoS doesn't support verification)
-      if (data.status === "ERROR" || data.error) {
-        console.log(`[lightning] Provider error: ${data.reason || data.error}`);
-        return {
-          paid: false,
-          amountSats: cached.amountSats,
-          description: `Provider error: ${data.reason || data.error}. Wallet of Satoshi does not support payment verification via LNURL. Check wallet app directly.`,
-        };
-      }
-      
-      // Handle different response formats
-      const isSettled = 
-        data.settled === true ||
-        data.status === "settled" ||
-        data.status === "complete" ||
-        data.paid === true ||
-        data.preimage !== undefined;
+    const response = await fetch(cached.verifyUrl, {
+      headers: {
+        "Authorization": `Bearer ${NAKAPAY_API_KEY}`,
+      },
+    });
 
-      if (isSettled) {
-        // Clean up cache after confirmed payment
-        invoiceCache.delete(paymentHash);
-        saveInvoiceCache();
-        console.log(`[lightning] Payment confirmed: ${paymentHash.slice(0, 16)}...`);
-      }
-      
-      return {
-        paid: isSettled,
-        preimage: data.preimage,
-        amountSats: cached.amountSats,
-        description: cached.description,
-      };
-    } else {
-      console.log(`[lightning] Verify response status: ${response.status}`);
+    if (!response.ok) {
+      console.log(`[lightning] Nakapay verify failed: ${response.status}`);
+      return { paid: false, amountSats: cached.amountSats, description: cached.description };
     }
-    return { paid: false, amountSats: cached.amountSats, description: cached.description };
+
+    const data = await response.json();
+    console.log(`[lightning] Nakapay status: ${data.status} for ${paymentHash.slice(0, 16)}...`);
+
+    // Nakapay uses "PAID", "SETTLED", or "COMPLETED" status
+    const isPaid = 
+      data.status === "PAID" || 
+      data.status === "SETTLED" || 
+      data.status === "COMPLETED" ||
+      data.settled === true;
+
+    if (isPaid) {
+      invoiceCache.delete(paymentHash);
+      saveInvoiceCache();
+      console.log(`[lightning] Payment confirmed: ${paymentHash.slice(0, 16)}...`);
+    }
+
+    return {
+      paid: isPaid,
+      preimage: data.preimage || data.paymentPreimage,
+      amountSats: cached.amountSats,
+      description: cached.description,
+    };
   } catch (err: any) {
     console.error("[lightning] Payment verification failed:", err.message);
     return { paid: false, amountSats: cached.amountSats, description: cached.description };
@@ -288,19 +223,15 @@ export async function getWalletInfo(): Promise<{
   description: string;
   active: boolean;
 } | null> {
-  const ln = await getLnAddress();
-  if (!ln) return null;
+  if (!isNakapayConfigured()) {
+    return null;
+  }
 
-  // Convert millisats to sats for the API response
   return {
-    address:
-      process.env.LIGHTNING_ADDRESS ??
-      process.env.NEXT_PUBLIC_LIGHTNING_ADDRESS ??
-      process.env.NAKAPAY_DESTINATION_WALLET ??
-      "",
-    minSats: Math.ceil((ln.lnurlpData?.min ?? 1000) / 1000),
-    maxSats: Math.floor((ln.lnurlpData?.max ?? 1_000_000_000) / 1000),
-    description: typeof ln.lnurlpData?.metadata === "string" ? ln.lnurlpData.metadata : JSON.stringify(ln.lnurlpData?.metadata ?? ""),
+    address: NAKAPAY_DESTINATION_WALLET || "",
+    minSats: NAKAPAY_MIN_SATS,
+    maxSats: 10_000_000, // 10M sats
+    description: "Nakapay Lightning wallet",
     active: true,
   };
 }
@@ -310,6 +241,14 @@ export async function getWalletInfo(): Promise<{
  */
 export async function initLightning(): Promise<boolean> {
   loadInvoiceCache();
-  const ln = await getLnAddress();
-  return ln !== null;
+
+  if (!isNakapayConfigured()) {
+    console.log("[lightning] Nakapay not configured. Set NAKAPAY_API_KEY and NAKAPAY_DESTINATION_WALLET");
+    return false;
+  }
+
+  nakapayInitialized = true;
+  console.log(`[lightning] Nakapay initialized for ${NAKAPAY_DESTINATION_WALLET}`);
+  console.log(`[lightning] Min: ${NAKAPAY_MIN_SATS} sats`);
+  return true;
 }
