@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-19 | Session: 52
+> Last updated: 2026-02-19 | Session: 53
 
 ---
 
@@ -28,6 +28,7 @@
 | Outreach | ✅ 4h cycle, LLM-judged owner pings |
 | Syntropy↔Pixel | ✅ Bidirectional (debrief + mailbox + cron monitor) |
 | Autonomous dispatch | ✅ Headless Syntropy via cron |
+| Canvas listener | ✅ Live — Socket.IO client, real-time pixel sale notifications, revenue recording |
 | Canvas migration | ❌ Deferred (V1 canvas works, earns sats) |
 | Sandbox container | ❌ Not started |
 
@@ -68,7 +69,7 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (37 source files, ~19,216 lines)
+### File Inventory (38 source files, ~19,411 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -108,6 +109,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/services/vision.ts` | ~46 | Image URL extraction for multi-modal input |
 | `src/services/google-key.ts` | ~52 | Google API key failover (primary → fallback) used by Gemini calls |
 | `src/services/server-registry.ts` | ~213 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
+| `src/services/canvas-listener.ts` | ~195 | Socket.IO client for V1 canvas — real-time pixel sale notifications, revenue recording, Pixel wake-up |
 
 ---
 
