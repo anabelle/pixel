@@ -17,6 +17,8 @@
  */
 
 import { LightningAddress } from "@getalby/lightning-tools";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
 
 // Cache the LightningAddress instance
 let lnAddress: LightningAddress | null = null;
@@ -31,6 +33,41 @@ interface InvoiceCache {
 }
 const invoiceCache = new Map<string, InvoiceCache>();
 const MAX_VERIFY_CACHE = 500;
+const INVOICE_CACHE_PATH = process.env.INVOICE_CACHE_PATH || "/app/data/invoice-cache.json";
+
+/** Load invoice cache from disk */
+function loadInvoiceCache(): void {
+  try {
+    if (existsSync(INVOICE_CACHE_PATH)) {
+      const data = JSON.parse(readFileSync(INVOICE_CACHE_PATH, "utf-8"));
+      if (data && typeof data === "object") {
+        for (const [hash, entry] of Object.entries(data)) {
+          invoiceCache.set(hash, entry as InvoiceCache);
+        }
+        console.log(`[lightning] Loaded ${invoiceCache.size} cached invoices from disk`);
+      }
+    }
+  } catch (err: any) {
+    console.error(`[lightning] Failed to load invoice cache:`, err.message);
+  }
+}
+
+/** Save invoice cache to disk */
+function saveInvoiceCache(): void {
+  try {
+    const dir = join(INVOICE_CACHE_PATH, "..");
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    const data: Record<string, InvoiceCache> = {};
+    for (const [hash, entry] of invoiceCache) {
+      data[hash] = entry;
+    }
+    writeFileSync(INVOICE_CACHE_PATH, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err: any) {
+    console.error(`[lightning] Failed to save invoice cache:`, err.message);
+  }
+}
 
 /** Get or create the LightningAddress instance */
 async function getLnAddress(): Promise<LightningAddress | null> {
@@ -125,6 +162,7 @@ export async function createInvoice(
         amountSats,
         description: comment,
       });
+      saveInvoiceCache();
     }
 
     return {
@@ -174,6 +212,7 @@ export async function verifyPayment(
       if (data.settled) {
         // Clean up cache after confirmed payment
         invoiceCache.delete(paymentHash);
+        saveInvoiceCache();
       }
       return {
         paid: data.settled === true,
@@ -220,6 +259,7 @@ export async function getWalletInfo(): Promise<{
  * Initialize Lightning on boot — called from index.ts
  */
 export async function initLightning(): Promise<boolean> {
+  loadInvoiceCache();
   const ln = await getLnAddress();
   return ln !== null;
 }
