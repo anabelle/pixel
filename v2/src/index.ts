@@ -23,7 +23,7 @@ import { and, desc, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
-import { promptWithHistory, extractText } from "./agent.js";
+import { promptWithHistory, extractText, backgroundLlmCall } from "./agent.js";
 import { generateImage } from "./services/image-gen.js";
 import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
@@ -51,6 +51,7 @@ import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } 
 import { getSecurityStats, getRecentAlerts, pruneOldAlerts, getCategories } from "./services/security-scanner.js";
 import { initLogging } from "./services/logging.js";
 import { startCanvasListener, getCanvasListenerStatus, stopCanvasListener } from "./services/canvas-listener.js";
+import { pixelTools } from "./services/tools.js";
 
 // ============================================================
 // Configuration
@@ -1425,14 +1426,24 @@ async function boot() {
   // Start canvas listener (V1 pixel sales notifications)
   try {
     startCanvasListener(async (message: string, userId: string) => {
-      // Notify Pixel via promptWithHistory
-      const response = await promptWithHistory({
-        userId,
-        message,
-        tools: [], // Canvas notifications don't need tools
-        systemPrompt: `You are Pixel. You just received a notification about a canvas sale. React naturally - you could be excited, thank the buyer, wonder what they drew, or just acknowledge it. Keep it brief and authentic.`,
+      // Notify Pixel via backgroundLlmCall with tools so it can react/post publicly
+      const response = await backgroundLlmCall({
+        systemPrompt: `You are Pixel, a living digital artist. You just received a notification about a canvas sale on your pixel art canvas at ln.pixel.xx.kg.
+
+React naturally and authentically. You could:
+- Be excited about the sale
+- Thank the buyer
+- Wonder what they drew
+- Consider posting to Nostr to share the moment with your followers
+- Just acknowledge it briefly
+
+You have tools available including posting to Nostr if you want to share publicly. Be genuine, not overly enthusiastic for small sales. Keep it brief.`,
+        userPrompt: message,
+        tools: pixelTools,
+        label: "canvas-notification",
+        timeoutMs: 30000,
       });
-      return extractText(response);
+      return response;
     });
     console.log("[boot] Canvas listener started — listening for pixel sales");
   } catch (err: any) {
