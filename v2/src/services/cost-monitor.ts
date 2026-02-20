@@ -38,6 +38,11 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   'gemini-2.0-flash-lite': { input: 0.07, output: 0.30, free: false },
   'gemini-2.5-flash': { input: 0.30, output: 2.50, free: false },
   'gemini-3-flash-preview': { input: 0.50, output: 3.00, free: false },  // Estimated
+  // Gemini image models (output is image, not tokens - pricing is per image)
+  'gemini-3-pro-image-preview': { input: 0, output: 0, free: true },  // Free tier preview
+  'gemini-2.5-flash-image': { input: 0, output: 0, free: true },  // Free tier
+  // Gemini embedding model (free tier)
+  'gemini-embedding-001': { input: 0, output: 0, free: true },
   // OpenRouter (free tier)
   'arcee-ai/trinity-large-preview:free': { input: 0, output: 0, free: true },
   // GLM models (flat-rate Coding Lite plan - $84/yr, effectively $0 per call)

@@ -17,6 +17,7 @@ import { join } from "path";
 import { memories } from "../db.js";
 import type * as schema from "../db.js";
 import { audit } from "./audit.js";
+import { costMonitor } from "./cost-monitor.js";
 import { resolveGoogleApiKey } from "./google-key.js";
 
 // ─── Configuration ───────────────────────────────────────────
@@ -120,6 +121,9 @@ export async function generateEmbedding(
 ): Promise<number[]> {
   if (!resolveGoogleApiKey()) throw new Error("No Gemini API key for embeddings");
 
+  const truncatedText = text.slice(0, 8000);
+  const inputTokens = Math.ceil(truncatedText.length / 4);
+
   const response = await fetch(
     `${GEMINI_EMBED_URL}:embedContent?key=${resolveGoogleApiKey()}`,
     {
@@ -127,7 +131,7 @@ export async function generateEmbedding(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: `models/${EMBEDDING_MODEL}`,
-        content: { parts: [{ text: text.slice(0, 8000) }] },
+        content: { parts: [{ text: truncatedText }] },
         taskType,
         outputDimensionality: EMBEDDING_DIMENSIONS,
       }),
@@ -136,10 +140,15 @@ export async function generateEmbedding(
 
   if (!response.ok) {
     const errorText = await response.text();
+    costMonitor.recordError(EMBEDDING_MODEL, `Embedding API error ${response.status}`, 'memory');
     throw new Error(`Embedding API error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json() as { embedding: { values: number[] } };
+  
+  // Track embedding usage (output is vector, not tokens - use 0)
+  costMonitor.recordUsage(EMBEDDING_MODEL, inputTokens, 0, 'memory');
+  
   return data.embedding.values;
 }
 
@@ -158,13 +167,17 @@ export async function generateEmbeddingsBatch(
   // Gemini batch limit is 100
   const batchSize = 100;
   const allEmbeddings: number[][] = [];
+  let totalInputTokens = 0;
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
 
-    const requests = batch.map((text) => ({
+    const truncatedBatch = batch.map(text => text.slice(0, 8000));
+    const batchTokens = truncatedBatch.reduce((sum, text) => sum + Math.ceil(text.length / 4), 0);
+
+    const requests = truncatedBatch.map((text) => ({
       model: `models/${EMBEDDING_MODEL}`,
-      content: { parts: [{ text: text.slice(0, 8000) }] },
+      content: { parts: [{ text }] },
       taskType,
       outputDimensionality: EMBEDDING_DIMENSIONS,
     }));
@@ -180,6 +193,7 @@ export async function generateEmbeddingsBatch(
 
     if (!response.ok) {
       const errorText = await response.text();
+      costMonitor.recordError(EMBEDDING_MODEL, `Batch embedding API error ${response.status}`, 'memory');
       throw new Error(`Batch embedding API error ${response.status}: ${errorText}`);
     }
 
@@ -187,7 +201,12 @@ export async function generateEmbeddingsBatch(
     for (const emb of data.embeddings) {
       allEmbeddings.push(emb.values);
     }
+    
+    totalInputTokens += batchTokens;
   }
+
+  // Track total batch embedding usage
+  costMonitor.recordUsage(EMBEDDING_MODEL, totalInputTokens, 0, 'memory');
 
   return allEmbeddings;
 }

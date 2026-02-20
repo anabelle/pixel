@@ -672,7 +672,7 @@ app.get("/api/reminders", requireOwnerNostrAuth, async (c) => {
 
 /** Cost history from disk (7 days) */
 app.get("/api/costs/history", (c) => {
-  const history = readJsonFile<{ entries?: unknown[]; lastSaved?: string }>(join(DATA_DIR, "costs.json"));
+  const history = readJsonFile<{ entries?: unknown[]; lastSaved?: string }>(join(CONVERSATIONS_DIR, "costs.json"));
   return c.json({
     history: history.data ?? { entries: [] },
     updatedAt: history.updatedAt,

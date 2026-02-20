@@ -11,6 +11,7 @@
  */
 
 import { resolveGoogleApiKey } from "./google-key.js";
+import { costMonitor } from "./cost-monitor.js";
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB (Gemini supports up to ~8.4 hours)
 const TRANSCRIPTION_TIMEOUT_MS = 30_000;
@@ -144,11 +145,13 @@ async function tryTranscribe(
             console.log(`[audio] Model ${model} rate limited, retrying in ${retryDelays[attempt + 1]}ms...`);
             continue;
           }
+          costMonitor.recordError(model, '429 rate limit', 'conversation');
           console.log(`[audio] Model ${model} rate limited after ${attempt + 1} attempts, trying next model`);
           return null;
         }
 
         // Other errors: log and try next model
+        costMonitor.recordError(model, `API error ${res.status}`, 'conversation');
         console.error(`[audio] Model ${model} error ${res.status}: ${errorText.slice(0, 200)}`);
         return null;
       }
@@ -162,6 +165,14 @@ async function tryTranscribe(
       }
 
       const transcription = text.trim();
+      
+      // Track transcription usage
+      // Input: audio binary - hard to estimate tokens, use buffer size / 1000 as rough proxy
+      // Output: transcription text tokens
+      const outputTokens = Math.ceil(transcription.length / 4);
+      const inputTokens = Math.ceil((base64.length * 3 / 4) / 1000); // rough audio token estimate
+      costMonitor.recordUsage(model, inputTokens, outputTokens, 'conversation');
+      
       console.log(`[audio] Transcribed via ${model}: ${transcription.length} chars`);
       return transcription;
     } catch (err: any) {
