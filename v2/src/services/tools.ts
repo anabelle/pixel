@@ -2304,7 +2304,7 @@ const verifyPaymentSchema = Type.Object({
 const verifyPaymentTool: AgentTool<typeof verifyPaymentSchema> = {
   name: "verify_payment",
   label: "Verify Lightning Payment",
-  description: "Check if a Lightning invoice has been paid. Use the payment hash from a previously created invoice. Returns payment status and preimage if settled.",
+  description: "Check if a Lightning invoice has been paid. Use the payment hash from a previously created invoice. Returns payment status and preimage if settled. Automatically records revenue when payment is confirmed.",
   parameters: verifyPaymentSchema,
   execute: async (_id, { payment_hash }) => {
     try {
@@ -2312,10 +2312,23 @@ const verifyPaymentTool: AgentTool<typeof verifyPaymentSchema> = {
       auditToolUse("verify_payment", { payment_hash: payment_hash.slice(0, 16) }, { paid: result.paid });
 
       if (result.paid) {
+        // Record revenue when payment is confirmed
+        try {
+          const { recordRevenue } = await import("./revenue.js");
+          await recordRevenue({
+            source: "lightning_invoice",
+            amountSats: result.amountSats || 0,
+            description: result.description || "Lightning payment",
+            txHash: payment_hash, // Use payment hash as unique identifier
+          });
+        } catch (revenueErr: any) {
+          console.error("[verify_payment] Failed to record revenue:", revenueErr.message);
+        }
+
         return {
           content: [{
             type: "text" as const,
-            text: `**Payment Confirmed** ✅\n\n- Amount: ${result.amountSats} sats\n- Preimage: ${result.preimage || "N/A"}\n- Description: ${result.description || "N/A"}`,
+            text: `**Payment Confirmed** ✅\n\n- Amount: ${result.amountSats} sats\n- Preimage: ${result.preimage || "N/A"}\n- Description: ${result.description || "N/A"}\n\nRevenue recorded in database.`,
           }],
           details: { paid: true, preimage: result.preimage, amountSats: result.amountSats },
         };

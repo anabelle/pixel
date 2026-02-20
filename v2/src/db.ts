@@ -30,7 +30,7 @@ export const users = pgTable("users", {
 /** Revenue from all sources */
 export const revenue = pgTable("revenue", {
   id: serial("id").primaryKey(),
-  /** Source: 'whatsapp', 'telegram', 'nostr_dvm', 'l402', 'x402', 'canvas', 'zap' */
+  /** Source: 'whatsapp', 'telegram', 'nostr_dvm', 'l402', 'x402', 'canvas', 'zap', 'lightning_invoice' */
   source: text("source").notNull(),
   /** Normalized to sats */
   amountSats: bigint("amount_sats", { mode: "number" }),
@@ -44,7 +44,9 @@ export const revenue = pgTable("revenue", {
   txHash: text("tx_hash"),
   /** Payment timestamp */
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  txHashIdx: index("revenue_tx_hash_idx").on(table.txHash),
+}));
 
 /** Canvas pixels (migrated from V1 SQLite) */
 export const canvasPixels = pgTable("canvas_pixels", {
