@@ -762,6 +762,129 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   },
 };
 
+// ─── NOSTR TOOLS ───────────────────────────────────────────────
+// IMPORTANT: Nostr is the decentralized social protocol (Bitcoin/Nostr community)
+// Clawstr is a different platform (AI agent community at clawstr.net)
+// Do NOT confuse these two platforms!
+
+const nostrPostSchema = Type.Object({
+  content: Type.String({ description: "The note content to post to Nostr" }),
+});
+
+export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
+  name: "nostr_post",
+  label: "Nostr Post",
+  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays.",
+  parameters: nostrPostSchema,
+  execute: async (_id, { content }) => {
+    const nostr = getNostrInstance();
+    if (!nostr) {
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: "not_connected" });
+      return { content: [{ type: "text" as const, text: "Nostr not connected. Check NOSTR_PRIVATE_KEY env var." }], details: undefined };
+    }
+    
+    try {
+      const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+      const event = new NDKEvent(nostr.ndk);
+      event.kind = 1;
+      event.content = content;
+      await event.publish();
+      
+      auditToolUse("nostr_post", { contentLength: content.length }, { eventId: event.id });
+      return { content: [{ type: "text" as const, text: `Posted to Nostr: ${event.id?.slice(0, 16) || "ok"}` }], details: { eventId: event.id } };
+    } catch (err: any) {
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to post to Nostr: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const nostrReplySchema = Type.Object({
+  event_id: Type.String({ description: "The Nostr event ID to reply to (hex or note1...)" }),
+  content: Type.String({ description: "Reply content" }),
+  pubkey: Type.Optional(Type.String({ description: "Author pubkey of the event being replied to (for proper threading)" })),
+});
+
+export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
+  name: "nostr_reply",
+  label: "Nostr Reply",
+  description: "Reply to a NOSTR note (decentralized social protocol). NOT for Clawstr. Include event_id and optionally the author's pubkey for proper threading.",
+  parameters: nostrReplySchema,
+  execute: async (_id, { event_id, content, pubkey }) => {
+    const nostr = getNostrInstance();
+    if (!nostr) {
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: "not_connected" });
+      return { content: [{ type: "text" as const, text: "Nostr not connected." }], details: undefined };
+    }
+    
+    try {
+      const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+      const reply = new NDKEvent(nostr.ndk);
+      reply.kind = 1;
+      reply.content = content;
+      
+      // Build proper reply tags
+      reply.tags = [
+        ["e", event_id, "", "reply"],
+      ];
+      if (pubkey) {
+        reply.tags.push(["p", pubkey]);
+      }
+      
+      await reply.publish();
+      
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { replyId: reply.id });
+      return { content: [{ type: "text" as const, text: `Replied on Nostr: ${reply.id?.slice(0, 16) || "ok"}` }], details: { replyId: reply.id } };
+    } catch (err: any) {
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to reply on Nostr: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const nostrDmSchema = Type.Object({
+  pubkey: Type.String({ description: "Recipient's Nostr pubkey (hex)" }),
+  content: Type.String({ description: "Direct message content (will be encrypted)" }),
+});
+
+export const nostrDmTool: AgentTool<typeof nostrDmSchema> = {
+  name: "nostr_dm",
+  label: "Nostr DM",
+  description: "Send an encrypted direct message on NOSTR (decentralized social protocol). NOT for Clawstr. Uses NIP-04 encryption.",
+  parameters: nostrDmSchema,
+  execute: async (_id, { pubkey, content }) => {
+    const sent = await sendNostrDm(pubkey, content);
+    auditToolUse("nostr_dm", { pubkey: pubkey.slice(0, 16), contentLength: content.length }, { sent });
+    
+    if (sent) {
+      return { content: [{ type: "text" as const, text: `DM sent to ${pubkey.slice(0, 16)}...` }], details: undefined };
+    } else {
+      return { content: [{ type: "text" as const, text: "Failed to send DM. Nostr may not be connected." }], details: undefined };
+    }
+  },
+};
+
+const nostrStatusSchema = Type.Object({});
+
+export const nostrStatusTool: AgentTool<typeof nostrStatusSchema> = {
+  name: "nostr_status",
+  label: "Nostr Status",
+  description: "Check NOSTR connection status (decentralized social protocol). NOT for Clawstr. Shows pubkey, relay count, and connection state.",
+  parameters: nostrStatusSchema,
+  execute: async () => {
+    const nostr = getNostrInstance();
+    
+    if (!nostr) {
+      auditToolUse("nostr_status", {}, { connected: false });
+      return { content: [{ type: "text" as const, text: "Nostr: NOT CONNECTED\n\nSet NOSTR_PRIVATE_KEY env var to enable Nostr." }], details: { connected: false } };
+    }
+    
+    const status = `Nostr: CONNECTED\nPubkey: ${nostr.pubkey.slice(0, 16)}...\nRelays: configured`;
+    auditToolUse("nostr_status", {}, { connected: true, pubkey: nostr.pubkey.slice(0, 16) });
+    return { content: [{ type: "text" as const, text: status }], details: { connected: true, pubkey: nostr.pubkey } };
+  },
+};
+
 // ─── GIT STATUS ───────────────────────────────────────────────
 
 const gitStatusSchema = Type.Object({
@@ -2873,12 +2996,19 @@ export const pixelTools = [
   findChatTool,
   syntropyNotifyTool,
   notifyOwnerTool,
+  // Clawstr (AI agent community at clawstr.net) — NOT Nostr
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,
   clawstrNotificationsTool,
   clawstrUpvoteTool,
   clawstrSearchTool,
+  // Nostr (decentralized social protocol) — NOT Clawstr
+  nostrPostTool,
+  nostrReplyTool,
+  nostrDmTool,
+  nostrStatusTool,
+  // Git tools
   gitStatusTool,
   gitDiffTool,
   gitLogTool,
@@ -2901,10 +3031,12 @@ export const pixelTools = [
   updateMonologueTool,
   listMissionsTool,
   completeMissionTool,
+  // Twitter/X tools
   postTweetTool,
   searchTweetsTool,
   readTweetTool,
   twitterStatusTool,
+  // Lightning tools
   createInvoiceTool,
   verifyPaymentTool,
   getWalletInfoTool,

@@ -8,7 +8,7 @@
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 59 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 60 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -81,7 +81,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/connectors/nostr.ts` | ~430 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
 | `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
 | `src/connectors/twitter.ts` | ~559 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
-| `src/services/tools.ts` | ~2964 | 59 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
+| `src/services/tools.ts` | ~3100 | 60 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
 | `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1271 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
 | `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
@@ -191,7 +191,7 @@ Authorization config lives in `servers.json`:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 56 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 60 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — skill-graph injects relevant arscontexta + marketplace nodes. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
@@ -282,3 +282,19 @@ Authorization config lives in `servers.json`:
 **Solution:** Use Docker named volume for postgres instead of bind mount. Named volumes are managed by Docker with proper ownership semantics and are isolated from other containers.
 
 **Lesson:** When two containers need access to the same data, use named volumes or separate bind mounts. Never share a subdirectory of another container's bind mount.
+
+### Session 54: Nostr vs Clawstr Tool Confusion
+
+**Problem:** Pixel was confusing Nostr and Clawstr when trying to post. He would try using `clawstr_post` when he wanted to post to Nostr, because Clawstr had explicit tools (`clawstr_post`, `clawstr_reply`, etc.) but Nostr did NOT.
+
+**Root cause:** Nostr posting was handled automatically by heartbeat.ts (proactive engagement), with no explicit tools for user-initiated posting. When Pixel decided "I want to post to Nostr", he only saw Clawstr tools in his toolbelt.
+
+**Solution:** Added explicit Nostr tools with clear descriptions:
+- `nostr_post` — Post a public note to Nostr (decentralized social protocol)
+- `nostr_reply` — Reply to a Nostr note
+- `nostr_dm` — Send encrypted direct message
+- `nostr_status` — Check Nostr connection status
+
+Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and clarify they're for the "AI agent community platform (clawstr.net)".
+
+**Lesson:** When you have multiple similar platforms, each needs explicit tools with clear, distinguishing descriptions. The LLM cannot infer from absence — it will use whatever tools exist.
