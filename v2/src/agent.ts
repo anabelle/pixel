@@ -682,6 +682,8 @@ export async function promptWithHistory(
     const errorStr = llmError as string | null;
     const isRetryable = errorStr && (
       errorStr.includes("429") ||
+      errorStr.includes("503") ||
+      errorStr.includes("high demand") ||
       errorStr.includes("RESOURCE_EXHAUSTED") ||
       errorStr.includes("quota") ||
       errorStr.includes("Insufficient balance") ||
