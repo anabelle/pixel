@@ -2,16 +2,25 @@
  * Audio Transcription Service — Gemini-based voice message processing
  *
  * Transcribes audio (voice messages) using Google Gemini's native audio understanding.
- * Gemini 2.0 Flash accepts audio/ogg natively — no ffmpeg needed.
+ * Gemini models accept audio/ogg natively — no ffmpeg needed.
  *
  * This is a pre-processing step: audio → text, then text feeds into promptWithHistory().
  * Pi-ai has no AudioContent type, so we call the Gemini REST API directly.
+ *
+ * Features retry with exponential backoff on 429, and fallback models.
  */
 
 import { resolveGoogleApiKey } from "./google-key.js";
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB (Gemini supports up to ~8.4 hours)
 const TRANSCRIPTION_TIMEOUT_MS = 30_000;
+
+/** Model fallback chain for transcription (ordered by quality) */
+const TRANSCRIPTION_MODELS = [
+  "gemini-2.5-flash",       // Best quality
+  "gemini-2.0-flash",       // Fast, reliable
+  "gemini-2.5-flash-lite",  // Lighter fallback
+];
 
 /** Supported audio MIME types (Gemini native support) */
 const SUPPORTED_MIME_TYPES = new Set([
@@ -31,6 +40,7 @@ const SUPPORTED_MIME_TYPES = new Set([
 
 /**
  * Transcribe audio using Google Gemini's native audio understanding.
+ * Uses retry with exponential backoff on 429, and fallback models.
  *
  * @param buffer - Raw audio file bytes
  * @param mimeType - MIME type of the audio (e.g., "audio/ogg")
@@ -61,7 +71,30 @@ export async function transcribeAudio(
 
   const base64 = buffer.toString("base64");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  // Try each model in the fallback chain
+  for (const model of TRANSCRIPTION_MODELS) {
+    const result = await tryTranscribe(apiKey, model, base64, normalizedMime);
+    if (result !== null) {
+      return result;
+    }
+    // If we get here, this model failed - try next
+  }
+
+  console.error("[audio] All transcription models failed");
+  return null;
+}
+
+/**
+ * Attempt transcription with a specific model.
+ * Returns null on failure (caller tries next model).
+ */
+async function tryTranscribe(
+  apiKey: string,
+  model: string,
+  base64: string,
+  mimeType: string
+): Promise<string | null> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const body = {
     contents: [
@@ -69,7 +102,7 @@ export async function transcribeAudio(
         parts: [
           {
             inlineData: {
-              mimeType: normalizedMime,
+              mimeType,
               data: base64,
             },
           },
@@ -85,39 +118,63 @@ export async function transcribeAudio(
     },
   };
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS),
-    });
+  // Retry with exponential backoff on 429
+  const retryDelays = [0, 1000, 3000]; // immediate, 1s, 3s
 
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      console.error(`[audio] Gemini API error ${res.status}: ${errorText.slice(0, 200)}`);
+  for (let attempt = 0; attempt < retryDelays.length; attempt++) {
+    const delay = retryDelays[attempt];
+    if (delay > 0) {
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TRANSCRIPTION_TIMEOUT_MS),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+
+        // 429: retry with backoff (if attempts left), otherwise try next model
+        if (res.status === 429) {
+          if (attempt < retryDelays.length - 1) {
+            console.log(`[audio] Model ${model} rate limited, retrying in ${retryDelays[attempt + 1]}ms...`);
+            continue;
+          }
+          console.log(`[audio] Model ${model} rate limited after ${attempt + 1} attempts, trying next model`);
+          return null;
+        }
+
+        // Other errors: log and try next model
+        console.error(`[audio] Model ${model} error ${res.status}: ${errorText.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!text || text.trim() === "[inaudible]") {
+        console.log("[audio] Transcription empty or inaudible");
+        return null;
+      }
+
+      const transcription = text.trim();
+      console.log(`[audio] Transcribed via ${model}: ${transcription.length} chars`);
+      return transcription;
+    } catch (err: any) {
+      if (err.name === "TimeoutError" || err.name === "AbortError") {
+        console.error(`[audio] Model ${model} timed out`);
+      } else {
+        console.error(`[audio] Model ${model} failed: ${err.message}`);
+      }
       return null;
     }
-
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text || text.trim() === "[inaudible]") {
-      console.log("[audio] Transcription empty or inaudible");
-      return null;
-    }
-
-    const transcription = text.trim();
-    console.log(`[audio] Transcribed ${buffer.byteLength} bytes → ${transcription.length} chars`);
-    return transcription;
-  } catch (err: any) {
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
-      console.error("[audio] Transcription timed out");
-    } else {
-      console.error(`[audio] Transcription failed: ${err.message}`);
-    }
-    return null;
   }
+
+  return null;
 }
 
 /** Normalize MIME type for Gemini API */
