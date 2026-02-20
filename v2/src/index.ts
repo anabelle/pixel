@@ -48,6 +48,7 @@ import { costMonitor, initCostMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
 import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
+import { getSecurityStats, getRecentAlerts, pruneOldAlerts, getCategories } from "./services/security-scanner.js";
 import { initLogging } from "./services/logging.js";
 
 // ============================================================
@@ -809,6 +810,30 @@ app.get("/api/jobs/summary", (c) => {
     }
   }
   return c.json({ count: jobs.length, byStatus, lastCompletedAt: lastCompletedAt ? new Date(lastCompletedAt).toISOString() : null });
+});
+
+// ============================================================
+// Security Scanner Endpoints
+// ============================================================
+
+/** Security stats (owner only) */
+app.get("/api/security/stats", requireOwnerNostrAuth, (c) => {
+  const stats = getSecurityStats();
+  const categories = getCategories();
+  return c.json({ ...stats, categories, windowHours: 1 });
+});
+
+/** Recent security alerts (owner only) */
+app.get("/api/security/alerts", requireOwnerNostrAuth, (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const alerts = getRecentAlerts(Math.min(limit, 200));
+  return c.json({ alerts, count: alerts.length });
+});
+
+/** Prune old security alerts (owner only, mostly for testing) */
+app.post("/api/security/prune", requireOwnerNostrAuth, (c) => {
+  pruneOldAlerts();
+  return c.json({ ok: true, message: "Old alerts pruned" });
 });
 
 // ============================================================

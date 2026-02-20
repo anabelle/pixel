@@ -22,6 +22,7 @@ import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
 import { getSkillGraph, discoverRelevantSkills, formatSkillsForInjection, getSkillGraphStats } from "./services/skill-graph.js";
+import { scanMessage } from "./services/security-scanner.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -477,6 +478,13 @@ export async function promptWithHistory(
   
   // Scheduling is handled by the main agent via schedule_alarm/list_alarms/cancel_alarm/modify_alarm tools.
   // No pre-filter — GLM-4.7 is smart enough to detect intent and use tools directly.
+  
+  // Security scan: check for injection, abuse, spam patterns
+  const securityMatches = scanMessage(message, userId, platform);
+  if (securityMatches.length > 0) {
+    const severities = [...new Set(securityMatches.map(m => m.severity))];
+    console.log(`[agent] Security scan: ${securityMatches.length} match(es) [${severities.join(', ')}] from ${userId} - categories: ${[...new Set(securityMatches.map(m => m.category))].join(', ')}`);
+  }
   
   const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 

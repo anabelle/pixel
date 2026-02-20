@@ -35,6 +35,7 @@ import { extractImageUrls, fetchImages } from "./vision.js";
 import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
 import { getUnsafeReason } from "./content-filter.js";
 import { pixelTools } from "./tools.js";
+import { pruneOldAlerts as pruneSecurityAlerts } from "./security-scanner.js";
 
 // ============================================================
 // Configuration
@@ -900,6 +901,13 @@ async function beat(): Promise<void> {
   heartbeatCount++;
   saveHeartbeatState();
   console.log(`[heartbeat] Beat #${heartbeatCount} — generating post...`);
+  
+  // Prune old security alerts (every heartbeat cycle)
+  try {
+    pruneSecurityAlerts();
+  } catch (err: any) {
+    console.error("[heartbeat] Security prune failed:", err.message);
+  }
 
   // Refresh canvas stats before generating post
   await fetchCanvasStats();

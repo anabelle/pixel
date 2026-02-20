@@ -75,7 +75,9 @@ export type AuditType =
   // Clawstr
   | "clawstr_notifications"
   | "clawstr_reply"
-  | "clawstr_error";
+  | "clawstr_error"
+  // Security
+  | "security_scan";
 
 export interface AuditEntry {
   ts: string;         // ISO timestamp
