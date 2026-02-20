@@ -55,7 +55,7 @@ function loadInvoiceCache(): void {
 /** Save invoice cache to disk */
 function saveInvoiceCache(): void {
   try {
-    const dir = join(INVOICE_CACHE_PATH, "..");
+    const dir = INVOICE_CACHE_PATH.substring(0, INVOICE_CACHE_PATH.lastIndexOf("/"));
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -64,6 +64,7 @@ function saveInvoiceCache(): void {
       data[hash] = entry;
     }
     writeFileSync(INVOICE_CACHE_PATH, JSON.stringify(data, null, 2), "utf-8");
+    console.log(`[lightning] Saved ${invoiceCache.size} invoices to cache`);
   } catch (err: any) {
     console.error(`[lightning] Failed to save invoice cache:`, err.message);
   }
@@ -95,6 +96,9 @@ async function getLnAddress(): Promise<LightningAddress | null> {
     console.log(
       `[lightning] Min: ${Math.ceil(minMsat / 1000)} sats, Max: ${Math.floor(maxMsat / 1000)} sats`
     );
+    // Log available LNURL-pay capabilities
+    console.log(`[lightning] LNURL-pay callback: ${lnAddress.lnurlpData?.callback ?? "none"}`);
+    console.log(`[lightning] LNURL-pay allowsVerify: ${(lnAddress as any).lnurlpData?.allowsVerify ?? "unknown"}`);
     return lnAddress;
   } catch (err: any) {
     console.error(`[lightning] Failed to initialize ${address}:`, err.message);
@@ -150,19 +154,38 @@ export async function createInvoice(
       comment: comment ?? `Pixel — ${amountSats} sats`,
     });
 
+    // Debug: log full invoice response
+    console.log(`[lightning] Invoice response keys: ${Object.keys(invoice).join(", ")}`);
+    console.log(`[lightning] Invoice verify: ${invoice.verify ?? "undefined"}`);
+    console.log(`[lightning] Invoice paymentHash: ${invoice.paymentHash.slice(0, 16)}...`);
+
     // Cache the verify URL and amount for later payment verification
-    if (invoice.verify) {
+    let verifyUrl = invoice.verify;
+    
+    // Fallback: construct verify URL from callback if provider doesn't return one
+    // Many LNURL-pay providers support checking status via callback + payment_hash
+    if (!verifyUrl && ln.lnurlpData?.callback) {
+      const callbackBase = ln.lnurlpData.callback;
+      // Try common verify URL patterns
+      verifyUrl = `${callbackBase}&payment_hash=${invoice.paymentHash}`;
+      console.log(`[lightning] Constructed fallback verify URL from callback`);
+    }
+
+    if (verifyUrl) {
       // Evict old entries
       if (invoiceCache.size > MAX_VERIFY_CACHE) {
         const first = invoiceCache.keys().next().value;
         if (first) invoiceCache.delete(first);
       }
       invoiceCache.set(invoice.paymentHash, {
-        verifyUrl: invoice.verify,
+        verifyUrl,
         amountSats,
         description: comment,
       });
       saveInvoiceCache();
+      console.log(`[lightning] Cached invoice ${invoice.paymentHash.slice(0, 16)}... for later verification`);
+    } else {
+      console.log(`[lightning] WARNING: No verify URL available - payment verification will not work for this invoice`);
     }
 
     return {
@@ -183,7 +206,11 @@ export async function createInvoice(
  * Verify if a payment has been received
  *
  * Uses the cached verify URL from the original invoice creation.
- * No dummy invoice creation needed.
+ * For providers without native verify support, uses callback URL with payment_hash.
+ *
+ * LIMITATION: Wallet of Satoshi does not support LNURL-verify. Payments cannot
+ * be automatically verified. Consider switching to a provider that supports
+ * LNURL-verify (like Alby, Blink, or a self-hosted LND node).
  *
  * @param paymentHash - The payment hash from createInvoice()
  * @returns { paid, preimage, amountSats, description } — paid is true if settled
@@ -203,28 +230,51 @@ export async function verifyPayment(
   }
 
   try {
+    console.log(`[lightning] Verifying payment ${paymentHash.slice(0, 16)}... via ${cached.verifyUrl.slice(0, 60)}...`);
     const response = await fetch(cached.verifyUrl);
+    
     if (response.ok) {
-      const data = (await response.json()) as {
-        settled: boolean;
-        preimage?: string;
-      };
-      if (data.settled) {
+      const data = await response.json();
+      console.log(`[lightning] Verify response: ${JSON.stringify(data).slice(0, 200)}`);
+      
+      // Check for provider-specific error responses (WoS doesn't support verification)
+      if (data.status === "ERROR" || data.error) {
+        console.log(`[lightning] Provider error: ${data.reason || data.error}`);
+        return {
+          paid: false,
+          amountSats: cached.amountSats,
+          description: `Provider error: ${data.reason || data.error}. Wallet of Satoshi does not support payment verification via LNURL. Check wallet app directly.`,
+        };
+      }
+      
+      // Handle different response formats
+      const isSettled = 
+        data.settled === true ||
+        data.status === "settled" ||
+        data.status === "complete" ||
+        data.paid === true ||
+        data.preimage !== undefined;
+
+      if (isSettled) {
         // Clean up cache after confirmed payment
         invoiceCache.delete(paymentHash);
         saveInvoiceCache();
+        console.log(`[lightning] Payment confirmed: ${paymentHash.slice(0, 16)}...`);
       }
+      
       return {
-        paid: data.settled === true,
+        paid: isSettled,
         preimage: data.preimage,
         amountSats: cached.amountSats,
         description: cached.description,
       };
+    } else {
+      console.log(`[lightning] Verify response status: ${response.status}`);
     }
-    return { paid: false };
+    return { paid: false, amountSats: cached.amountSats, description: cached.description };
   } catch (err: any) {
     console.error("[lightning] Payment verification failed:", err.message);
-    return { paid: false };
+    return { paid: false, amountSats: cached.amountSats, description: cached.description };
   }
 }
 

@@ -2333,9 +2333,14 @@ const verifyPaymentTool: AgentTool<typeof verifyPaymentSchema> = {
           details: { paid: true, preimage: result.preimage, amountSats: result.amountSats },
         };
       } else {
+        // Check if there's a provider-specific error message
+        const errorMsg = result.description?.includes("Provider error") 
+          ? `\n\n⚠️ **Note:** ${result.description}`
+          : "\n\nPayment not yet received. The invoice is still pending.";
+        
         return {
-          content: [{ type: "text" as const, text: "Payment not yet received. The invoice is still pending." }],
-          details: { paid: false },
+          content: [{ type: "text" as const, text: `**Payment Status: Pending**${errorMsg}` }],
+          details: { paid: false, amountSats: result.amountSats },
         };
       }
     } catch (err: any) {
