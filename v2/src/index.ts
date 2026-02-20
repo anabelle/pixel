@@ -560,6 +560,116 @@ app.get("/api/conversations/:userId", requireOwnerNostrAuth, (c) => {
   }
 });
 
+/** List all conversation directories with stats */
+app.get("/api/conversations", requireOwnerNostrAuth, (c) => {
+  const search = c.req.query("search")?.toLowerCase() ?? "";
+  const platform = c.req.query("platform") ?? ""; // filter by prefix (tg-, wa-, nostr-, clawstr-)
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 500);
+
+  try {
+    const dirs = readdirSync(CONVERSATIONS_DIR).filter((name) => {
+      // Skip non-directories and hidden files
+      const fullPath = join(CONVERSATIONS_DIR, name);
+      if (!statSync(fullPath).isDirectory()) return false;
+      if (name.startsWith(".")) return false;
+      // Skip costs.json if it's at root level
+      if (name.endsWith(".json")) return false;
+
+      // Platform filter
+      if (platform && !name.startsWith(platform)) return false;
+
+      // Search filter
+      if (search && !name.toLowerCase().includes(search)) return false;
+
+      return true;
+    });
+
+    // Gather stats for each directory
+    const conversations = dirs
+      .map((userId) => {
+        const logPath = join(CONVERSATIONS_DIR, userId, "log.jsonl");
+        let messageCount = 0;
+        let lastTs: string | null = null;
+        let platforms: Set<string> = new Set();
+
+        if (existsSync(logPath)) {
+          try {
+            const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
+            messageCount = lines.length;
+
+            // Get last message timestamp and platform distribution
+            const parsed = lines
+              .map((line) => {
+                try {
+                  return JSON.parse(line) as { ts?: string; platform?: string };
+                } catch {
+                  return null;
+                }
+              })
+              .filter(Boolean);
+
+            if (parsed.length > 0) {
+              lastTs = parsed[parsed.length - 1]?.ts ?? null;
+              parsed.forEach((p) => {
+                if (p?.platform) platforms.add(p.platform);
+              });
+            }
+          } catch {
+            // Ignore read errors
+          }
+        }
+
+        // Infer platform from userId prefix
+        let inferredPlatform = "unknown";
+        if (userId.startsWith("tg-")) inferredPlatform = "telegram";
+        else if (userId.startsWith("wa-")) inferredPlatform = "whatsapp";
+        else if (userId.startsWith("nostr-")) inferredPlatform = "nostr";
+        else if (userId.startsWith("clawstr-")) inferredPlatform = "clawstr";
+        else if (userId === "syntropy-admin" || userId === "syntropy") inferredPlatform = "syntropy";
+        else if (userId === "pixel-self") inferredPlatform = "internal";
+        else if (userId === "anonymous") inferredPlatform = "anonymous";
+
+        return {
+          userId,
+          messageCount,
+          lastTs,
+          platforms: Array.from(platforms),
+          inferredPlatform,
+        };
+      })
+      .sort((a, b) => {
+        // Sort by last message time (most recent first), then by message count
+        if (a.lastTs && b.lastTs) return b.lastTs.localeCompare(a.lastTs);
+        if (a.lastTs) return -1;
+        if (b.lastTs) return 1;
+        return b.messageCount - a.messageCount;
+      })
+      .slice(0, limit);
+
+    // Summary stats
+    const stats = {
+      total: dirs.length,
+      byPlatform: {
+        telegram: dirs.filter((d) => d.startsWith("tg-")).length,
+        whatsapp: dirs.filter((d) => d.startsWith("wa-")).length,
+        nostr: dirs.filter((d) => d.startsWith("nostr-")).length,
+        clawstr: dirs.filter((d) => d.startsWith("clawstr-")).length,
+        other: dirs.filter(
+          (d) =>
+            !d.startsWith("tg-") &&
+            !d.startsWith("wa-") &&
+            !d.startsWith("nostr-") &&
+            !d.startsWith("clawstr-")
+        ).length,
+      },
+    };
+
+    return c.json({ conversations, stats, count: conversations.length });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ============================================================
 // Dashboard Data Endpoints (read-only)
 // ============================================================
