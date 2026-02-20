@@ -791,7 +791,7 @@ export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
       await event.publish();
       
       auditToolUse("nostr_post", { contentLength: content.length }, { eventId: event.id });
-      return { content: [{ type: "text" as const, text: `Posted to Nostr: ${event.id?.slice(0, 16) || "ok"}` }], details: { eventId: event.id } };
+      return { content: [{ type: "text" as const, text: `Posted to Nostr. Event ID: ${event.id}` }], details: { eventId: event.id } };
     } catch (err: any) {
       auditToolUse("nostr_post", { contentLength: content.length }, { error: err.message });
       return { content: [{ type: "text" as const, text: `Failed to post to Nostr: ${err.message}` }], details: undefined };
@@ -825,6 +825,7 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
       
       // Build proper reply tags
       reply.tags = [
+        ["e", event_id, "", "root"],
         ["e", event_id, "", "reply"],
       ];
       if (pubkey) {
@@ -834,7 +835,7 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
       await reply.publish();
       
       auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { replyId: reply.id });
-      return { content: [{ type: "text" as const, text: `Replied on Nostr: ${reply.id?.slice(0, 16) || "ok"}` }], details: { replyId: reply.id } };
+      return { content: [{ type: "text" as const, text: `Replied on Nostr. Reply ID: ${reply.id}` }], details: { replyId: reply.id } };
     } catch (err: any) {
       auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: err.message });
       return { content: [{ type: "text" as const, text: `Failed to reply on Nostr: ${err.message}` }], details: undefined };
