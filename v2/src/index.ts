@@ -50,6 +50,7 @@ import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
 import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
 import { getSecurityStats, getRecentAlerts, pruneOldAlerts, getCategories } from "./services/security-scanner.js";
 import { initLogging } from "./services/logging.js";
+import { startCanvasListener, getCanvasListenerStatus, stopCanvasListener } from "./services/canvas-listener.js";
 
 // ============================================================
 // Configuration
@@ -172,9 +173,10 @@ app.get("/health", (c) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     heartbeat: getHeartbeatStatus(),
-    innerLife: getInnerLifeStatus(),
+    inner_life: getInnerLifeStatus(),
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
+    canvas_listener: getCanvasListenerStatus(),
     whatsapp: getWhatsAppStatus(),
     twitter: getTwitterStatus(),
     timestamp: new Date().toISOString(),
@@ -1420,6 +1422,23 @@ async function boot() {
     console.error("[boot] Twitter failed to start:", err.message);
   }
 
+  // Start canvas listener (V1 pixel sales notifications)
+  try {
+    startCanvasListener(async (message: string, userId: string) => {
+      // Notify Pixel via promptWithHistory
+      const response = await promptWithHistory({
+        userId,
+        message,
+        tools: [], // Canvas notifications don't need tools
+        systemPrompt: `You are Pixel. You just received a notification about a canvas sale. React naturally - you could be excited, thank the buyer, wonder what they drew, or just acknowledge it. Keep it brief and authentic.`,
+      });
+      return extractText(response);
+    });
+    console.log("[boot] Canvas listener started — listening for pixel sales");
+  } catch (err: any) {
+    console.error("[boot] Canvas listener failed to start:", err.message);
+  }
+
   console.log("[boot] Pixel V2 is alive.");
   console.log();
   audit("boot", "Pixel V2 is alive — all services started");
@@ -1443,6 +1462,7 @@ function gracefulShutdown(signal: string): void {
   stopDigest();
   stopOutreach();
   stopTwitter();
+  stopCanvasListener();
 
   // Persist nostr replied event IDs to disk
   try {
