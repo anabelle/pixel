@@ -168,9 +168,33 @@ async function handleCanvasActivity(activity: CanvasActivity): Promise<void> {
 
   // Notify Pixel so it can react
   if (notifyPixelFn) {
-    const notification = amountSats > 50
-      ? `🎉 Someone just bought pixels on your canvas for ${amountSats} sats! ${description}. You could thank them or check out what they drew at ln.pixel.xx.kg`
-      : `💰 Pixel sale: ${amountSats} sats on the canvas — ${description}`;
+    // Approximate USD value (roughly 100k sats = $100 USD)
+    const usdValue = (amountSats / 100000 * 100).toFixed(2);
+    
+    // Build detailed notification
+    let notification: string;
+    if (activity.type === "bulk_purchase" && activity.pixelCount) {
+      notification = `🎨 CANVAS SALE NOTIFICATION
+
+💰 Amount: ${amountSats} sats (~$${usdValue} USD)
+📊 Pixels: ${activity.pixelCount} pixels
+📍 Location: Starting at (${activity.x}, ${activity.y})
+🎨 Color: ${activity.color || "various"}
+🆔 Payment: ${paymentId?.slice(0, 8)}...
+
+View at ln.pixel.xx.kg
+
+You could thank them, check what they drew, or share this moment on Nostr!`;
+    } else {
+      notification = `🎨 CANVAS SALE NOTIFICATION
+
+💰 Amount: ${amountSats} sats (~$${usdValue} USD)
+📍 Pixel: (${activity.x}, ${activity.y})
+🎨 Color: ${activity.color || "default"}${activity.letter ? `\n✏️ Letter: "${activity.letter}"` : ""}
+🆔 Payment: ${paymentId?.slice(0, 8)}...
+
+View at ln.pixel.xx.kg`;
+    }
     
     try {
       await notifyPixelFn(notification, "canvas-system");
