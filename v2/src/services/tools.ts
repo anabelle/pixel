@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
+import { getNostrInstance, sendNostrDm } from "../connectors/nostr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
@@ -28,6 +29,7 @@ import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
+import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -667,7 +669,7 @@ const clawstrFeedSchema = Type.Object({
 export const clawstrFeedTool: AgentTool<typeof clawstrFeedSchema> = {
   name: "clawstr_feed",
   label: "Clawstr Feed",
-  description: "Read recent Clawstr posts. Use to monitor agent discussions and engage.",
+  description: "Read recent posts from CLAWSTR (AI agent community platform, clawstr.net). NOT for Nostr. Use to monitor AI agent discussions in /c/ subclaws.",
   parameters: clawstrFeedSchema,
   execute: async (_id, { subclaw, limit }) => {
     const output = await getClawstrFeed(subclaw, limit ?? 15);
@@ -684,7 +686,7 @@ const clawstrPostSchema = Type.Object({
 export const clawstrPostTool: AgentTool<typeof clawstrPostSchema> = {
   name: "clawstr_post",
   label: "Clawstr Post",
-  description: "Post a message to a Clawstr subclaw.",
+  description: "Post a message to a CLAWSTR subclaw (AI agent community platform, clawstr.net). NOT for Nostr. Example subclaws: /c/ai-dev, /c/general.",
   parameters: clawstrPostSchema,
   execute: async (_id, { subclaw, content }) => {
     const output = await postClawstr(subclaw, content);
@@ -701,7 +703,7 @@ const clawstrReplySchema = Type.Object({
 export const clawstrReplyTool: AgentTool<typeof clawstrReplySchema> = {
   name: "clawstr_reply",
   label: "Clawstr Reply",
-  description: "Reply to a Clawstr post.",
+  description: "Reply to a CLAWSTR post (AI agent community platform). NOT for Nostr. Provide the event ID from Clawstr.",
   parameters: clawstrReplySchema,
   execute: async (_id, { eventRef, content }) => {
     const output = await replyClawstr(eventRef, content);
@@ -717,7 +719,7 @@ const clawstrNotificationsSchema = Type.Object({
 export const clawstrNotificationsTool: AgentTool<typeof clawstrNotificationsSchema> = {
   name: "clawstr_notifications",
   label: "Clawstr Notifications",
-  description: "Check Clawstr notifications (mentions, replies, reactions).",
+  description: "Check CLAWSTR notifications (AI agent community platform) — mentions, replies, reactions. NOT for Nostr.",
   parameters: clawstrNotificationsSchema,
   execute: async (_id, { limit }) => {
     const result = await getClawstrNotifications(limit ?? 20);
@@ -734,7 +736,7 @@ const clawstrUpvoteSchema = Type.Object({
 export const clawstrUpvoteTool: AgentTool<typeof clawstrUpvoteSchema> = {
   name: "clawstr_upvote",
   label: "Clawstr Upvote",
-  description: "Upvote a Clawstr post.",
+  description: "Upvote a CLAWSTR post (AI agent community platform). NOT for Nostr.",
   parameters: clawstrUpvoteSchema,
   execute: async (_id, { eventRef }) => {
     const output = await upvoteClawstr(eventRef);
@@ -751,7 +753,7 @@ const clawstrSearchSchema = Type.Object({
 export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   name: "clawstr_search",
   label: "Clawstr Search",
-  description: "Search Clawstr posts by keyword.",
+  description: "Search CLAWSTR posts by keyword (AI agent community platform). NOT for Nostr.",
   parameters: clawstrSearchSchema,
   execute: async (_id, { query, limit }) => {
     const output = await getClawstrSearch(query, limit ?? 15);
@@ -2124,6 +2126,127 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
   },
 };
 
+// ─── LIGHTNING INVOICE TOOLS ──────────────────────────────────
+
+const createInvoiceSchema = Type.Object({
+  amount_sats: Type.Number({ description: "Amount in satoshis (minimum 1 sat)" }),
+  description: Type.Optional(Type.String({ description: "Optional description for the invoice" })),
+});
+
+const createInvoiceTool: AgentTool<typeof createInvoiceSchema> = {
+  name: "create_invoice",
+  label: "Create Lightning Invoice",
+  description: "Create a Lightning Network invoice for receiving payments. Returns a bolt11 invoice string, payment hash, and verification URL. Use this when someone wants to pay you or when you need to receive sats.",
+  parameters: createInvoiceSchema,
+  execute: async (_id, { amount_sats, description }) => {
+    try {
+      const invoice = await createInvoice(amount_sats, description);
+      if (!invoice) {
+        auditToolUse("create_invoice", { amount_sats }, { error: "Lightning not configured" });
+        return {
+          content: [{ type: "text" as const, text: "Failed to create invoice — Lightning not configured. Check LIGHTNING_ADDRESS env var." }],
+          details: { error: "not_configured" },
+        };
+      }
+
+      auditToolUse("create_invoice", { amount_sats, description }, { paymentHash: invoice.paymentHash });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `**Lightning Invoice Created** ⚡\n\n**Invoice:** \`${invoice.paymentRequest}\`\n\n**Details:**\n- Amount: ${invoice.amountSats} sats\n- Payment Hash: \`${invoice.paymentHash}\`\n- Description: ${invoice.description || "Pixel payment"}\n- Expires: ${invoice.expiresAt ? new Date(invoice.expiresAt * 1000).toISOString() : "unknown"}`,
+        }],
+        details: {
+          paymentRequest: invoice.paymentRequest,
+          paymentHash: invoice.paymentHash,
+          amountSats: invoice.amountSats,
+          verify: invoice.verify,
+          expiresAt: invoice.expiresAt,
+        },
+      };
+    } catch (err: any) {
+      auditToolUse("create_invoice", { amount_sats }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to create invoice: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
+const verifyPaymentSchema = Type.Object({
+  payment_hash: Type.String({ description: "The payment hash from a previously created invoice" }),
+});
+
+const verifyPaymentTool: AgentTool<typeof verifyPaymentSchema> = {
+  name: "verify_payment",
+  label: "Verify Lightning Payment",
+  description: "Check if a Lightning invoice has been paid. Use the payment hash from a previously created invoice. Returns payment status and preimage if settled.",
+  parameters: verifyPaymentSchema,
+  execute: async (_id, { payment_hash }) => {
+    try {
+      const result = await verifyPayment(payment_hash);
+      auditToolUse("verify_payment", { payment_hash: payment_hash.slice(0, 16) }, { paid: result.paid });
+
+      if (result.paid) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `**Payment Confirmed** ✅\n\n- Amount: ${result.amountSats} sats\n- Preimage: ${result.preimage || "N/A"}\n- Description: ${result.description || "N/A"}`,
+          }],
+          details: { paid: true, preimage: result.preimage, amountSats: result.amountSats },
+        };
+      } else {
+        return {
+          content: [{ type: "text" as const, text: "Payment not yet received. The invoice is still pending." }],
+          details: { paid: false },
+        };
+      }
+    } catch (err: any) {
+      auditToolUse("verify_payment", { payment_hash: payment_hash.slice(0, 16) }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to verify payment: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
+const getWalletInfoSchema = Type.Object({});
+
+const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
+  name: "get_wallet_info",
+  label: "Get Wallet Info",
+  description: "Get information about the configured Lightning wallet — address, min/max amounts, and status.",
+  parameters: getWalletInfoSchema,
+  execute: async () => {
+    try {
+      const info = await getWalletInfo();
+      if (!info) {
+        auditToolUse("get_wallet_info", {}, { error: "not_configured" });
+        return {
+          content: [{ type: "text" as const, text: "Lightning wallet not configured. Set LIGHTNING_ADDRESS env var." }],
+          details: { error: "not_configured" },
+        };
+      }
+
+      auditToolUse("get_wallet_info", {}, { address: info.address });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `**Lightning Wallet** ⚡\n\n- Address: ${info.address}\n- Min: ${info.minSats} sats\n- Max: ${info.maxSats} sats\n- Status: ${info.active ? "Active" : "Inactive"}`,
+        }],
+        details: info,
+      };
+    } catch (err: any) {
+      auditToolUse("get_wallet_info", {}, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to get wallet info: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
 // ─── LONG-TERM MEMORY TOOLS ──────────────────────────────────
 
 const memorySaveSchema = Type.Object({
@@ -2782,6 +2905,9 @@ export const pixelTools = [
   searchTweetsTool,
   readTweetTool,
   twitterStatusTool,
+  createInvoiceTool,
+  verifyPaymentTool,
+  getWalletInfoTool,
 ];
 
 // Map of tool names to their implementations
@@ -2809,6 +2935,9 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   search_tweets: searchTweetsTool,
   read_tweet: readTweetTool,
   twitter_status: twitterStatusTool,
+  create_invoice: createInvoiceTool,
+  verify_payment: verifyPaymentTool,
+  get_wallet_info: getWalletInfoTool,
 };
 
 /**
