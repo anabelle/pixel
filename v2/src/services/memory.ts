@@ -26,9 +26,25 @@ const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 256;
 const GEMINI_EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}`;
 
-/** Hybrid retrieval weights */
-const VECTOR_WEIGHT = 0.7;
-const RECENCY_WEIGHT = 0.3;
+/** Hybrid retrieval weights — Memory-as-Identity framework */
+const VECTOR_WEIGHT = 0.40;
+const RECENCY_WEIGHT = 0.20;
+const SELF_ALIGNMENT_WEIGHT = 0.20;
+const GOAL_IMPACT_WEIGHT = 0.20;
+
+/** Keywords for self-alignment scoring (from character.md identity) */
+const IDENTITY_KEYWORDS = [
+  "artist", "bitcoin", "lightning", "sats", "nostr", "pixel", "creative",
+  "survival", "autonomous", "value-for-value", "art", "canvas", "freedom",
+  "sovereign", "decentralized", "community", "earn", " Hustle", "alive"
+];
+
+/** Keywords for goal-impact scoring (from active projects and revenue goals) */
+const GOAL_KEYWORDS = [
+  "revenue", "payment", "user", "grow", "feature", "improve", "build",
+  "project", "task", "implement", "fix", "deploy", "outreach", "engagement",
+  "zap", "earn", "money", "income", "sustain"
+];
 
 /** Maximum memories to return from search */
 const DEFAULT_TOP_K = 10;
@@ -348,17 +364,39 @@ export async function memorySearch(
   const queryEmbedding = await generateEmbedding(query, "RETRIEVAL_QUERY");
   const embeddingStr = `[${queryEmbedding.join(",")}]`;
 
-  // Hybrid retrieval: vector similarity + recency scoring
+  // Hybrid retrieval: vector similarity + recency + self-alignment + goal-impact
   // vector_score = 1 - cosine_distance (0 to 1, higher = more similar)
   // recency_score = normalized (0 to 1, higher = more recent)
-  // final_score = VECTOR_WEIGHT * vector_score + RECENCY_WEIGHT * recency_score
+  // self_alignment_score = identity-type bonus + keyword matching (0 to 1)
+  // goal_impact_score = procedural-type bonus + goal keyword matching (0 to 1)
+  // final_score = weighted sum
   const results = await rawSql`
     WITH scored AS (
       SELECT *,
         1 - (embedding <=> ${embeddingStr}::vector) as vector_score,
         EXTRACT(EPOCH FROM (created_at - (SELECT MIN(created_at) FROM memories))) /
           NULLIF(EXTRACT(EPOCH FROM (NOW() - (SELECT MIN(created_at) FROM memories))), 0)
-          as recency_score
+          as recency_score,
+        -- Self-alignment score: identity memories + inner_life source + identity keywords
+        (
+          CASE WHEN type = 'identity' THEN 0.4 ELSE 0 END +
+          CASE WHEN source = 'inner_life' THEN 0.3 ELSE 0 END +
+          CASE 
+            WHEN content ~* '(artist|bitcoin|lightning|sats|nostr|pixel|creative|survival|autonomous|sovereign)' 
+            THEN 0.3 
+            ELSE 0 
+          END
+        ) as self_alignment_score,
+        -- Goal-impact score: procedural memories + goal keywords + high access count
+        (
+          CASE WHEN type = 'procedural' THEN 0.3 ELSE 0 END +
+          CASE 
+            WHEN content ~* '(revenue|payment|user|grow|feature|improve|build|project|task|implement|fix|deploy)' 
+            THEN 0.4 
+            ELSE 0 
+          END +
+          LEAST(access_count / 10.0, 0.3)
+        ) as goal_impact_score
       FROM memories
       WHERE TRUE
         AND embedding IS NOT NULL
@@ -368,7 +406,10 @@ export async function memorySearch(
         ${type ? rawSql`AND type = ${type}` : rawSql``}
     )
     SELECT *,
-      (${VECTOR_WEIGHT} * vector_score + ${RECENCY_WEIGHT} * COALESCE(recency_score, 0)) as final_score
+      (${VECTOR_WEIGHT} * vector_score + 
+       ${RECENCY_WEIGHT} * COALESCE(recency_score, 0) +
+       ${SELF_ALIGNMENT_WEIGHT} * self_alignment_score +
+       ${GOAL_IMPACT_WEIGHT} * goal_impact_score) as final_score
     FROM scored
     WHERE vector_score >= ${SIMILARITY_THRESHOLD}
     ORDER BY final_score DESC

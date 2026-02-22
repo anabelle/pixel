@@ -7,7 +7,8 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun --external link-preview-js --external jimp --external sharp",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "forge-identity": "bun run src/scripts/forge-identity.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.52.9",
