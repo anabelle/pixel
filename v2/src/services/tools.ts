@@ -769,14 +769,15 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
 
 const nostrPostSchema = Type.Object({
   content: Type.String({ description: "The note content to post to Nostr" }),
+  image_url: Type.Optional(Type.String({ description: "Optional image URL to include in the post (will be added as NIP-94 imeta tag)" })),
 });
 
 export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
   name: "nostr_post",
   label: "Nostr Post",
-  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays.",
+  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays. Optionally include an image URL.",
   parameters: nostrPostSchema,
-  execute: async (_id, { content }) => {
+  execute: async (_id, { content, image_url }) => {
     const nostr = getNostrInstance();
     if (!nostr) {
       auditToolUse("nostr_post", { contentLength: content.length }, { error: "not_connected" });
@@ -787,11 +788,19 @@ export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
       const { NDKEvent } = await import("@nostr-dev-kit/ndk");
       const event = new NDKEvent(nostr.ndk);
       event.kind = 1;
-      event.content = content;
+      event.content = image_url ? `${content}\n\n${image_url}` : content;
+      
+      // Add imeta tag for NIP-94 image metadata if image_url provided
+      if (image_url) {
+        event.tags = [
+          ["imeta", `url ${image_url}`, `m image/jpeg`],
+        ];
+      }
+      
       await event.publish();
       
-      auditToolUse("nostr_post", { contentLength: content.length }, { eventId: event.id });
-      return { content: [{ type: "text" as const, text: `Posted to Nostr. Event ID: ${event.id}` }], details: { eventId: event.id } };
+      auditToolUse("nostr_post", { contentLength: content.length, hasImage: !!image_url }, { eventId: event.id });
+      return { content: [{ type: "text" as const, text: `Posted to Nostr. Event ID: ${event.id}${image_url ? " (with image)" : ""}` }], details: { eventId: event.id } };
     } catch (err: any) {
       auditToolUse("nostr_post", { contentLength: content.length }, { error: err.message });
       return { content: [{ type: "text" as const, text: `Failed to post to Nostr: ${err.message}` }], details: undefined };
@@ -803,14 +812,15 @@ const nostrReplySchema = Type.Object({
   event_id: Type.String({ description: "The Nostr event ID to reply to (hex or note1...)" }),
   content: Type.String({ description: "Reply content" }),
   pubkey: Type.Optional(Type.String({ description: "Author pubkey of the event being replied to (for proper threading)" })),
+  image_url: Type.Optional(Type.String({ description: "Optional image URL to include in the reply (will be added as NIP-94 imeta tag)" })),
 });
 
 export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
   name: "nostr_reply",
   label: "Nostr Reply",
-  description: "Reply to a NOSTR note (decentralized social protocol). NOT for Clawstr. Include event_id and optionally the author's pubkey for proper threading.",
+  description: "Reply to a NOSTR note (decentralized social protocol). NOT for Clawstr. Include event_id and optionally the author's pubkey for proper threading. Optionally include an image URL.",
   parameters: nostrReplySchema,
-  execute: async (_id, { event_id, content, pubkey }) => {
+  execute: async (_id, { event_id, content, pubkey, image_url }) => {
     const nostr = getNostrInstance();
     if (!nostr) {
       auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: "not_connected" });
@@ -821,7 +831,7 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
       const { NDKEvent } = await import("@nostr-dev-kit/ndk");
       const reply = new NDKEvent(nostr.ndk);
       reply.kind = 1;
-      reply.content = content;
+      reply.content = image_url ? `${content}\n\n${image_url}` : content;
       
       // Build proper reply tags
       reply.tags = [
@@ -832,10 +842,15 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
         reply.tags.push(["p", pubkey]);
       }
       
+      // Add imeta tag for NIP-94 image metadata if image_url provided
+      if (image_url) {
+        reply.tags.push(["imeta", `url ${image_url}`, `m image/jpeg`]);
+      }
+      
       await reply.publish();
       
-      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { replyId: reply.id });
-      return { content: [{ type: "text" as const, text: `Replied on Nostr. Reply ID: ${reply.id}` }], details: { replyId: reply.id } };
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length, hasImage: !!image_url }, { replyId: reply.id });
+      return { content: [{ type: "text" as const, text: `Replied on Nostr. Reply ID: ${reply.id}${image_url ? " (with image)" : ""}` }], details: { replyId: reply.id } };
     } catch (err: any) {
       auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: err.message });
       return { content: [{ type: "text" as const, text: `Failed to reply on Nostr: ${err.message}` }], details: undefined };
