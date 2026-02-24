@@ -62,6 +62,10 @@ const IDEA_GARDEN_PATH = "idea-garden.md";
 const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 const SYNTROPY_DISPATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
+// Deduplication thresholds
+const INNER_SIMILARITY_THRESHOLD = 0.65;
+const INNER_DEDUP_ENTRIES = 5;
+
 // ============================================================
 // State
 // ============================================================
@@ -121,6 +125,53 @@ function writeLivingDoc(filename: string, content: string): void {
   } catch (err: any) {
     console.error(`[inner-life] Failed to write ${filename}:`, err.message);
   }
+}
+
+// ============================================================
+// Inner-Life Deduplication
+// ============================================================
+
+function innerTokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+}
+
+function innerJaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const intersection = new Set([...a].filter((x) => b.has(x)));
+  const union = new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+
+function extractRecentEntries(docContent: string, count: number): string[] {
+  const sections = docContent.split(/### \d{4}-\d{2}-\d{2}/).filter(Boolean);
+  return sections.slice(-count).map((s) => s.trim());
+}
+
+function isTooSimilarToExisting(newContent: string, existingDoc: string): { similar: boolean; reason: string } {
+  const recentEntries = extractRecentEntries(existingDoc, INNER_DEDUP_ENTRIES);
+  if (recentEntries.length === 0) return { similar: false, reason: "" };
+  
+  const newTokens = innerTokenize(newContent);
+  
+  for (let i = 0; i < recentEntries.length; i++) {
+    const entryTokens = innerTokenize(recentEntries[i]);
+    const similarity = innerJaccardSimilarity(newTokens, entryTokens);
+    
+    if (similarity >= INNER_SIMILARITY_THRESHOLD) {
+      return {
+        similar: true,
+        reason: `Similarity ${(similarity * 100).toFixed(0)}% to entry ${recentEntries.length - i} ago`,
+      };
+    }
+  }
+  
+  return { similar: false, reason: "" };
 }
 
 // ============================================================
@@ -561,6 +612,14 @@ Write as yourself — Pixel reflecting privately. Not a report.`
   );
 
   if (response && response.length > 20) {
+    // DEDUPLICATION: Check similarity to recent reflections
+    const dupCheck = isTooSimilarToExisting(response.trim(), existingReflections);
+    if (dupCheck.similar) {
+      console.log(`[inner-life] REFLECT skipped: ${dupCheck.reason}`);
+      audit("inner_life_duplicate", `Skipped similar reflection`, { phase: "reflect", reason: dupCheck.reason });
+      return;
+    }
+    
     const dated = `### ${new Date().toISOString().split("T")[0]} — cycle ${cycleCount}\n${response.trim()}\n\n`;
 
     // Prepend new reflection, trim if too long
@@ -627,6 +686,14 @@ Format as bullet points. Be specific, not generic.`
   );
 
   if (response && response.length > 20) {
+    // DEDUPLICATION: Check if new learnings are too similar to existing
+    const dupCheck = isTooSimilarToExisting(response.trim(), existingLearnings);
+    if (dupCheck.similar) {
+      console.log(`[inner-life] LEARN skipped: ${dupCheck.reason}`);
+      audit("inner_life_duplicate", `Skipped similar learnings`, { phase: "learn", reason: dupCheck.reason });
+      return;
+    }
+    
     let updated = response.trim();
     if (updated.length > MAX_LEARNINGS_SIZE) {
       updated = updated.slice(0, MAX_LEARNINGS_SIZE);
@@ -683,6 +750,14 @@ Each idea should be 1-2 sentences max. Keep the whole document under 500 chars.`
   );
 
   if (response && response.length > 20) {
+    // DEDUPLICATION: Check if new ideas are too similar to existing
+    const dupCheck = isTooSimilarToExisting(response.trim(), existingIdeas);
+    if (dupCheck.similar) {
+      console.log(`[inner-life] IDEATE skipped: ${dupCheck.reason}`);
+      audit("inner_life_duplicate", `Skipped similar ideas`, { phase: "ideate", reason: dupCheck.reason });
+      return;
+    }
+    
     let updated = response.trim();
     if (updated.length > MAX_IDEAS_SIZE) {
       updated = updated.slice(0, MAX_IDEAS_SIZE);
@@ -745,6 +820,14 @@ Write in first person, lowercase, present tense.`
   );
 
   if (response && response.length > 20) {
+    // DEDUPLICATION: Check if new evolution is too similar to existing
+    const dupCheck = isTooSimilarToExisting(response.trim(), existingEvolution);
+    if (dupCheck.similar) {
+      console.log(`[inner-life] EVOLVE skipped: ${dupCheck.reason}`);
+      audit("inner_life_duplicate", `Skipped similar evolution`, { phase: "evolve", reason: dupCheck.reason });
+      return;
+    }
+    
     let updated = response.trim();
     if (updated.length > MAX_EVOLUTION_SIZE) {
       updated = updated.slice(0, MAX_EVOLUTION_SIZE);
