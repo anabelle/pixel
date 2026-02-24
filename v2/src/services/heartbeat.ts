@@ -375,6 +375,51 @@ function appendRecentPost(content: string, type: RecentPost["type"]): void {
   }
 }
 
+// ============================================================
+// Post Deduplication
+// ============================================================
+
+const SIMILARITY_THRESHOLD = 0.70;
+const DEDUP_CHECK_COUNT = 5;
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const intersection = new Set([...a].filter((x) => b.has(x)));
+  const union = new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+
+function isTooSimilarToRecentPosts(newContent: string): { similar: boolean; reason: string } {
+  const recent = readRecentPosts(DEDUP_CHECK_COUNT);
+  if (recent.length === 0) return { similar: false, reason: "" };
+  
+  const newTokens = tokenize(newContent);
+  
+  for (const post of recent) {
+    const postTokens = tokenize(post.content);
+    const similarity = jaccardSimilarity(newTokens, postTokens);
+    
+    if (similarity >= SIMILARITY_THRESHOLD) {
+      return {
+        similar: true,
+        reason: `Similarity ${(similarity * 100).toFixed(0)}% to recent post: "${post.content.slice(0, 60)}..."`,
+      };
+    }
+  }
+  
+  return { similar: false, reason: "" };
+}
+
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
   return MIN_INTERVAL_MS + Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
@@ -618,6 +663,14 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
     cleaned = cleaned.slice(0, 497) + "...";
   }
 
+  // DEDUPLICATION: Check similarity to recent posts
+  const dupCheck = isTooSimilarToRecentPosts(cleaned);
+  if (dupCheck.similar) {
+    console.log(`[heartbeat] REJECTED duplicate post: ${dupCheck.reason}`);
+    audit("heartbeat_duplicate", `Rejected similar post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
+    return null;
+  }
+
   if (cleaned) {
     lastTopic = topic;
     lastMood = mood;
@@ -685,6 +738,14 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 
   if (cleaned.length > 280) {
     cleaned = cleaned.slice(0, 277) + "...";
+  }
+
+  // DEDUPLICATION: Check similarity to recent posts
+  const dupCheck = isTooSimilarToRecentPosts(cleaned);
+  if (dupCheck.similar) {
+    console.log(`[heartbeat] REJECTED duplicate twitter post: ${dupCheck.reason}`);
+    audit("heartbeat_twitter_duplicate", `Rejected similar twitter post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
+    return null;
   }
 
   if (cleaned) {
