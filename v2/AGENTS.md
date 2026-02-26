@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-25 | Session: 54b
+> Last updated: 2026-02-26 | Session: 55
 
 ---
 
@@ -315,3 +315,19 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 3. **Definitive tool response:** `post_tweet` tool now returns `"BLOCKED: ... Do NOT call post_tweet again"` on rate limit errors, instead of soft `"Failed:"` messages.
 
 **Lesson:** LLMs will retry failed tool calls indefinitely unless the response is unambiguously final. Soft failure messages ("Failed: X") invite retries. Hard messages ("BLOCKED: ... Do NOT retry") stop the loop. Also: always count failures against rate limits, not just successes.
+
+### Session 55: Post Content Repetition Loop
+
+**Problem:** Pixel's Nostr and Twitter posts recycled identical phrases across consecutive posts ("ghost wears thin", "112k sats recorded, zero collected", "pixel of oxygen"). Posts also contained markdown artifacts (`# headers`, `**bold**`).
+
+**Root cause (repetition):** Jaccard word-similarity scored only 48% on posts sharing 21 identical 4-word phrases. The phrases were spread across enough unique words to dilute the Jaccard score below the 70% threshold. Semantic meaning was nearly identical, but word-level dedup couldn't see it.
+
+**Root cause (markdown):** LLM sometimes outputs markdown formatting despite plain-text instructions. No post-processing stripped it.
+
+**Solution (4 layers):**
+1. **N-gram phrase dedup:** Extract 4-word phrases from new post and recent 5 posts. If 2+ distinctive phrases match, reject and regenerate. Common filler n-grams are excluded.
+2. **`cleanPostContent()` function:** Strips markdown headers, bold/italic markers, code blocks, wrapping quotes, collapses whitespace. Applied to both Nostr and Twitter post generators.
+3. **Anti-recycling prompt instructions:** Added "NEVER recycle phrases from recent posts" to both Nostr and Twitter post prompts. User prompt also asks for "completely different angle and vocabulary."
+4. **Accurate context:** Updated architecture stats (6 containers, ~21K lines), complete service/pricing list, hustling mood guidance to mention ONE specific service naturally.
+
+**Lesson:** Word-level similarity (Jaccard) is blind to phrase-level repetition. Two posts can share 21 identical 4-word phrases and still score under 50% Jaccard. N-gram phrase matching catches structural repetition that word-bag methods miss. Also: always post-process LLM output for the target format — LLMs will emit markdown even when told not to.
