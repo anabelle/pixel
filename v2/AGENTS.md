@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-26 | Session: 55
+> Last updated: 2026-02-26 | Session: 55b
 
 ---
 
@@ -310,7 +310,7 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 **Root cause:** `postTweet()` only incremented `postsToday` on success (line 285). On 429 failure, `canPost()` kept returning `{ok: true}`, and the LLM agent retried because the tool returned a soft `"Failed: Too Many Requests"` message that didn't definitively stop it.
 
 **Solution (3 layers of defense):**
-1. **429 lockout:** On 429, posting is locked for 30 minutes AND `postsToday` is maxed to daily limit. Persisted to disk.
+1. **429 lockout:** On 429, posting is locked for 4 hours AND `postsToday` is maxed to daily limit. Persisted to disk.
 2. **Consecutive failure lockout:** After 3 consecutive failures of any kind, 15 minute lockout.
 3. **Definitive tool response:** `post_tweet` tool now returns `"BLOCKED: ... Do NOT call post_tweet again"` on rate limit errors, instead of soft `"Failed:"` messages.
 
@@ -331,3 +331,15 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 4. **Accurate context:** Updated architecture stats (6 containers, ~21K lines), complete service/pricing list, hustling mood guidance to mention ONE specific service naturally.
 
 **Lesson:** Word-level similarity (Jaccard) is blind to phrase-level repetition. Two posts can share 21 identical 4-word phrases and still score under 50% Jaccard. N-gram phrase matching catches structural repetition that word-bag methods miss. Also: always post-process LLM output for the target format — LLMs will emit markdown even when told not to.
+
+### Session 55b: Discovery Quality Filter + Twitter Rate Limits
+
+**Problem (Discovery):** Pixel was replying to low-quality Nostr posts — GM/GN greetings, price bot noise, engagement bait, URL-only posts, cross-posted content. The content-safety filter (`getUnsafeReason`) only caught explicit/hate content, not low-effort noise. Existing `isLowQualityPost()` and `isBotContent()` functions existed but were NOT called during discovery.
+
+**Solution:** Added `isLowQualityDiscovery()` — comprehensive quality filter checking 9 patterns: empty, too_short (<40 chars), existing low_quality patterns, greeting_only (GM/GN under 80 chars), hashtag_spam (>50% hashtags), price_bot, financial_spam, engagement_bait, url_only, cross_post, news_bot. Applied at 3 checkpoints: discoveryLoop candidate filtering, enqueueDiscoveryCandidates, processDiscoveryQueue. Primal candidates with zero engagement (0 likes/replies/zaps/reposts) are also filtered. Discovery audit entries now include original post content preview for debugging.
+
+**Problem (Twitter):** Scraper package (@the-convocation/twitter-scraper 0.21.1) does NOT have `sendTweet()` method — only reading methods. So the planned scraper-based posting fallback is impossible with this package. Meanwhile, every single API v2 post attempt returns 429 (likely free tier exhaustion).
+
+**Solution:** Made posting more conservative to stay within free tier: MAX_POSTS_PER_DAY 5→2, MIN_POST_GAP 2h→4h, 429 lockout 30min→4h. Added rate limit header logging (x-rate-limit-remaining/reset/limit) on every post attempt for debugging. The scraper fallback approach is dead — would need a different package or raw GraphQL implementation.
+
+**Lesson:** Always verify library capabilities at runtime (`typeof obj.method`) before planning features around them. Documentation and training data may reference methods that don't exist in installed versions. Also: when API rate limits are opaque, log the headers to understand actual limits before optimizing.
