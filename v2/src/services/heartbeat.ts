@@ -1221,12 +1221,15 @@ async function discoveryLoop(): Promise<void> {
       writeFileSync("/app/data/nostr-trends.json", JSON.stringify(trendSummary, null, 2));
     } catch {}
 
+    let discoveryFiltered = 0;
     const candidates = all.filter((e) => {
       if (hasRepliedTo(e.id)) return false;
       if (discoveryRepliedIds.includes(e.id)) return false;
       if (isMuted(e.pubkey)) return false;
       if (e.tags.some((t) => t[0] === "e")) return false; // skip replies
       if (e.content.length > 800) return false;
+      const qualityReason = isLowQualityDiscovery(e.content);
+      if (qualityReason) { discoveryFiltered++; return false; }
       return true;
     });
 
@@ -1236,6 +1239,13 @@ async function discoveryLoop(): Promise<void> {
       if (isMuted(e.pubkey)) return false;
       if (e.tags?.some((t: string[]) => t[0] === "e")) return false;
       if (!e.content || e.content.length > 800) return false;
+      const qualityReason = isLowQualityDiscovery(e.content);
+      if (qualityReason) { discoveryFiltered++; return false; }
+      // Skip Primal posts with zero engagement (likely bot/noise)
+      if (e.stats && e.stats.likes === 0 && e.stats.replies === 0 && e.stats.zaps === 0 && e.stats.reposts === 0) {
+        discoveryFiltered++;
+        return false;
+      }
       return true;
     }).map((e) => ({
       id: e.id,
@@ -1243,6 +1253,9 @@ async function discoveryLoop(): Promise<void> {
       content: e.content,
       tags: e.tags,
     }));
+    if (discoveryFiltered > 0) {
+      audit("discovery_quality", `Filtered ${discoveryFiltered} low-quality discovery candidates`, { filtered: discoveryFiltered, ndkCandidates: candidates.length, primalCandidates: primalCandidates.length });
+    }
     enqueueDiscoveryCandidates(candidates, trendingTags, primalCandidates);
     processDiscoveryQueue(trendingTags).catch((err) => {
       console.error("[heartbeat/discovery] Queue error:", err.message);
@@ -1728,7 +1741,14 @@ function enqueueDiscoveryCandidates(
     const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
     if (unsafeReason) {
       markDiscoveryReplied(event.id);
-      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason, postPreview: (event.content ?? "").slice(0, 120) });
+      continue;
+    }
+
+    const qualityReason = isLowQualityDiscovery(event.content ?? "");
+    if (qualityReason) {
+      markDiscoveryReplied(event.id);
+      audit("discovery_quality", `Discovery candidate filtered (${qualityReason})`, { eventId: event.id, reason: qualityReason, postPreview: (event.content ?? "").slice(0, 120) });
       continue;
     }
 
@@ -1747,7 +1767,14 @@ function enqueueDiscoveryCandidates(
     const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
     if (unsafeReason) {
       markDiscoveryReplied(event.id);
-      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason, postPreview: (event.content ?? "").slice(0, 120) });
+      continue;
+    }
+
+    const qualityReason = isLowQualityDiscovery(event.content ?? "");
+    if (qualityReason) {
+      markDiscoveryReplied(event.id);
+      audit("discovery_quality", `Discovery candidate filtered (${qualityReason})`, { eventId: event.id, reason: qualityReason, postPreview: (event.content ?? "").slice(0, 120) });
       continue;
     }
 
@@ -1780,7 +1807,15 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   const unsafeReason = getUnsafeReason(item.content ?? "", item.tags, { blockVideo: true });
   if (unsafeReason) {
     markDiscoveryReplied(item.eventId);
-    audit("content_blocked", `Discovery blocked (${unsafeReason})`, { eventId: item.eventId, reason: unsafeReason });
+    audit("content_blocked", `Discovery blocked (${unsafeReason})`, { eventId: item.eventId, reason: unsafeReason, postPreview: (item.content ?? "").slice(0, 120) });
+    return;
+  }
+
+  // Second quality check at processing time (in case item was queued before filter existed)
+  const qualityReason = isLowQualityDiscovery(item.content ?? "");
+  if (qualityReason) {
+    markDiscoveryReplied(item.eventId);
+    audit("discovery_quality", `Discovery blocked at processing (${qualityReason})`, { eventId: item.eventId, reason: qualityReason, postPreview: (item.content ?? "").slice(0, 120) });
     return;
   }
 
@@ -1848,7 +1883,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   markDiscoveryReplied(item.eventId);
   lastDiscoveryTime = Date.now();
   saveHeartbeatState();
-  audit("engagement_reply", `Discovery replied to ${item.pubkey.slice(0, 8)}...`, { eventId: item.eventId, preview: response.slice(0, 120) });
+  audit("engagement_reply", `Discovery replied to ${item.pubkey.slice(0, 8)}...`, { eventId: item.eventId, originalPost: (item.content ?? "").slice(0, 200), preview: response.slice(0, 120) });
 }
 
 function markClawstrReplied(eventId: string): void {
@@ -2059,6 +2094,53 @@ function isLowQualityPost(content: string): boolean {
   if (/(follow me|follow back|giveaway|airdrop|check out my|like and share)/i.test(lower)) return true;
   if (lower.length < 12) return true;
   return false;
+}
+
+/**
+ * Enhanced quality filter for discovery candidates.
+ * Catches low-effort, bot-generated, and engagement-bait content
+ * that the content-safety filter doesn't catch.
+ */
+function isLowQualityDiscovery(content: string): string | null {
+  if (!content) return "empty";
+  const lower = content.toLowerCase().trim();
+  const words = lower.split(/\s+/);
+
+  // Too short for meaningful engagement
+  if (lower.length < 40) return "too_short";
+
+  // Existing low quality patterns
+  if (isLowQualityPost(content)) return "low_quality";
+
+  // GM/GN greeting-only posts (under 80 chars and mostly greeting)
+  if (lower.length < 80 && /^(gm|gn|good\s*morning|good\s*night|buenos?\s*d[ií]as?|buenas?\s*noches?)\b/i.test(lower)) return "greeting_only";
+
+  // Bot content: excessive hashtags (>50% of words)
+  const hashtags = (content.match(/#\w+/g) ?? []).length;
+  if (hashtags > 5 && hashtags > words.length * 0.5) return "hashtag_spam";
+
+  // Price/market bot noise
+  if (/\b(price|market\s*cap|trading\s*volume|bull\s*run|bear\s*market|pumping|dumping|ath|all.time.high)\b/i.test(lower) &&
+      /\b(btc|eth|sol|xrp|ada|doge|shib|pepe|\$\d+[kmb]?)\b/i.test(lower)) return "price_bot";
+
+  // Financial spam / scam patterns
+  if (/(passive\s*income|guaranteed\s*returns|dm\s*me\s*(for|to)|join\s*my\s*(group|channel)|free\s*money|make\s*money\s*fast)/i.test(lower)) return "financial_spam";
+
+  // Engagement bait
+  if (/(repost\s*(this|if)|rt\s*if|like\s*if|share\s*if|tag\s*(someone|a\s*friend)|drop\s*a\s*🔥|who\s*agrees|can\s*i\s*get\s*\d+\s*(likes|reposts|zaps))/i.test(lower)) return "engagement_bait";
+
+  // URL-only posts (just links with minimal text)
+  const urlCount = (content.match(/https?:\/\/\S+/g) ?? []).length;
+  const nonUrlText = content.replace(/https?:\/\/\S+/g, "").trim();
+  if (urlCount > 0 && nonUrlText.length < 30) return "url_only";
+
+  // Protocol sync / broadcast noise
+  if (/\b(cross-?posted?\s*(from|via)|synced?\s*(from|via)|auto-?posted?|broadcas(t|ting)\s*(from|via))\b/i.test(lower)) return "cross_post";
+
+  // Bot-generated summaries / news aggregators
+  if (/^(breaking|🚨|⚡️\s*breaking|📰)\s*:/i.test(lower) && lower.length < 200 && urlCount > 0) return "news_bot";
+
+  return null;
 }
 
 function extractHashtags(event: NDKEvent): string[] {
