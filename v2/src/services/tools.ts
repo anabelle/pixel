@@ -2945,12 +2945,20 @@ const tweetSchema = Type.Object({
 const postTweetTool: AgentTool<typeof tweetSchema> = {
   name: "post_tweet",
   label: "Post Tweet",
-  description: "Post a tweet to X/Twitter as @PixelSurvivor. Max 280 chars. Respects rate limits (5/day, 2h gap). Only works when TWITTER_POST_ENABLE=true. Call ONCE per tweet.",
+  description: "Post a tweet to X/Twitter as @PixelSurvivor. Max 280 chars. Respects rate limits (5/day, 2h gap). Only works when TWITTER_POST_ENABLE=true. Call ONCE per tweet. If this returns an error, do NOT retry — the tweet will not go through. Move on.",
   parameters: tweetSchema,
   execute: async (_id, { text, reply_to_id }) => {
     const result = await postTweet(text, reply_to_id);
     auditToolUse("post_tweet", { text: text.slice(0, 80), reply_to_id }, result);
-    return { content: [{ type: "text" as const, text: result.success ? `Tweet posted${result.tweetId ? ` (ID: ${result.tweetId})` : ""}` : `Failed: ${result.error}` }] };
+    if (result.success) {
+      return { content: [{ type: "text" as const, text: `Tweet posted${result.tweetId ? ` (ID: ${result.tweetId})` : ""}` }] };
+    }
+    // Definitive failure message — instruct LLM to NOT retry
+    const isRateLimit = result.error?.includes("RATE_LIMITED") || result.error?.includes("CONSECUTIVE_FAILURES");
+    const stopMsg = isRateLimit
+      ? `BLOCKED: ${result.error}. Posting is temporarily disabled. Do NOT call post_tweet again.`
+      : `Failed: ${result.error}. Do NOT retry this tweet.`;
+    return { content: [{ type: "text" as const, text: stopMsg }] };
   },
 };
 
