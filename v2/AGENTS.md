@@ -10,7 +10,7 @@
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
 **V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
-**Disk:** ~32% (51GB free) | **RAM:** ~2.2GB / 3.8GB + 4GB swap
+**Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
 **External:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 
@@ -69,7 +69,7 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (41 source files, ~21,248 lines)
+### File Inventory (41 source files, ~21,534 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
@@ -80,10 +80,10 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/connectors/telegram.ts` | ~896 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
 | `src/connectors/nostr.ts` | ~433 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
 | `src/connectors/whatsapp.ts` | ~1329 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
-| `src/connectors/twitter.ts` | ~580 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
+| `src/connectors/twitter.ts` | ~624 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting (2/day, 4h gap, 4h lockout), disk-persisted state |
 | `src/services/tools.ts` | ~3134 | 63 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
-| `src/services/heartbeat.ts` | ~2266 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
-| `src/services/inner-life.ts` | ~1386 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
+| `src/services/heartbeat.ts` | ~2424 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, quality filtering, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
+| `src/services/inner-life.ts` | ~1457 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
 | `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
 | `src/services/memory.ts` | ~926 | Persistent memory — save/search/update/delete per user, vector-aware |
 | `src/services/jobs.ts` | ~654 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
@@ -258,7 +258,7 @@ Authorization config lives in `servers.json`:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~21.2K lines current, 16K soft limit exceeded (Twitter + Lightning + security tools).
+10. **Complexity is debt.** ~21.5K lines current, 16K soft limit exceeded (Twitter + Lightning + security tools).
 
 ### Anti-Patterns
 
