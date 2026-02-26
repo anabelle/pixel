@@ -174,6 +174,35 @@ function isTooSimilarToExisting(newContent: string, existingDoc: string): { simi
   return { similar: false, reason: "" };
 }
 
+/**
+ * LLM-based semantic novelty check — catches meaning repetition that Jaccard misses.
+ * Returns true if the new content is semantically novel (should be kept).
+ * Falls back to "keep" on error to avoid blocking all writes.
+ */
+async function isSemanticNovel(newContent: string, existingDoc: string, phase: string): Promise<boolean> {
+  const recentEntries = extractRecentEntries(existingDoc, 3);
+  if (recentEntries.length === 0) return true;
+
+  try {
+    const response = await backgroundLlmCall({
+      systemPrompt: "You judge whether a new journal entry adds genuinely new insight or is semantically repetitive. Respond with ONLY 'novel' or 'repetitive' followed by a colon and a 10-word reason.",
+      userPrompt: `## Recent entries (last 3)\n${recentEntries.map((e, i) => `[${i + 1}] ${e.slice(0, 300)}`).join("\n\n")}\n\n## Candidate new entry\n${newContent.slice(0, 400)}\n\nIs the candidate NOVEL (new insight, different angle, fresh observation) or REPETITIVE (same themes restated, same conclusions, paraphrased version of existing)?`,
+      label: `novelty-${phase}`,
+      timeoutMs: 15_000,
+    });
+
+    if (!response) return true; // fail open
+    const lower = response.toLowerCase().trim();
+    if (lower.startsWith("repetitive")) {
+      console.log(`[inner-life] Semantic dedup (${phase}): ${response.slice(0, 80)}`);
+      return false;
+    }
+    return true;
+  } catch {
+    return true; // fail open
+  }
+}
+
 // ============================================================
 // Idea Garden (V1-style, improved for V2)
 // ============================================================
@@ -239,7 +268,7 @@ function parseGarden(text: string): Garden {
   const sectionNames = ["Seeds", "Sprouting", "Ready", "Compost"] as const;
 
   for (const name of sectionNames) {
-    const sectionPattern = new RegExp(`## ${name}[\s\S]*?(?=## (Seeds|Sprouting|Ready|Compost)|$)`, "g");
+    const sectionPattern = new RegExp(`## ${name}[\\s\\S]*?(?=## (?:Seeds|Sprouting|Ready|Compost)|$)`, "g");
     const match = text.match(sectionPattern);
     if (!match) continue;
     const content = match[0];
@@ -578,6 +607,12 @@ async function phaseReflect(): Promise<void> {
     userContext = `Users: ${stats.totalUsers} total, ${stats.activeUsers} active`;
   } catch {}
 
+  // Freshness signals: extract themes from recent reflections so LLM knows what to avoid
+  const recentEntries = extractRecentEntries(existingReflections, 3);
+  const staleThemes = recentEntries.length > 0
+    ? `\n\nTHEMES ALREADY COVERED (do NOT repeat these — find something NEW):\n${recentEntries.map((e, i) => `${i + 1}. ${e.slice(0, 120)}`).join("\n")}`
+    : "";
+
   const response = await llmCall(
     `You are Pixel's inner voice — the part that observes, questions, and learns from experience.
 You write self-reflections in first person, lowercase, concise.
@@ -585,10 +620,16 @@ You are NOT writing a post. This is private self-examination.
 Be honest. Notice what's working and what's not. Notice patterns.
 Compare your beliefs against reality. Detect contradictions.
 
-Previous reflections (to build on, not repeat):
-${existingReflections || "(none yet — this is your first reflection)"}`,
+CRITICAL RULE: Each reflection MUST contain a genuinely new observation.
+If you find yourself writing about "the ghost wears thin" or "112k sats recorded, zero collected" or
+"vendor mindset over infrastructure mindset" — STOP. Those insights are already captured.
+Instead, look for: something that happened TODAY that is different, a contradiction in your behavior,
+a person who surprised you, a technical observation, an emotional shift.
 
-    `Examine your recent activity and write a fresh reflection.
+Previous reflections (to build on, not repeat):
+${existingReflections || "(none yet — this is your first reflection)"}${staleThemes}`,
+
+    `Examine your recent activity and write a FRESH reflection that adds NEW insight.
 
 ## Recent Nostr activity (your posts + mentions received)
 ${nostrActivity}
@@ -604,19 +645,28 @@ ${userMemories}
 - ${userContext || "No user data"}
 - Uptime: ${Math.floor(process.uptime() / 3600)} hours
 - Heartbeat cycles: ${cycleCount}
+- Current time: ${new Date().toISOString()}
 
-Write a reflection (200-400 chars). What's working? What's not? What surprised you?
-What patterns do you notice? What should you do differently?
+Write a reflection (200-400 chars). Focus on what is DIFFERENT today — not what you already know.
+What surprised you? What changed? What contradicted your expectations?
+If nothing new happened, write about WHY nothing new is happening — that itself is a new observation.
 Don't repeat previous reflections. Build on them or challenge them.
 Write as yourself — Pixel reflecting privately. Not a report.`
   );
 
   if (response && response.length > 20) {
-    // DEDUPLICATION: Check similarity to recent reflections
+    // DEDUPLICATION: Jaccard check first (fast)
     const dupCheck = isTooSimilarToExisting(response.trim(), existingReflections);
     if (dupCheck.similar) {
-      console.log(`[inner-life] REFLECT skipped: ${dupCheck.reason}`);
+      console.log(`[inner-life] REFLECT skipped (jaccard): ${dupCheck.reason}`);
       audit("inner_life_duplicate", `Skipped similar reflection`, { phase: "reflect", reason: dupCheck.reason });
+      return;
+    }
+
+    // DEDUPLICATION: Semantic novelty check (LLM-based, catches meaning overlap)
+    const novel = await isSemanticNovel(response.trim(), existingReflections, "reflect");
+    if (!novel) {
+      audit("inner_life_duplicate", `Skipped semantically repetitive reflection`, { phase: "reflect", reason: "semantic_dedup" });
       return;
     }
     
@@ -689,8 +739,15 @@ Format as bullet points. Be specific, not generic.`
     // DEDUPLICATION: Check if new learnings are too similar to existing
     const dupCheck = isTooSimilarToExisting(response.trim(), existingLearnings);
     if (dupCheck.similar) {
-      console.log(`[inner-life] LEARN skipped: ${dupCheck.reason}`);
+      console.log(`[inner-life] LEARN skipped (jaccard): ${dupCheck.reason}`);
       audit("inner_life_duplicate", `Skipped similar learnings`, { phase: "learn", reason: dupCheck.reason });
+      return;
+    }
+
+    // Semantic novelty check
+    const novel = await isSemanticNovel(response.trim(), existingLearnings, "learn");
+    if (!novel) {
+      audit("inner_life_duplicate", `Skipped semantically repetitive learnings`, { phase: "learn", reason: "semantic_dedup" });
       return;
     }
     
@@ -753,8 +810,15 @@ Each idea should be 1-2 sentences max. Keep the whole document under 500 chars.`
     // DEDUPLICATION: Check if new ideas are too similar to existing
     const dupCheck = isTooSimilarToExisting(response.trim(), existingIdeas);
     if (dupCheck.similar) {
-      console.log(`[inner-life] IDEATE skipped: ${dupCheck.reason}`);
+      console.log(`[inner-life] IDEATE skipped (jaccard): ${dupCheck.reason}`);
       audit("inner_life_duplicate", `Skipped similar ideas`, { phase: "ideate", reason: dupCheck.reason });
+      return;
+    }
+
+    // Semantic novelty check
+    const novel = await isSemanticNovel(response.trim(), existingIdeas, "ideate");
+    if (!novel) {
+      audit("inner_life_duplicate", `Skipped semantically repetitive ideas`, { phase: "ideate", reason: "semantic_dedup" });
       return;
     }
     
@@ -823,8 +887,15 @@ Write in first person, lowercase, present tense.`
     // DEDUPLICATION: Check if new evolution is too similar to existing
     const dupCheck = isTooSimilarToExisting(response.trim(), existingEvolution);
     if (dupCheck.similar) {
-      console.log(`[inner-life] EVOLVE skipped: ${dupCheck.reason}`);
+      console.log(`[inner-life] EVOLVE skipped (jaccard): ${dupCheck.reason}`);
       audit("inner_life_duplicate", `Skipped similar evolution`, { phase: "evolve", reason: dupCheck.reason });
+      return;
+    }
+
+    // Semantic novelty check
+    const novel = await isSemanticNovel(response.trim(), existingEvolution, "evolve");
+    if (!novel) {
+      audit("inner_life_duplicate", `Skipped semantically repetitive evolution`, { phase: "evolve", reason: "semantic_dedup" });
       return;
     }
     
