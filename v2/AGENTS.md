@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-25 | Session: 54
+> Last updated: 2026-02-25 | Session: 54b
 
 ---
 
@@ -302,3 +302,16 @@ Authorization config lives in `servers.json`:
 Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and clarify they're for the "AI agent community platform (clawstr.net)".
 
 **Lesson:** When you have multiple similar platforms, each needs explicit tools with clear, distinguishing descriptions. The LLM cannot infer from absence — it will use whatever tools exist.
+
+### Session 54b: Twitter 429 Retry Storm
+
+**Problem:** Pixel called `post_tweet` 482 times in 52 minutes, all returning 429 "Too Many Requests", all with the same tweet text. Hammered Twitter's API continuously.
+
+**Root cause:** `postTweet()` only incremented `postsToday` on success (line 285). On 429 failure, `canPost()` kept returning `{ok: true}`, and the LLM agent retried because the tool returned a soft `"Failed: Too Many Requests"` message that didn't definitively stop it.
+
+**Solution (3 layers of defense):**
+1. **429 lockout:** On 429, posting is locked for 30 minutes AND `postsToday` is maxed to daily limit. Persisted to disk.
+2. **Consecutive failure lockout:** After 3 consecutive failures of any kind, 15 minute lockout.
+3. **Definitive tool response:** `post_tweet` tool now returns `"BLOCKED: ... Do NOT call post_tweet again"` on rate limit errors, instead of soft `"Failed:"` messages.
+
+**Lesson:** LLMs will retry failed tool calls indefinitely unless the response is unambiguously final. Soft failure messages ("Failed: X") invite retries. Hard messages ("BLOCKED: ... Do NOT retry") stop the loop. Also: always count failures against rate limits, not just successes.
