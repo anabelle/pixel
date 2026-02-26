@@ -381,6 +381,8 @@ function appendRecentPost(content: string, type: RecentPost["type"]): void {
 
 const SIMILARITY_THRESHOLD = 0.70;
 const DEDUP_CHECK_COUNT = 5;
+const NGRAM_SIZE = 4; // 4-word phrases for phrase-level dedup
+const NGRAM_MATCH_THRESHOLD = 2; // block if 2+ distinctive phrases repeat
 
 function tokenize(text: string): Set<string> {
   return new Set(
@@ -391,6 +393,26 @@ function tokenize(text: string): Set<string> {
       .filter((w) => w.length > 2)
   );
 }
+
+/** Extract n-gram phrases for phrase-level dedup */
+function extractNgrams(text: string, n: number): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  const ngrams = new Set<string>();
+  for (let i = 0; i <= words.length - n; i++) {
+    ngrams.add(words.slice(i, i + n).join(" "));
+  }
+  return ngrams;
+}
+
+// Common filler n-grams to ignore (would match anything)
+const FILLER_NGRAMS = new Set([
+  "but no one is", "the end of the", "this is not the",
+  "one of the most", "at the end of", "it is not the",
+]);
 
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
@@ -404,15 +426,32 @@ function isTooSimilarToRecentPosts(newContent: string): { similar: boolean; reas
   if (recent.length === 0) return { similar: false, reason: "" };
   
   const newTokens = tokenize(newContent);
+  const newNgrams = extractNgrams(newContent, NGRAM_SIZE);
   
   for (const post of recent) {
     const postTokens = tokenize(post.content);
-    const similarity = jaccardSimilarity(newTokens, postTokens);
     
+    // Layer 1: Jaccard word-level similarity
+    const similarity = jaccardSimilarity(newTokens, postTokens);
     if (similarity >= SIMILARITY_THRESHOLD) {
       return {
         similar: true,
-        reason: `Similarity ${(similarity * 100).toFixed(0)}% to recent post: "${post.content.slice(0, 60)}..."`,
+        reason: `Word similarity ${(similarity * 100).toFixed(0)}% to recent post: "${post.content.slice(0, 60)}..."`,
+      };
+    }
+
+    // Layer 2: Phrase-level n-gram dedup — catches semantic repetition with different surrounding words
+    const postNgrams = extractNgrams(post.content, NGRAM_SIZE);
+    const sharedPhrases: string[] = [];
+    for (const ng of newNgrams) {
+      if (postNgrams.has(ng) && !FILLER_NGRAMS.has(ng)) {
+        sharedPhrases.push(ng);
+      }
+    }
+    if (sharedPhrases.length >= NGRAM_MATCH_THRESHOLD) {
+      return {
+        similar: true,
+        reason: `Repeated phrases from recent post: ${sharedPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")}`,
       };
     }
   }
@@ -677,11 +716,12 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 - When mentioning the canvas, include the URL: ln.pixel.xx.kg
 - If you're in "hustling" mood, it's ok to mention Lightning payments or invite people to try the canvas.
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
+- NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
   const responseText = await backgroundLlmCall({
     systemPrompt,
-    userPrompt: "Write your next Nostr post.",
+    userPrompt: "Write your next Nostr post. Use a completely different angle and vocabulary than your recent posts.",
     tools: pixelTools,
     label: "heartbeat",
   });
@@ -754,11 +794,12 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 - Do NOT start with "I" every time. Vary your opening.
 - Do NOT mention being an AI unless it's genuinely relevant.
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
+- NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
   const responseText = await backgroundLlmCall({
     systemPrompt,
-    userPrompt: "Write your next Twitter post.",
+    userPrompt: "Write your next Twitter post. Use a completely different angle and vocabulary than your recent posts.",
     tools: pixelTools,
     label: "heartbeat",
   });
