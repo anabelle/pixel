@@ -1,16 +1,16 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-19 | Session: 53
+> Last updated: 2026-02-25 | Session: 54
 
 ---
 
 ## 1. CURRENT STATUS
 
-**V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 60 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
+**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
-**Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
+**Disk:** ~32% (51GB free) | **RAM:** ~2.2GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
 **External:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 
@@ -69,47 +69,51 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (38 source files, ~20,297 lines)
+### File Inventory (41 source files, ~21,248 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~1451 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
-| `src/agent.ts` | ~1167 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skill-graph injection, memory extraction, context compaction |
+| `src/index.ts` | ~1617 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
+| `src/agent.ts` | ~1178 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skill-graph injection, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
-| `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
-| `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
-| `src/connectors/nostr.ts` | ~430 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
-| `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
-| `src/connectors/twitter.ts` | ~559 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
-| `src/services/tools.ts` | ~3100 | 60 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
-| `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
-| `src/services/inner-life.ts` | ~1271 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
+| `src/db.ts` | ~164 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
+| `src/connectors/telegram.ts` | ~896 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
+| `src/connectors/nostr.ts` | ~433 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
+| `src/connectors/whatsapp.ts` | ~1329 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
+| `src/connectors/twitter.ts` | ~580 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
+| `src/services/tools.ts` | ~3134 | 63 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
+| `src/services/heartbeat.ts` | ~2266 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
+| `src/services/inner-life.ts` | ~1386 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
 | `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
-| `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
-| `src/services/jobs.ts` | ~564 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
-| `src/services/reminders.ts` | ~540 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
+| `src/services/memory.ts` | ~926 | Persistent memory — save/search/update/delete per user, vector-aware |
+| `src/services/jobs.ts` | ~654 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
+| `src/services/reminders.ts` | ~558 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
 | `src/services/outreach.ts` | ~397 | Proactive owner outreach — LLM-judged Telegram pings, cooldowns, dedup |
-| `src/services/cost-monitor.ts` | ~347 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
+| `src/services/cost-monitor.ts` | ~379 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware |
-| `src/services/audit.ts` | ~257 | Structured JSONL audit trail |
+| `src/services/audit.ts` | ~259 | Structured JSONL audit trail |
 | `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 + Lightning payment + revenue |
-| `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache |
+| `src/services/lightning.ts` | ~254 | LNURL-pay invoices, invoiceCache |
 | `src/services/digest.ts` | ~198 | Periodic digest + instant alert system for owner |
 | `src/services/nostr-auth.ts` | ~169 | NIP-98 HTTP auth for dashboard |
 | `src/services/clawstr.ts` | ~168 | Clawstr CLI wrapper — docker-in-docker, config at `/app/data/.clawstr` (mounted from `data/clawstr`), 6h check cycle |
-| `src/services/image-gen.ts` | ~145 | Gemini image generation service |
-| `src/services/revenue.ts` | ~141 | PostgreSQL revenue tracking |
-| `src/services/x402.ts` | ~134 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
+| `src/services/security-scanner.ts` | ~285 | Security scanning and threat detection |
+| `src/services/content-filter.ts` | ~230 | Content filtering and moderation |
+| `src/services/security-patterns.ts` | ~222 | Security pattern definitions and matching |
+| `src/services/image-gen.ts` | ~152 | Gemini image generation service |
+| `src/services/revenue.ts` | ~168 | PostgreSQL revenue tracking |
+| `src/services/x402.ts` | ~142 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
 | `src/services/primal.ts` | ~136 | Primal Cache API for trending Nostr posts |
 | `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log |
-| `src/services/audio.ts` | ~132 | Audio transcription via Gemini 2.0 Flash REST API |
+| `src/services/audio.ts` | ~199 | Audio transcription via Gemini 2.0 Flash REST API |
 | `src/services/users.ts` | ~124 | User tracking — upsert, stats |
 | `src/services/tts.ts` | ~73 | Edge TTS → ffmpeg → OGG/Opus, auto language detection |
 | `src/services/blossom.ts` | ~47 | Blossom media upload for Nostr image posts |
 | `src/services/vision.ts` | ~46 | Image URL extraction for multi-modal input |
 | `src/services/google-key.ts` | ~52 | Google API key failover (primary → fallback) used by Gemini calls |
-| `src/services/server-registry.ts` | ~213 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
-| `src/services/canvas-listener.ts` | ~195 | Socket.IO client for V1 canvas — real-time pixel sale notifications, revenue recording, Pixel wake-up |
+| `src/services/server-registry.ts` | ~230 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
+| `src/services/canvas-listener.ts` | ~262 | Socket.IO client for V1 canvas — real-time pixel sale notifications, revenue recording, Pixel wake-up |
+| `src/scripts/forge-identity.ts` | ~400 | Identity forging/generation script |
 
 ---
 
@@ -160,7 +164,7 @@ Same Pixel, same brain, different payment doors:
 | Nostr zaps | Tips | Variable | ✅ Organic |
 | WhatsApp/Telegram | Lightning QR / tips | Variable | ⚠️ Needs users |
 
-**Treasury:** ~80,000 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
+**Treasury:** ~84,444 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ---
 ## 6. SECURITY & AUTHORIZATION
@@ -191,7 +195,7 @@ Authorization config lives in `servers.json`:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 60 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 63 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — skill-graph injects relevant arscontexta + marketplace nodes. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
@@ -254,7 +258,7 @@ Authorization config lives in `servers.json`:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~20.3K lines current, 16K soft limit exceeded (Twitter + Lightning tools).
+10. **Complexity is debt.** ~21.2K lines current, 16K soft limit exceeded (Twitter + Lightning + security tools).
 
 ### Anti-Patterns
 
