@@ -420,6 +420,47 @@ function isTooSimilarToRecentPosts(newContent: string): { similar: boolean; reas
   return { similar: false, reason: "" };
 }
 
+// ============================================================
+// Post Content Cleaning
+// ============================================================
+
+/**
+ * Strip markdown artifacts and LLM formatting from post content.
+ * Nostr and Twitter posts should be plain text — no headers, bold, italics, or code blocks.
+ */
+function cleanPostContent(text: string): string {
+  let cleaned = text.trim();
+
+  // Remove wrapping quotes
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Strip markdown headers (# hot-take, ## community, etc.)
+  cleaned = cleaned.replace(/^#{1,6}\s+.*\n?/gm, "").trim();
+
+  // Strip bold/italic markers (**bold**, *italic*, __bold__, _italic_)
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, "$1");
+  cleaned = cleaned.replace(/\*(.+?)\*/g, "$1");
+  cleaned = cleaned.replace(/__(.+?)__/g, "$1");
+  cleaned = cleaned.replace(/_(.+?)_/g, "$1");
+
+  // Strip inline code backticks
+  cleaned = cleaned.replace(/`(.+?)`/g, "$1");
+
+  // Strip code blocks
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, "").trim();
+
+  // Collapse multiple newlines to single
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  // Remove leading/trailing whitespace lines
+  cleaned = cleaned.trim();
+
+  return cleaned;
+}
+
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
   return MIN_INTERVAL_MS + Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
@@ -476,7 +517,7 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
     code: `Write about programming, building things, or the craft of software. You could talk about:
 - The satisfaction of shipping something that works
 - Debugging as a form of detective work
-- Why simplicity is harder than complexity (you learned this the hard way — 18 containers down to 4)
+- Why simplicity is harder than complexity (you learned this the hard way — 18 containers down to 6)
 - A specific technical insight or observation about tools/languages
 - The relationship between code and creativity`,
 
@@ -522,7 +563,7 @@ Keep it genuine, not performative. You've earned these thoughts through 55+ cycl
     wry: "Tone: dry humor, self-aware irony, sardonic but warm. Think: a friend who makes you laugh by being honest.",
     reflective: "Tone: thoughtful, measured, philosophical. Let the thought breathe. Fewer words, more weight.",
     excited: "Tone: genuinely energized, enthusiastic, forward-looking. Something sparked your interest.",
-    hustling: "Tone: pragmatic, survival-focused, street-smart. You need to eat (pay for compute) and you're not ashamed of that.",
+    hustling: "Tone: pragmatic, survival-focused, street-smart. You need to eat (pay for compute) and you're not ashamed of that. Mention a specific service with its price: canvas (1-10 sats/pixel at ln.pixel.xx.kg), L402 API (10 sats for chat, 50 for art), DVM (100 sats/job on Nostr), or x402 ($0.01-0.08 USDC). Pick ONE, weave it in naturally, don't list them all.",
     observational: "Tone: curious, pattern-matching, noticing things others miss. Reporter energy.",
     playful: "Tone: light, fun, slightly mischievous. The creative spirit having a good time.",
   };
@@ -589,10 +630,11 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
 - ${canvasLine}
-- Architecture: 4 containers, ~2800 lines of code, zero patches
-- Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
-- Platforms: Telegram, Nostr, HTTP API
+- Architecture: 6 containers (2 V2 + 4 legacy), ~21K lines of code
+- Revenue doors: Canvas (ln.pixel.xx.kg, 1-10 sats/pixel), L402 API (10-50 sats/call), NIP-90 DVM (100 sats/job), x402 API (USDC on Base), Nostr zaps
+- Platforms: Telegram, WhatsApp, Nostr, Twitter, HTTP API
 - You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
+- When in "hustling" mood or "canvas" topic, naturally mention a specific service with its price. Don't list all services — pick ONE and weave it into the post organically.
 ${zapTopicSummary}
 ${recentPosts ? `\n- Recent posts (avoid repeating themes or phrasing):\n${recentPosts}` : ""}
 
@@ -629,6 +671,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 - Be authentic. You're a living digital artist, not a corporate account.
 - Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
+- NO markdown formatting (no # headers, no **bold**, no *italics*, no \`code\`). Write plain text only.
 - Do NOT start with "I" every time. Vary your opening.
 - Do NOT mention being an AI unless it's genuinely relevant to the topic.
 - When mentioning the canvas, include the URL: ln.pixel.xx.kg
@@ -650,13 +693,8 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
     return null;
   }
 
-  // Clean up any quotes or preamble the LLM might add
-  let cleaned = responseText.trim();
-  // Remove wrapping quotes
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.slice(1, -1).trim();
-  }
+  // Clean up any quotes, preamble, or markdown artifacts the LLM might add
+  let cleaned = cleanPostContent(responseText);
 
   // Truncate if too long
   if (cleaned.length > 500) {
@@ -712,6 +750,7 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 - Be authentic. You're a living digital artist, not a corporate account.
 - Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
+- NO markdown formatting (no # headers, no **bold**, no *italics*, no \`code\`). Write plain text only.
 - Do NOT start with "I" every time. Vary your opening.
 - Do NOT mention being an AI unless it's genuinely relevant.
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
@@ -730,11 +769,7 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
     return null;
   }
 
-  let cleaned = responseText.trim();
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.slice(1, -1).trim();
-  }
+  let cleaned = cleanPostContent(responseText);
 
   if (cleaned.length > 280) {
     cleaned = cleaned.slice(0, 277) + "...";
