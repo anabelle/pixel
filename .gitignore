@@ -86,3 +86,6 @@ docs/ideas/
 .ssh/
 .sudo_as_admin_successful
 certbot/
+
+# AirTR Nostr Relay (managed from airtr repo — infra/relay/)
+nostr-relay/
