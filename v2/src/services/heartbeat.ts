@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled } from "../connectors/nostr.js";
 import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -1307,6 +1307,14 @@ async function notificationLoop(): Promise<void> {
     for (const event of mentions) {
       if (replied >= maxReplies) break;
       if (hasRepliedTo(event.id)) continue;
+      
+      // Thread filter: check if we've already handled this thread in the last 24h
+      const threadRootId = getThreadRootId(event) || event.id;
+      if (isThreadHandled(threadRootId)) {
+        markReplied(event.id); // Also mark individual event to avoid re-checking
+        continue;
+      }
+      
       if (isBotLoop(event.pubkey)) { markReplied(event.id); continue; }
       if (!event.content || event.content.length < 2) {
         markReplied(event.id);
@@ -1350,7 +1358,8 @@ async function notificationLoop(): Promise<void> {
 
       await reply.publish();
       markReplied(event.id);
-      audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id });
+      markThreadHandled(threadRootId);
+      audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id, threadId: threadRootId });
       replied++;
       await new Promise((r) => setTimeout(r, 4_000));
     }

@@ -33,6 +33,12 @@ let sharedPubkey: string | null = null;
 const repliedEventIds = new Set<string>();
 const REPLIED_IDS_PATH = "/app/data/nostr-replied.json";
 
+// Thread handling — prevents replying to multiple messages in the same thread
+// within 24 hours (stops "ghost" repetitive responses)
+const handledThreads = new Map<string, number>(); // threadRootId -> timestamp
+const HANDLED_THREADS_PATH = "/app/data/nostr-handled-threads.json";
+const THREAD_HANDLED_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 /** Load replied event IDs from disk (survives container restarts) */
 function loadRepliedIds(): void {
   if (!existsSync(REPLIED_IDS_PATH)) return;
@@ -56,6 +62,92 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedSaveRepliedIds(): void {
   if (saveTimer) return;
   saveTimer = setTimeout(() => { saveTimer = null; saveRepliedIds(); }, 10_000);
+}
+
+// ============================================================
+// Thread Handling (24h cooldown per thread)
+// ============================================================
+
+/** Load handled threads from disk */
+function loadHandledThreads(): void {
+  if (!existsSync(HANDLED_THREADS_PATH)) return;
+  try {
+    const data = JSON.parse(readFileSync(HANDLED_THREADS_PATH, "utf-8")) as Record<string, number>;
+    const now = Date.now();
+    for (const [threadId, timestamp] of Object.entries(data)) {
+      // Only load threads that haven't expired
+      if (now - timestamp < THREAD_HANDLED_DURATION_MS) {
+        handledThreads.set(threadId, timestamp);
+      }
+    }
+    console.log(`[nostr] Loaded ${handledThreads.size} handled threads from disk`);
+  } catch { /* ignore */ }
+}
+
+/** Save handled threads to disk */
+function saveHandledThreads(): void {
+  try {
+    const obj = Object.fromEntries(handledThreads);
+    writeFileSync(HANDLED_THREADS_PATH, JSON.stringify(obj));
+  } catch { /* ignore */ }
+}
+
+let threadSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedSaveHandledThreads(): void {
+  if (threadSaveTimer) return;
+  threadSaveTimer = setTimeout(() => { threadSaveTimer = null; saveHandledThreads(); }, 10_000);
+}
+
+/** Extract root thread ID from event tags */
+export function getThreadRootId(event: { tags?: string[][] }): string | null {
+  if (!event.tags) return null;
+  
+  // Look for the root 'e' tag (NIP-10 threading)
+  for (const tag of event.tags) {
+    if (tag[0] === "e" && tag[3] === "root") {
+      return tag[1];
+    }
+  }
+  
+  // Fallback: first 'e' tag is often the root in simpler threads
+  for (const tag of event.tags) {
+    if (tag[0] === "e") {
+      return tag[1];
+    }
+  }
+  
+  return null;
+}
+
+/** Check if a thread has been handled within the cooldown period */
+export function isThreadHandled(threadRootId: string): boolean {
+  const timestamp = handledThreads.get(threadRootId);
+  if (!timestamp) return false;
+  
+  const now = Date.now();
+  if (now - timestamp >= THREAD_HANDLED_DURATION_MS) {
+    // Expired, remove it
+    handledThreads.delete(threadRootId);
+    debouncedSaveHandledThreads();
+    return false;
+  }
+  
+  return true;
+}
+
+/** Mark a thread as handled */
+export function markThreadHandled(threadRootId: string): void {
+  handledThreads.set(threadRootId, Date.now());
+  
+  // Prune expired entries
+  const now = Date.now();
+  for (const [id, ts] of handledThreads) {
+    if (now - ts >= THREAD_HANDLED_DURATION_MS) {
+      handledThreads.delete(id);
+    }
+  }
+  
+  debouncedSaveHandledThreads();
 }
 
 // ============================================================
@@ -243,6 +335,7 @@ function isThrottled(pubkey: string): boolean {
 export async function startNostr(): Promise<void> {
   // Load previously replied event IDs from disk (survives container restarts)
   loadRepliedIds();
+  loadHandledThreads();
 
   const nsec = process.env.NOSTR_PRIVATE_KEY;
   if (!nsec) {
