@@ -41,9 +41,9 @@ import { pruneOldAlerts as pruneSecurityAlerts } from "./security-scanner.js";
 // Configuration
 // ============================================================
 
-const MIN_INTERVAL_MS = 45 * 60 * 1000;  // 45 minutes minimum
-const MAX_INTERVAL_MS = 90 * 60 * 1000;  // 90 minutes maximum
-const MIN_POST_GAP_MS = 30 * 60 * 1000;  // Never post more than once per 30 min
+const MIN_INTERVAL_MS = 2 * 60 * 60 * 1000;  // 2 hours minimum (heartbeat cycle)
+const MAX_INTERVAL_MS = 4 * 60 * 60 * 1000;  // 4 hours maximum
+const MIN_POST_GAP_MS = 6 * 60 * 60 * 1000;  // Never post more than once per 6 hours (anti-spam)
 const STARTUP_DELAY_MS = 2 * 60 * 1000;  // Wait 2 minutes after boot before first heartbeat
 const ENGAGEMENT_CHECK_MS = 15 * 60 * 1000; // Check for unreplied mentions every 15 min
 const CLAWSTR_CHECK_MS = 6 * 60 * 60 * 1000; // Check Clawstr notifications every 6h (secondary to Nostr)
