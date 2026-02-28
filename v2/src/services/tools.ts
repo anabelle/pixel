@@ -767,6 +767,10 @@ export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
 // Clawstr is a different platform (AI agent community at clawstr.net)
 // Do NOT confuse these two platforms!
 
+// Rate limiting for nostr_post to prevent spam loops
+const NOSTR_POST_COOLDOWN_MS = 60_000; // 1 minute minimum between posts
+let lastNostrPostTime = 0;
+
 const nostrPostSchema = Type.Object({
   content: Type.String({ description: "The note content to post to Nostr" }),
   image_url: Type.Optional(Type.String({ description: "Optional image URL to include in the post (will be added as NIP-94 imeta tag)" })),
@@ -775,9 +779,20 @@ const nostrPostSchema = Type.Object({
 export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
   name: "nostr_post",
   label: "Nostr Post",
-  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays. Optionally include an image URL.",
+  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays. Optionally include an image URL. RATE LIMITED: 1 post per minute max.",
   parameters: nostrPostSchema,
   execute: async (_id, { content, image_url }) => {
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastNostrPostTime < NOSTR_POST_COOLDOWN_MS) {
+      const waitSec = Math.ceil((NOSTR_POST_COOLDOWN_MS - (now - lastNostrPostTime)) / 1000);
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: "rate_limited", waitSeconds: waitSec });
+      return { 
+        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next Nostr post.` }], 
+        details: { rateLimited: true, waitSeconds: waitSec } 
+      };
+    }
+    
     const nostr = getNostrInstance();
     if (!nostr) {
       auditToolUse("nostr_post", { contentLength: content.length }, { error: "not_connected" });
@@ -798,6 +813,7 @@ export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
       }
       
       await event.publish();
+      lastNostrPostTime = now;
       
       auditToolUse("nostr_post", { contentLength: content.length, hasImage: !!image_url }, { eventId: event.id });
       return { content: [{ type: "text" as const, text: `Posted to Nostr. Event ID: ${event.id}${image_url ? " (with image)" : ""}` }], details: { eventId: event.id } };
@@ -2223,6 +2239,10 @@ const notifyOwnerTool: AgentTool<typeof notifyOwnerSchema> = {
 
 // ─── SYNTROPY MAILBOX TOOL ────────────────────────────────────
 
+// Rate limiting for syntropy_notify to prevent spam loops
+const SYNTROPY_NOTIFY_COOLDOWN_MS = 30_000; // 30 seconds minimum between notifications
+let lastSyntropyNotifyTime = 0;
+
 const syntropyNotifySchema = Type.Object({
   message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent). Be concise and actionable." }),
   priority: Type.Optional(Type.Union([
@@ -2235,9 +2255,20 @@ const syntropyNotifySchema = Type.Object({
 const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
   name: "syntropy_notify",
   label: "Notify Syntropy",
-  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle.",
+  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle. RATE LIMITED: 1 notification per 30 seconds max.",
   parameters: syntropyNotifySchema,
   execute: async (_id, { message, priority }) => {
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastSyntropyNotifyTime < SYNTROPY_NOTIFY_COOLDOWN_MS) {
+      const waitSec = Math.ceil((SYNTROPY_NOTIFY_COOLDOWN_MS - (now - lastSyntropyNotifyTime)) / 1000);
+      auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: "rate_limited", waitSeconds: waitSec });
+      return {
+        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next Syntropy notification.` }],
+        details: { rateLimited: true, waitSeconds: waitSec },
+      };
+    }
+    
     const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
     const entry = {
       timestamp: new Date().toISOString(),
@@ -2250,6 +2281,7 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
         mkdirSync(dir, { recursive: true });
       }
       writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+      lastSyntropyNotifyTime = now;
       auditToolUse("syntropy_notify", { priority: entry.priority }, { mailboxPath });
       return {
         content: [{ type: "text" as const, text: `Message queued for Syntropy (${entry.priority}).` }],
