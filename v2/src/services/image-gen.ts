@@ -8,6 +8,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { resolveGoogleApiKey } from "./google-key.js";
+import { costMonitor } from "./cost-monitor.js";
 
 const DEFAULT_MODEL: ImageModel = "pro";
 const IMAGE_TIMEOUT_MS = 45_000;
@@ -107,6 +108,7 @@ export async function generateImage(
 
       if (!res.ok) {
         const errorText = await res.text().catch(() => "");
+        costMonitor.recordError(modelId, `Image API error ${res.status}`, 'conversation');
         throw new Error(`Gemini image API ${res.status}: ${errorText.slice(0, 200)}`);
       }
 
@@ -117,6 +119,13 @@ export async function generateImage(
           const mimeType = part.inlineData.mimeType || "image/png";
           const buffer = Buffer.from(part.inlineData.data, "base64");
           const path = saveGeneratedImage(buffer, mimeType);
+          
+          // Track image generation usage
+          // Input: prompt tokens, Output: estimate from image size (rough: 1KB ≈ 100 tokens)
+          const inputTokens = Math.ceil(safePrompt.length / 4);
+          const outputTokens = Math.ceil(buffer.byteLength / 100);
+          costMonitor.recordUsage(modelId, inputTokens, outputTokens, 'conversation');
+          
           return { buffer, mimeType, modelUsed: model, path };
         }
       }

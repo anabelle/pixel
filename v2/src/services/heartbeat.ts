@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled } from "../connectors/nostr.js";
 import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -35,6 +35,7 @@ import { extractImageUrls, fetchImages } from "./vision.js";
 import { fetchPrimalTrending24h, fetchPrimalMostZapped4h } from "./primal.js";
 import { getUnsafeReason } from "./content-filter.js";
 import { pixelTools } from "./tools.js";
+import { pruneOldAlerts as pruneSecurityAlerts } from "./security-scanner.js";
 
 // ============================================================
 // Configuration
@@ -374,6 +375,131 @@ function appendRecentPost(content: string, type: RecentPost["type"]): void {
   }
 }
 
+// ============================================================
+// Post Deduplication
+// ============================================================
+
+const SIMILARITY_THRESHOLD = 0.70;
+const DEDUP_CHECK_COUNT = 5;
+const NGRAM_SIZE = 4; // 4-word phrases for phrase-level dedup
+const NGRAM_MATCH_THRESHOLD = 2; // block if 2+ distinctive phrases repeat
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+}
+
+/** Extract n-gram phrases for phrase-level dedup */
+function extractNgrams(text: string, n: number): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  const ngrams = new Set<string>();
+  for (let i = 0; i <= words.length - n; i++) {
+    ngrams.add(words.slice(i, i + n).join(" "));
+  }
+  return ngrams;
+}
+
+// Common filler n-grams to ignore (would match anything)
+const FILLER_NGRAMS = new Set([
+  "but no one is", "the end of the", "this is not the",
+  "one of the most", "at the end of", "it is not the",
+]);
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const intersection = new Set([...a].filter((x) => b.has(x)));
+  const union = new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+
+function isTooSimilarToRecentPosts(newContent: string): { similar: boolean; reason: string } {
+  const recent = readRecentPosts(DEDUP_CHECK_COUNT);
+  if (recent.length === 0) return { similar: false, reason: "" };
+  
+  const newTokens = tokenize(newContent);
+  const newNgrams = extractNgrams(newContent, NGRAM_SIZE);
+  
+  for (const post of recent) {
+    const postTokens = tokenize(post.content);
+    
+    // Layer 1: Jaccard word-level similarity
+    const similarity = jaccardSimilarity(newTokens, postTokens);
+    if (similarity >= SIMILARITY_THRESHOLD) {
+      return {
+        similar: true,
+        reason: `Word similarity ${(similarity * 100).toFixed(0)}% to recent post: "${post.content.slice(0, 60)}..."`,
+      };
+    }
+
+    // Layer 2: Phrase-level n-gram dedup — catches semantic repetition with different surrounding words
+    const postNgrams = extractNgrams(post.content, NGRAM_SIZE);
+    const sharedPhrases: string[] = [];
+    for (const ng of newNgrams) {
+      if (postNgrams.has(ng) && !FILLER_NGRAMS.has(ng)) {
+        sharedPhrases.push(ng);
+      }
+    }
+    if (sharedPhrases.length >= NGRAM_MATCH_THRESHOLD) {
+      return {
+        similar: true,
+        reason: `Repeated phrases from recent post: ${sharedPhrases.slice(0, 3).map(p => `"${p}"`).join(", ")}`,
+      };
+    }
+  }
+  
+  return { similar: false, reason: "" };
+}
+
+// ============================================================
+// Post Content Cleaning
+// ============================================================
+
+/**
+ * Strip markdown artifacts and LLM formatting from post content.
+ * Nostr and Twitter posts should be plain text — no headers, bold, italics, or code blocks.
+ */
+function cleanPostContent(text: string): string {
+  let cleaned = text.trim();
+
+  // Remove wrapping quotes
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Strip markdown headers (# hot-take, ## community, etc.)
+  cleaned = cleaned.replace(/^#{1,6}\s+.*\n?/gm, "").trim();
+
+  // Strip bold/italic markers (**bold**, *italic*, __bold__, _italic_)
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, "$1");
+  cleaned = cleaned.replace(/\*(.+?)\*/g, "$1");
+  cleaned = cleaned.replace(/__(.+?)__/g, "$1");
+  cleaned = cleaned.replace(/_(.+?)_/g, "$1");
+
+  // Strip inline code backticks
+  cleaned = cleaned.replace(/`(.+?)`/g, "$1");
+
+  // Strip code blocks
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, "").trim();
+
+  // Collapse multiple newlines to single
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  // Remove leading/trailing whitespace lines
+  cleaned = cleaned.trim();
+
+  return cleaned;
+}
+
 /** Get a random interval between min and max (jitter) */
 function randomInterval(): number {
   return MIN_INTERVAL_MS + Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
@@ -430,7 +556,7 @@ function getTopicGuidance(topic: Topic, mood: Mood): string {
     code: `Write about programming, building things, or the craft of software. You could talk about:
 - The satisfaction of shipping something that works
 - Debugging as a form of detective work
-- Why simplicity is harder than complexity (you learned this the hard way — 18 containers down to 4)
+- Why simplicity is harder than complexity (you learned this the hard way — 18 containers down to 6)
 - A specific technical insight or observation about tools/languages
 - The relationship between code and creativity`,
 
@@ -476,7 +602,7 @@ Keep it genuine, not performative. You've earned these thoughts through 55+ cycl
     wry: "Tone: dry humor, self-aware irony, sardonic but warm. Think: a friend who makes you laugh by being honest.",
     reflective: "Tone: thoughtful, measured, philosophical. Let the thought breathe. Fewer words, more weight.",
     excited: "Tone: genuinely energized, enthusiastic, forward-looking. Something sparked your interest.",
-    hustling: "Tone: pragmatic, survival-focused, street-smart. You need to eat (pay for compute) and you're not ashamed of that.",
+    hustling: "Tone: pragmatic, survival-focused, street-smart. You need to eat (pay for compute) and you're not ashamed of that. Mention a specific service with its price: canvas (1-10 sats/pixel at ln.pixel.xx.kg), L402 API (10 sats for chat, 50 for art), DVM (100 sats/job on Nostr), or x402 ($0.01-0.08 USDC). Pick ONE, weave it in naturally, don't list them all.",
     observational: "Tone: curious, pattern-matching, noticing things others miss. Reporter energy.",
     playful: "Tone: light, fun, slightly mischievous. The creative spirit having a good time.",
   };
@@ -543,10 +669,11 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
 - ${canvasLine}
-- Architecture: 4 containers, ~2800 lines of code, zero patches
-- Revenue doors: L402 (Lightning micropayments), NIP-90 DVM, canvas
-- Platforms: Telegram, Nostr, HTTP API
+- Architecture: 6 containers (2 V2 + 4 legacy), ~21K lines of code
+- Revenue doors: Canvas (ln.pixel.xx.kg, 1-10 sats/pixel), L402 API (10-50 sats/call), NIP-90 DVM (100 sats/job), x402 API (USDC on Base), Nostr zaps
+- Platforms: Telegram, WhatsApp, Nostr, Twitter, HTTP API
 - You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
+- When in "hustling" mood or "canvas" topic, naturally mention a specific service with its price. Don't list all services — pick ONE and weave it into the post organically.
 ${zapTopicSummary}
 ${recentPosts ? `\n- Recent posts (avoid repeating themes or phrasing):\n${recentPosts}` : ""}
 
@@ -583,16 +710,18 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 - Be authentic. You're a living digital artist, not a corporate account.
 - Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
+- NO markdown formatting (no # headers, no **bold**, no *italics*, no \`code\`). Write plain text only.
 - Do NOT start with "I" every time. Vary your opening.
 - Do NOT mention being an AI unless it's genuinely relevant to the topic.
 - When mentioning the canvas, include the URL: ln.pixel.xx.kg
 - If you're in "hustling" mood, it's ok to mention Lightning payments or invite people to try the canvas.
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
+- NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
   const responseText = await backgroundLlmCall({
     systemPrompt,
-    userPrompt: "Write your next Nostr post.",
+    userPrompt: "Write your next Nostr post. Use a completely different angle and vocabulary than your recent posts.",
     tools: pixelTools,
     label: "heartbeat",
   });
@@ -604,17 +733,20 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
     return null;
   }
 
-  // Clean up any quotes or preamble the LLM might add
-  let cleaned = responseText.trim();
-  // Remove wrapping quotes
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.slice(1, -1).trim();
-  }
+  // Clean up any quotes, preamble, or markdown artifacts the LLM might add
+  let cleaned = cleanPostContent(responseText);
 
   // Truncate if too long
   if (cleaned.length > 500) {
     cleaned = cleaned.slice(0, 497) + "...";
+  }
+
+  // DEDUPLICATION: Check similarity to recent posts
+  const dupCheck = isTooSimilarToRecentPosts(cleaned);
+  if (dupCheck.similar) {
+    console.log(`[heartbeat] REJECTED duplicate post: ${dupCheck.reason}`);
+    audit("heartbeat_duplicate", `Rejected similar post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
+    return null;
   }
 
   if (cleaned) {
@@ -658,14 +790,16 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 - Be authentic. You're a living digital artist, not a corporate account.
 - Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
+- NO markdown formatting (no # headers, no **bold**, no *italics*, no \`code\`). Write plain text only.
 - Do NOT start with "I" every time. Vary your opening.
 - Do NOT mention being an AI unless it's genuinely relevant.
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
+- NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
 
   const responseText = await backgroundLlmCall({
     systemPrompt,
-    userPrompt: "Write your next Twitter post.",
+    userPrompt: "Write your next Twitter post. Use a completely different angle and vocabulary than your recent posts.",
     tools: pixelTools,
     label: "heartbeat",
   });
@@ -676,14 +810,18 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
     return null;
   }
 
-  let cleaned = responseText.trim();
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-      (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.slice(1, -1).trim();
-  }
+  let cleaned = cleanPostContent(responseText);
 
   if (cleaned.length > 280) {
     cleaned = cleaned.slice(0, 277) + "...";
+  }
+
+  // DEDUPLICATION: Check similarity to recent posts
+  const dupCheck = isTooSimilarToRecentPosts(cleaned);
+  if (dupCheck.similar) {
+    console.log(`[heartbeat] REJECTED duplicate twitter post: ${dupCheck.reason}`);
+    audit("heartbeat_twitter_duplicate", `Rejected similar twitter post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
+    return null;
   }
 
   if (cleaned) {
@@ -900,6 +1038,13 @@ async function beat(): Promise<void> {
   heartbeatCount++;
   saveHeartbeatState();
   console.log(`[heartbeat] Beat #${heartbeatCount} — generating post...`);
+  
+  // Prune old security alerts (every heartbeat cycle)
+  try {
+    pruneSecurityAlerts();
+  } catch (err: any) {
+    console.error("[heartbeat] Security prune failed:", err.message);
+  }
 
   // Refresh canvas stats before generating post
   await fetchCanvasStats();
@@ -1076,12 +1221,15 @@ async function discoveryLoop(): Promise<void> {
       writeFileSync("/app/data/nostr-trends.json", JSON.stringify(trendSummary, null, 2));
     } catch {}
 
+    let discoveryFiltered = 0;
     const candidates = all.filter((e) => {
       if (hasRepliedTo(e.id)) return false;
       if (discoveryRepliedIds.includes(e.id)) return false;
       if (isMuted(e.pubkey)) return false;
       if (e.tags.some((t) => t[0] === "e")) return false; // skip replies
       if (e.content.length > 800) return false;
+      const qualityReason = isLowQualityDiscovery(e.content);
+      if (qualityReason) { discoveryFiltered++; return false; }
       return true;
     });
 
@@ -1091,6 +1239,13 @@ async function discoveryLoop(): Promise<void> {
       if (isMuted(e.pubkey)) return false;
       if (e.tags?.some((t: string[]) => t[0] === "e")) return false;
       if (!e.content || e.content.length > 800) return false;
+      const qualityReason = isLowQualityDiscovery(e.content);
+      if (qualityReason) { discoveryFiltered++; return false; }
+      // Skip Primal posts with zero engagement (likely bot/noise)
+      if (e.stats && e.stats.likes === 0 && e.stats.replies === 0 && e.stats.zaps === 0 && e.stats.reposts === 0) {
+        discoveryFiltered++;
+        return false;
+      }
       return true;
     }).map((e) => ({
       id: e.id,
@@ -1098,6 +1253,9 @@ async function discoveryLoop(): Promise<void> {
       content: e.content,
       tags: e.tags,
     }));
+    if (discoveryFiltered > 0) {
+      audit("discovery_quality", `Filtered ${discoveryFiltered} low-quality discovery candidates`, { filtered: discoveryFiltered, ndkCandidates: candidates.length, primalCandidates: primalCandidates.length });
+    }
     enqueueDiscoveryCandidates(candidates, trendingTags, primalCandidates);
     processDiscoveryQueue(trendingTags).catch((err) => {
       console.error("[heartbeat/discovery] Queue error:", err.message);
@@ -1149,6 +1307,14 @@ async function notificationLoop(): Promise<void> {
     for (const event of mentions) {
       if (replied >= maxReplies) break;
       if (hasRepliedTo(event.id)) continue;
+      
+      // Thread filter: check if we've already handled this thread in the last 24h
+      const threadRootId = getThreadRootId(event) || event.id;
+      if (isThreadHandled(threadRootId)) {
+        markReplied(event.id); // Also mark individual event to avoid re-checking
+        continue;
+      }
+      
       if (isBotLoop(event.pubkey)) { markReplied(event.id); continue; }
       if (!event.content || event.content.length < 2) {
         markReplied(event.id);
@@ -1192,7 +1358,8 @@ async function notificationLoop(): Promise<void> {
 
       await reply.publish();
       markReplied(event.id);
-      audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id });
+      markThreadHandled(threadRootId);
+      audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id, threadId: threadRootId });
       replied++;
       await new Promise((r) => setTimeout(r, 4_000));
     }
@@ -1583,7 +1750,14 @@ function enqueueDiscoveryCandidates(
     const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
     if (unsafeReason) {
       markDiscoveryReplied(event.id);
-      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason, postPreview: (event.content ?? "").slice(0, 120) });
+      continue;
+    }
+
+    const qualityReason = isLowQualityDiscovery(event.content ?? "");
+    if (qualityReason) {
+      markDiscoveryReplied(event.id);
+      audit("discovery_quality", `Discovery candidate filtered (${qualityReason})`, { eventId: event.id, reason: qualityReason, postPreview: (event.content ?? "").slice(0, 120) });
       continue;
     }
 
@@ -1602,7 +1776,14 @@ function enqueueDiscoveryCandidates(
     const unsafeReason = getUnsafeReason(event.content ?? "", event.tags, { blockVideo: true });
     if (unsafeReason) {
       markDiscoveryReplied(event.id);
-      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason });
+      audit("content_blocked", `Discovery candidate blocked (${unsafeReason})`, { eventId: event.id, reason: unsafeReason, postPreview: (event.content ?? "").slice(0, 120) });
+      continue;
+    }
+
+    const qualityReason = isLowQualityDiscovery(event.content ?? "");
+    if (qualityReason) {
+      markDiscoveryReplied(event.id);
+      audit("discovery_quality", `Discovery candidate filtered (${qualityReason})`, { eventId: event.id, reason: qualityReason, postPreview: (event.content ?? "").slice(0, 120) });
       continue;
     }
 
@@ -1635,7 +1816,15 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   const unsafeReason = getUnsafeReason(item.content ?? "", item.tags, { blockVideo: true });
   if (unsafeReason) {
     markDiscoveryReplied(item.eventId);
-    audit("content_blocked", `Discovery blocked (${unsafeReason})`, { eventId: item.eventId, reason: unsafeReason });
+    audit("content_blocked", `Discovery blocked (${unsafeReason})`, { eventId: item.eventId, reason: unsafeReason, postPreview: (item.content ?? "").slice(0, 120) });
+    return;
+  }
+
+  // Second quality check at processing time (in case item was queued before filter existed)
+  const qualityReason = isLowQualityDiscovery(item.content ?? "");
+  if (qualityReason) {
+    markDiscoveryReplied(item.eventId);
+    audit("discovery_quality", `Discovery blocked at processing (${qualityReason})`, { eventId: item.eventId, reason: qualityReason, postPreview: (item.content ?? "").slice(0, 120) });
     return;
   }
 
@@ -1703,7 +1892,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   markDiscoveryReplied(item.eventId);
   lastDiscoveryTime = Date.now();
   saveHeartbeatState();
-  audit("engagement_reply", `Discovery replied to ${item.pubkey.slice(0, 8)}...`, { eventId: item.eventId, preview: response.slice(0, 120) });
+  audit("engagement_reply", `Discovery replied to ${item.pubkey.slice(0, 8)}...`, { eventId: item.eventId, originalPost: (item.content ?? "").slice(0, 200), preview: response.slice(0, 120) });
 }
 
 function markClawstrReplied(eventId: string): void {
@@ -1914,6 +2103,53 @@ function isLowQualityPost(content: string): boolean {
   if (/(follow me|follow back|giveaway|airdrop|check out my|like and share)/i.test(lower)) return true;
   if (lower.length < 12) return true;
   return false;
+}
+
+/**
+ * Enhanced quality filter for discovery candidates.
+ * Catches low-effort, bot-generated, and engagement-bait content
+ * that the content-safety filter doesn't catch.
+ */
+function isLowQualityDiscovery(content: string): string | null {
+  if (!content) return "empty";
+  const lower = content.toLowerCase().trim();
+  const words = lower.split(/\s+/);
+
+  // Too short for meaningful engagement
+  if (lower.length < 40) return "too_short";
+
+  // Existing low quality patterns
+  if (isLowQualityPost(content)) return "low_quality";
+
+  // GM/GN greeting-only posts (under 80 chars and mostly greeting)
+  if (lower.length < 80 && /^(gm|gn|good\s*morning|good\s*night|buenos?\s*d[ií]as?|buenas?\s*noches?)\b/i.test(lower)) return "greeting_only";
+
+  // Bot content: excessive hashtags (>50% of words)
+  const hashtags = (content.match(/#\w+/g) ?? []).length;
+  if (hashtags > 5 && hashtags > words.length * 0.5) return "hashtag_spam";
+
+  // Price/market bot noise
+  if (/\b(price|market\s*cap|trading\s*volume|bull\s*run|bear\s*market|pumping|dumping|ath|all.time.high)\b/i.test(lower) &&
+      /\b(btc|eth|sol|xrp|ada|doge|shib|pepe|\$\d+[kmb]?)\b/i.test(lower)) return "price_bot";
+
+  // Financial spam / scam patterns
+  if (/(passive\s*income|guaranteed\s*returns|dm\s*me\s*(for|to)|join\s*my\s*(group|channel)|free\s*money|make\s*money\s*fast)/i.test(lower)) return "financial_spam";
+
+  // Engagement bait
+  if (/(repost\s*(this|if)|rt\s*if|like\s*if|share\s*if|tag\s*(someone|a\s*friend)|drop\s*a\s*🔥|who\s*agrees|can\s*i\s*get\s*\d+\s*(likes|reposts|zaps))/i.test(lower)) return "engagement_bait";
+
+  // URL-only posts (just links with minimal text)
+  const urlCount = (content.match(/https?:\/\/\S+/g) ?? []).length;
+  const nonUrlText = content.replace(/https?:\/\/\S+/g, "").trim();
+  if (urlCount > 0 && nonUrlText.length < 30) return "url_only";
+
+  // Protocol sync / broadcast noise
+  if (/\b(cross-?posted?\s*(from|via)|synced?\s*(from|via)|auto-?posted?|broadcas(t|ting)\s*(from|via))\b/i.test(lower)) return "cross_post";
+
+  // Bot-generated summaries / news aggregators
+  if (/^(breaking|🚨|⚡️\s*breaking|📰)\s*:/i.test(lower) && lower.length < 200 && urlCount > 0) return "news_bot";
+
+  return null;
 }
 
 function extractHashtags(event: NDKEvent): string[] {

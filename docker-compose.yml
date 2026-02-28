@@ -172,6 +172,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
+      - ./nostr-relay/stats.json:/var/www/relay/stats.json:ro
     networks:
       - pixel-net
     depends_on:

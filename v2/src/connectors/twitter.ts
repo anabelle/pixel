@@ -8,11 +8,12 @@
  * Exports: startTwitter(), postTweet(), searchTwitter(), getTweet(), getTwitterStatus()
  *
  * Safety: TWITTER_POST_ENABLE=false for read-only mode (default).
- * Rate limits: 5 posts/day, 2h minimum gap between posts.
+ * Rate limits: 2 posts/day, 4h minimum gap between posts, 4h lockout on 429.
  */
 
 import { Scraper } from "@the-convocation/twitter-scraper";
 import { promptWithHistory } from "../agent.js";
+import { appendToLog } from "../conversations.js";
 import { audit } from "../services/audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import crypto from "crypto";
@@ -26,8 +27,8 @@ const TWITTER_PASSWORD = process.env.TWITTER_PASSWORD ?? "";
 const TWITTER_EMAIL = process.env.TWITTER_EMAIL ?? "";
 const POST_ENABLED = process.env.TWITTER_POST_ENABLE === "true";
 const COOKIE_PATH = "/app/data/twitter-cookies.json";
-const MAX_POSTS_PER_DAY = 5;
-const MIN_POST_GAP_MS = 2 * 60 * 60 * 1000; // 2 hours
+const MAX_POSTS_PER_DAY = 2; // Free tier is 17/24h, but rate limits are aggressive — stay conservative
+const MIN_POST_GAP_MS = 4 * 60 * 60 * 1000; // 4 hours between posts
 const MENTION_POLL_MS = 15 * 60 * 1000; // 15 minutes
 const MENTION_POLL_STARTUP_MS = 5 * 60 * 1000; // 5 min after boot
 const MAX_MENTION_REPLIES_PER_CYCLE = 3;
@@ -91,6 +92,8 @@ let mentionTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPostTime = 0;
 let postsToday = 0;
 let postsDayStart = 0; // timestamp of when we started counting
+let rateLimitLockoutUntil = 0; // timestamp — posting blocked until this time (set on 429)
+let consecutiveFailures = 0; // track consecutive post failures for backoff
 let twitterUserId = ""; // numeric ID, resolved at boot via API v2
 let mentionSinceId: string | null = null; // pagination cursor for mention polling
 const repliedTweetIds = new Set<string>();
@@ -176,7 +179,10 @@ function loadRateLimitState(): void {
     lastPostTime = state.lastPostTime ?? 0;
     postsToday = state.postsToday ?? 0;
     postsDayStart = state.postsDayStart ?? 0;
-    console.log(`[twitter] Restored rate limit state: ${postsToday} posts today, last post ${lastPostTime ? Math.round((Date.now() - lastPostTime) / 60_000) + "m ago" : "never"}`);
+    rateLimitLockoutUntil = state.rateLimitLockoutUntil ?? 0;
+    consecutiveFailures = state.consecutiveFailures ?? 0;
+    const lockoutRemaining = rateLimitLockoutUntil > Date.now() ? Math.round((rateLimitLockoutUntil - Date.now()) / 60_000) + "m" : "none";
+    console.log(`[twitter] Restored rate limit state: ${postsToday} posts today, last post ${lastPostTime ? Math.round((Date.now() - lastPostTime) / 60_000) + "m ago" : "never"}, lockout: ${lockoutRemaining}`);
   } catch {
     console.error("[twitter] Failed to load rate limit state — starting fresh");
   }
@@ -184,7 +190,7 @@ function loadRateLimitState(): void {
 
 function saveRateLimitState(): void {
   try {
-    writeFileSync(RATELIMIT_PATH, JSON.stringify({ lastPostTime, postsToday, postsDayStart }));
+    writeFileSync(RATELIMIT_PATH, JSON.stringify({ lastPostTime, postsToday, postsDayStart, rateLimitLockoutUntil, consecutiveFailures }));
   } catch { /* ignore */ }
 }
 
@@ -241,7 +247,11 @@ function canPost(): { ok: boolean; reason?: string } {
   if (!POST_ENABLED) return { ok: false, reason: "TWITTER_POST_ENABLE=false" };
   resetDailyCounterIfNeeded();
   if (postsToday >= MAX_POSTS_PER_DAY) return { ok: false, reason: `Daily limit (${MAX_POSTS_PER_DAY}) reached` };
-  if (Date.now() - lastPostTime < MIN_POST_GAP_MS) return { ok: false, reason: "Min 2h gap between posts" };
+  if (Date.now() - lastPostTime < MIN_POST_GAP_MS) return { ok: false, reason: "Min 4h gap between posts" };
+  if (Date.now() < rateLimitLockoutUntil) {
+    const minutesLeft = Math.ceil((rateLimitLockoutUntil - Date.now()) / 60_000);
+    return { ok: false, reason: `Rate-limited by Twitter — locked out for ${minutesLeft} more minutes. Do NOT retry.` };
+  }
   return { ok: true };
 }
 
@@ -273,12 +283,43 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
       body: JSON.stringify(body),
     });
     const json = await resp.json() as any;
+    // Log rate limit headers for debugging
+    const rlRemaining = resp.headers.get("x-rate-limit-remaining");
+    const rlReset = resp.headers.get("x-rate-limit-reset");
+    const rlLimit = resp.headers.get("x-rate-limit-limit");
+    if (rlRemaining || rlReset) {
+      const resetIn = rlReset ? Math.ceil((parseInt(rlReset) * 1000 - Date.now()) / 60_000) + "min" : "unknown";
+      audit("twitter_ratelimit", `Post rate limits: ${rlRemaining ?? "?"}/${rlLimit ?? "?"} remaining, resets in ${resetIn}`, { remaining: rlRemaining, limit: rlLimit, resetIn });
+    }
     if (!resp.ok) {
       const errMsg = json?.detail || json?.title || JSON.stringify(json).slice(0, 200);
+      consecutiveFailures++;
+
+      if (resp.status === 429) {
+        // 429 lockout: block posting for 4 hours (prevents LLM retry storm, respects free tier limits)
+        const lockoutMs = 4 * 60 * 60 * 1000;
+        rateLimitLockoutUntil = Date.now() + lockoutMs;
+        // Also count against daily limit to prevent further attempts
+        postsToday = MAX_POSTS_PER_DAY;
+        saveRateLimitState();
+        audit("twitter_error", `Post 429 rate-limited — locked out for 4h. Text: ${text.slice(0, 60)}`);
+        return { success: false, error: `RATE_LIMITED: Twitter returned 429. Posting locked for 4 hours. Do NOT retry this tweet.` };
+      }
+
+      // For other errors, apply exponential backoff via consecutive failure tracking
+      if (consecutiveFailures >= 3) {
+        // After 3 consecutive failures, lock out for 15 minutes
+        rateLimitLockoutUntil = Date.now() + 15 * 60 * 1000;
+        saveRateLimitState();
+        audit("twitter_error", `Post failed ${consecutiveFailures}x consecutively — locked out 15min: ${errMsg}`);
+        return { success: false, error: `CONSECUTIVE_FAILURES: ${consecutiveFailures} failures in a row. Posting locked for 15 minutes. Do NOT retry.` };
+      }
+
       audit("twitter_error", `Post failed (${resp.status}): ${errMsg}`);
       return { success: false, error: errMsg };
     }
 
+    consecutiveFailures = 0; // reset on success
     const tweetId = json?.data?.id;
     lastPostTime = Date.now();
     postsToday++;
@@ -367,6 +408,8 @@ export function getTwitterStatus(): {
   apiV2: boolean;
   userId: string;
   mentionSinceId: string | null;
+  rateLimitLockoutUntil: number;
+  consecutiveFailures: number;
 } {
   return {
     connected: running,
@@ -377,6 +420,8 @@ export function getTwitterStatus(): {
     apiV2: hasApiV2Creds,
     userId: twitterUserId,
     mentionSinceId,
+    rateLimitLockoutUntil,
+    consecutiveFailures,
   };
 }
 
@@ -458,12 +503,14 @@ async function pollMentions(): Promise<void> {
         if (POST_ENABLED) {
           const result = await postTweet(replyText, tweet.id);
           if (result.success) {
+            appendToLog(userId, mentionText, replyText, "twitter");
             console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
             repliedTweetIds.add(tweet.id);
           } else {
             console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
           }
         } else {
+          appendToLog(userId, mentionText, replyText, "twitter");
           console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
           readOnlySeenTweetIds.add(tweet.id);
         }

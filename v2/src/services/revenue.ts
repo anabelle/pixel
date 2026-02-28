@@ -34,15 +34,25 @@ export interface RevenueEntry {
  * Record a revenue event.
  *
  * Call this whenever Pixel receives a payment — from any source.
+ * Uses txHash to prevent duplicate entries.
  */
-export async function recordRevenue(entry: RevenueEntry): Promise<void> {
+export async function recordRevenue(entry: RevenueEntry): Promise<{ recorded: boolean; reason?: string }> {
   if (!db) {
     console.log("[revenue] Database not available, logging to console only");
     console.log(`[revenue] ${entry.source}: ${entry.amountSats} sats — ${entry.description ?? "no description"}`);
-    return;
+    return { recorded: false, reason: "Database not available" };
   }
 
   try {
+    // Check for duplicate by txHash (payment hash for Lightning)
+    if (entry.txHash) {
+      const existing = await db.select().from(revenue).where(eq(revenue.txHash, entry.txHash)).limit(1);
+      if (existing.length > 0) {
+        console.log(`[revenue] Duplicate payment hash ${entry.txHash.slice(0, 16)}... — skipping`);
+        return { recorded: false, reason: "Duplicate payment hash" };
+      }
+    }
+
     await db.insert(revenue).values({
       source: entry.source,
       amountSats: entry.amountSats,
@@ -59,17 +69,20 @@ export async function recordRevenue(entry: RevenueEntry): Promise<void> {
       amountUsd: entry.amountUsd,
       userId: entry.userId,
       description: entry.description,
+      txHash: entry.txHash,
     });
     alertOwner(
       "revenue",
       `${amountLabel} from ${entry.source}${entry.description ? ` — ${entry.description}` : ""}`,
       { source: entry.source, amountSats: entry.amountSats, amountUsd: entry.amountUsd }
     ).catch(() => {});
+    return { recorded: true };
   } catch (err: any) {
     console.error("[revenue] Failed to record:", err.message);
     // Still log it even if DB fails
     const amountLabel = entry.amountUsd ? `$${entry.amountUsd} USD` : `${entry.amountSats} sats`;
     console.log(`[revenue] (fallback log) ${entry.source}: ${amountLabel} — ${entry.description}`);
+    return { recorded: false, reason: err.message };
   }
 }
 

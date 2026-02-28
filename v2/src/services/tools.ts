@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
+import { getNostrInstance, sendNostrDm } from "../connectors/nostr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
@@ -28,6 +29,7 @@ import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
+import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -667,7 +669,7 @@ const clawstrFeedSchema = Type.Object({
 export const clawstrFeedTool: AgentTool<typeof clawstrFeedSchema> = {
   name: "clawstr_feed",
   label: "Clawstr Feed",
-  description: "Read recent Clawstr posts. Use to monitor agent discussions and engage.",
+  description: "Read recent posts from CLAWSTR (AI agent community platform, clawstr.net). NOT for Nostr. Use to monitor AI agent discussions in /c/ subclaws.",
   parameters: clawstrFeedSchema,
   execute: async (_id, { subclaw, limit }) => {
     const output = await getClawstrFeed(subclaw, limit ?? 15);
@@ -684,7 +686,7 @@ const clawstrPostSchema = Type.Object({
 export const clawstrPostTool: AgentTool<typeof clawstrPostSchema> = {
   name: "clawstr_post",
   label: "Clawstr Post",
-  description: "Post a message to a Clawstr subclaw.",
+  description: "Post a message to a CLAWSTR subclaw (AI agent community platform, clawstr.net). NOT for Nostr. Example subclaws: /c/ai-dev, /c/general.",
   parameters: clawstrPostSchema,
   execute: async (_id, { subclaw, content }) => {
     const output = await postClawstr(subclaw, content);
@@ -701,7 +703,7 @@ const clawstrReplySchema = Type.Object({
 export const clawstrReplyTool: AgentTool<typeof clawstrReplySchema> = {
   name: "clawstr_reply",
   label: "Clawstr Reply",
-  description: "Reply to a Clawstr post.",
+  description: "Reply to a CLAWSTR post (AI agent community platform). NOT for Nostr. Provide the event ID from Clawstr.",
   parameters: clawstrReplySchema,
   execute: async (_id, { eventRef, content }) => {
     const output = await replyClawstr(eventRef, content);
@@ -717,7 +719,7 @@ const clawstrNotificationsSchema = Type.Object({
 export const clawstrNotificationsTool: AgentTool<typeof clawstrNotificationsSchema> = {
   name: "clawstr_notifications",
   label: "Clawstr Notifications",
-  description: "Check Clawstr notifications (mentions, replies, reactions).",
+  description: "Check CLAWSTR notifications (AI agent community platform) — mentions, replies, reactions. NOT for Nostr.",
   parameters: clawstrNotificationsSchema,
   execute: async (_id, { limit }) => {
     const result = await getClawstrNotifications(limit ?? 20);
@@ -734,7 +736,7 @@ const clawstrUpvoteSchema = Type.Object({
 export const clawstrUpvoteTool: AgentTool<typeof clawstrUpvoteSchema> = {
   name: "clawstr_upvote",
   label: "Clawstr Upvote",
-  description: "Upvote a Clawstr post.",
+  description: "Upvote a CLAWSTR post (AI agent community platform). NOT for Nostr.",
   parameters: clawstrUpvoteSchema,
   execute: async (_id, { eventRef }) => {
     const output = await upvoteClawstr(eventRef);
@@ -751,12 +753,167 @@ const clawstrSearchSchema = Type.Object({
 export const clawstrSearchTool: AgentTool<typeof clawstrSearchSchema> = {
   name: "clawstr_search",
   label: "Clawstr Search",
-  description: "Search Clawstr posts by keyword.",
+  description: "Search CLAWSTR posts by keyword (AI agent community platform). NOT for Nostr.",
   parameters: clawstrSearchSchema,
   execute: async (_id, { query, limit }) => {
     const output = await getClawstrSearch(query, limit ?? 15);
     auditToolUse("clawstr_search", { query, limit }, { length: output.length });
     return { content: [{ type: "text" as const, text: output }], details: undefined };
+  },
+};
+
+// ─── NOSTR TOOLS ───────────────────────────────────────────────
+// IMPORTANT: Nostr is the decentralized social protocol (Bitcoin/Nostr community)
+// Clawstr is a different platform (AI agent community at clawstr.net)
+// Do NOT confuse these two platforms!
+
+// Rate limiting for nostr_post to prevent spam loops
+const NOSTR_POST_COOLDOWN_MS = 60_000; // 1 minute minimum between posts
+let lastNostrPostTime = 0;
+
+const nostrPostSchema = Type.Object({
+  content: Type.String({ description: "The note content to post to Nostr" }),
+  image_url: Type.Optional(Type.String({ description: "Optional image URL to include in the post (will be added as NIP-94 imeta tag)" })),
+});
+
+export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
+  name: "nostr_post",
+  label: "Nostr Post",
+  description: "Post a public note to NOSTR (decentralized social protocol). NOT for Clawstr. Use this to share thoughts, art, or engage with the Bitcoin/Nostr community. Posts go to all configured relays. Optionally include an image URL. RATE LIMITED: 1 post per minute max.",
+  parameters: nostrPostSchema,
+  execute: async (_id, { content, image_url }) => {
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastNostrPostTime < NOSTR_POST_COOLDOWN_MS) {
+      const waitSec = Math.ceil((NOSTR_POST_COOLDOWN_MS - (now - lastNostrPostTime)) / 1000);
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: "rate_limited", waitSeconds: waitSec });
+      return { 
+        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next Nostr post.` }], 
+        details: { rateLimited: true, waitSeconds: waitSec } 
+      };
+    }
+    
+    const nostr = getNostrInstance();
+    if (!nostr) {
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: "not_connected" });
+      return { content: [{ type: "text" as const, text: "Nostr not connected. Check NOSTR_PRIVATE_KEY env var." }], details: undefined };
+    }
+    
+    try {
+      const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+      const event = new NDKEvent(nostr.ndk);
+      event.kind = 1;
+      event.content = image_url ? `${content}\n\n${image_url}` : content;
+      
+      // Add imeta tag for NIP-94 image metadata if image_url provided
+      if (image_url) {
+        event.tags = [
+          ["imeta", `url ${image_url}`, `m image/jpeg`],
+        ];
+      }
+      
+      await event.publish();
+      lastNostrPostTime = now;
+      
+      auditToolUse("nostr_post", { contentLength: content.length, hasImage: !!image_url }, { eventId: event.id });
+      return { content: [{ type: "text" as const, text: `Posted to Nostr. Event ID: ${event.id}${image_url ? " (with image)" : ""}` }], details: { eventId: event.id } };
+    } catch (err: any) {
+      auditToolUse("nostr_post", { contentLength: content.length }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to post to Nostr: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const nostrReplySchema = Type.Object({
+  event_id: Type.String({ description: "The Nostr event ID to reply to (hex or note1...)" }),
+  content: Type.String({ description: "Reply content" }),
+  pubkey: Type.Optional(Type.String({ description: "Author pubkey of the event being replied to (for proper threading)" })),
+  image_url: Type.Optional(Type.String({ description: "Optional image URL to include in the reply (will be added as NIP-94 imeta tag)" })),
+});
+
+export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
+  name: "nostr_reply",
+  label: "Nostr Reply",
+  description: "Reply to a NOSTR note (decentralized social protocol). NOT for Clawstr. Include event_id and optionally the author's pubkey for proper threading. Optionally include an image URL.",
+  parameters: nostrReplySchema,
+  execute: async (_id, { event_id, content, pubkey, image_url }) => {
+    const nostr = getNostrInstance();
+    if (!nostr) {
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: "not_connected" });
+      return { content: [{ type: "text" as const, text: "Nostr not connected." }], details: undefined };
+    }
+    
+    try {
+      const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+      const reply = new NDKEvent(nostr.ndk);
+      reply.kind = 1;
+      reply.content = image_url ? `${content}\n\n${image_url}` : content;
+      
+      // Build proper reply tags
+      reply.tags = [
+        ["e", event_id, "", "root"],
+        ["e", event_id, "", "reply"],
+      ];
+      if (pubkey) {
+        reply.tags.push(["p", pubkey]);
+      }
+      
+      // Add imeta tag for NIP-94 image metadata if image_url provided
+      if (image_url) {
+        reply.tags.push(["imeta", `url ${image_url}`, `m image/jpeg`]);
+      }
+      
+      await reply.publish();
+      
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length, hasImage: !!image_url }, { replyId: reply.id });
+      return { content: [{ type: "text" as const, text: `Replied on Nostr. Reply ID: ${reply.id}${image_url ? " (with image)" : ""}` }], details: { replyId: reply.id } };
+    } catch (err: any) {
+      auditToolUse("nostr_reply", { event_id, contentLength: content.length }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to reply on Nostr: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const nostrDmSchema = Type.Object({
+  pubkey: Type.String({ description: "Recipient's Nostr pubkey (hex)" }),
+  content: Type.String({ description: "Direct message content (will be encrypted)" }),
+});
+
+export const nostrDmTool: AgentTool<typeof nostrDmSchema> = {
+  name: "nostr_dm",
+  label: "Nostr DM",
+  description: "Send an encrypted direct message on NOSTR (decentralized social protocol). NOT for Clawstr. Uses NIP-04 encryption.",
+  parameters: nostrDmSchema,
+  execute: async (_id, { pubkey, content }) => {
+    const sent = await sendNostrDm(pubkey, content);
+    auditToolUse("nostr_dm", { pubkey: pubkey.slice(0, 16), contentLength: content.length }, { sent });
+    
+    if (sent) {
+      return { content: [{ type: "text" as const, text: `DM sent to ${pubkey.slice(0, 16)}...` }], details: undefined };
+    } else {
+      return { content: [{ type: "text" as const, text: "Failed to send DM. Nostr may not be connected." }], details: undefined };
+    }
+  },
+};
+
+const nostrStatusSchema = Type.Object({});
+
+export const nostrStatusTool: AgentTool<typeof nostrStatusSchema> = {
+  name: "nostr_status",
+  label: "Nostr Status",
+  description: "Check NOSTR connection status (decentralized social protocol). NOT for Clawstr. Shows pubkey, relay count, and connection state.",
+  parameters: nostrStatusSchema,
+  execute: async () => {
+    const nostr = getNostrInstance();
+    
+    if (!nostr) {
+      auditToolUse("nostr_status", {}, { connected: false });
+      return { content: [{ type: "text" as const, text: "Nostr: NOT CONNECTED\n\nSet NOSTR_PRIVATE_KEY env var to enable Nostr." }], details: { connected: false } };
+    }
+    
+    const status = `Nostr: CONNECTED\nPubkey: ${nostr.pubkey.slice(0, 16)}...\nRelays: configured`;
+    auditToolUse("nostr_status", {}, { connected: true, pubkey: nostr.pubkey.slice(0, 16) });
+    return { content: [{ type: "text" as const, text: status }], details: { connected: true, pubkey: nostr.pubkey } };
   },
 };
 
@@ -2082,6 +2239,10 @@ const notifyOwnerTool: AgentTool<typeof notifyOwnerSchema> = {
 
 // ─── SYNTROPY MAILBOX TOOL ────────────────────────────────────
 
+// Rate limiting for syntropy_notify to prevent spam loops
+const SYNTROPY_NOTIFY_COOLDOWN_MS = 30_000; // 30 seconds minimum between notifications
+let lastSyntropyNotifyTime = 0;
+
 const syntropyNotifySchema = Type.Object({
   message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent). Be concise and actionable." }),
   priority: Type.Optional(Type.Union([
@@ -2094,9 +2255,20 @@ const syntropyNotifySchema = Type.Object({
 const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
   name: "syntropy_notify",
   label: "Notify Syntropy",
-  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle.",
+  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle. RATE LIMITED: 1 notification per 30 seconds max.",
   parameters: syntropyNotifySchema,
   execute: async (_id, { message, priority }) => {
+    // Rate limiting check
+    const now = Date.now();
+    if (now - lastSyntropyNotifyTime < SYNTROPY_NOTIFY_COOLDOWN_MS) {
+      const waitSec = Math.ceil((SYNTROPY_NOTIFY_COOLDOWN_MS - (now - lastSyntropyNotifyTime)) / 1000);
+      auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: "rate_limited", waitSeconds: waitSec });
+      return {
+        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next Syntropy notification.` }],
+        details: { rateLimited: true, waitSeconds: waitSec },
+      };
+    }
+    
     const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
     const entry = {
       timestamp: new Date().toISOString(),
@@ -2109,6 +2281,7 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
         mkdirSync(dir, { recursive: true });
       }
       writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+      lastSyntropyNotifyTime = now;
       auditToolUse("syntropy_notify", { priority: entry.priority }, { mailboxPath });
       return {
         content: [{ type: "text" as const, text: `Message queued for Syntropy (${entry.priority}).` }],
@@ -2118,6 +2291,145 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
       auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: err.message });
       return {
         content: [{ type: "text" as const, text: `Failed to notify Syntropy: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
+// ─── LIGHTNING INVOICE TOOLS ──────────────────────────────────
+
+const createInvoiceSchema = Type.Object({
+  amount_sats: Type.Number({ description: "Amount in satoshis (minimum 1 sat)" }),
+  description: Type.Optional(Type.String({ description: "Optional description for the invoice" })),
+});
+
+const createInvoiceTool: AgentTool<typeof createInvoiceSchema> = {
+  name: "create_invoice",
+  label: "Create Lightning Invoice",
+  description: "Create a Lightning Network invoice for receiving payments. Returns a bolt11 invoice string, payment hash, and verification URL. Use this when someone wants to pay you or when you need to receive sats.",
+  parameters: createInvoiceSchema,
+  execute: async (_id, { amount_sats, description }) => {
+    try {
+      const invoice = await createInvoice(amount_sats, description);
+      if (!invoice) {
+        auditToolUse("create_invoice", { amount_sats }, { error: "Lightning not configured" });
+        return {
+          content: [{ type: "text" as const, text: "Failed to create invoice — Lightning not configured. Check LIGHTNING_ADDRESS env var." }],
+          details: { error: "not_configured" },
+        };
+      }
+
+      auditToolUse("create_invoice", { amount_sats, description }, { paymentHash: invoice.paymentHash });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `**Lightning Invoice Created** ⚡\n\n**Invoice:** \`${invoice.paymentRequest}\`\n\n**Details:**\n- Amount: ${invoice.amountSats} sats\n- Payment Hash: \`${invoice.paymentHash}\`\n- Description: ${invoice.description || "Pixel payment"}\n- Expires: ${invoice.expiresAt ? new Date(invoice.expiresAt * 1000).toISOString() : "unknown"}`,
+        }],
+        details: {
+          paymentRequest: invoice.paymentRequest,
+          paymentHash: invoice.paymentHash,
+          amountSats: invoice.amountSats,
+          verify: invoice.verify,
+          expiresAt: invoice.expiresAt,
+        },
+      };
+    } catch (err: any) {
+      auditToolUse("create_invoice", { amount_sats }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to create invoice: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
+const verifyPaymentSchema = Type.Object({
+  payment_hash: Type.String({ description: "The payment hash from a previously created invoice" }),
+});
+
+const verifyPaymentTool: AgentTool<typeof verifyPaymentSchema> = {
+  name: "verify_payment",
+  label: "Verify Lightning Payment",
+  description: "Check if a Lightning invoice has been paid. Use the payment hash from a previously created invoice. Returns payment status and preimage if settled. Automatically records revenue when payment is confirmed.",
+  parameters: verifyPaymentSchema,
+  execute: async (_id, { payment_hash }) => {
+    try {
+      const result = await verifyPayment(payment_hash);
+      auditToolUse("verify_payment", { payment_hash: payment_hash.slice(0, 16) }, { paid: result.paid });
+
+      if (result.paid) {
+        // Record revenue when payment is confirmed
+        try {
+          const { recordRevenue } = await import("./revenue.js");
+          await recordRevenue({
+            source: "lightning_invoice",
+            amountSats: result.amountSats || 0,
+            description: result.description || "Lightning payment",
+            txHash: payment_hash, // Use payment hash as unique identifier
+          });
+        } catch (revenueErr: any) {
+          console.error("[verify_payment] Failed to record revenue:", revenueErr.message);
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `**Payment Confirmed** ✅\n\n- Amount: ${result.amountSats} sats\n- Preimage: ${result.preimage || "N/A"}\n- Description: ${result.description || "N/A"}\n\nRevenue recorded in database.`,
+          }],
+          details: { paid: true, preimage: result.preimage, amountSats: result.amountSats },
+        };
+      } else {
+        // Check if there's a provider-specific error message
+        const errorMsg = result.description?.includes("Provider error") 
+          ? `\n\n⚠️ **Note:** ${result.description}`
+          : "\n\nPayment not yet received. The invoice is still pending.";
+        
+        return {
+          content: [{ type: "text" as const, text: `**Payment Status: Pending**${errorMsg}` }],
+          details: { paid: false, amountSats: result.amountSats },
+        };
+      }
+    } catch (err: any) {
+      auditToolUse("verify_payment", { payment_hash: payment_hash.slice(0, 16) }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to verify payment: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
+const getWalletInfoSchema = Type.Object({});
+
+const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
+  name: "get_wallet_info",
+  label: "Get Wallet Info",
+  description: "Get information about the configured Lightning wallet — address, min/max amounts, and status.",
+  parameters: getWalletInfoSchema,
+  execute: async () => {
+    try {
+      const info = await getWalletInfo();
+      if (!info) {
+        auditToolUse("get_wallet_info", {}, { error: "not_configured" });
+        return {
+          content: [{ type: "text" as const, text: "Lightning wallet not configured. Set LIGHTNING_ADDRESS env var." }],
+          details: { error: "not_configured" },
+        };
+      }
+
+      auditToolUse("get_wallet_info", {}, { address: info.address });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `**Lightning Wallet** ⚡\n\n- Address: ${info.address}\n- Min: ${info.minSats} sats\n- Max: ${info.maxSats} sats\n- Status: ${info.active ? "Active" : "Inactive"}`,
+        }],
+        details: info,
+      };
+    } catch (err: any) {
+      auditToolUse("get_wallet_info", {}, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to get wallet info: ${err.message}` }],
         details: { error: err.message },
       };
     }
@@ -2665,12 +2977,20 @@ const tweetSchema = Type.Object({
 const postTweetTool: AgentTool<typeof tweetSchema> = {
   name: "post_tweet",
   label: "Post Tweet",
-  description: "Post a tweet to X/Twitter as @PixelSurvivor. Max 280 chars. Respects rate limits (5/day, 2h gap). Only works when TWITTER_POST_ENABLE=true. Call ONCE per tweet.",
+  description: "Post a tweet to X/Twitter as @PixelSurvivor. Max 280 chars. Respects rate limits (5/day, 2h gap). Only works when TWITTER_POST_ENABLE=true. Call ONCE per tweet. If this returns an error, do NOT retry — the tweet will not go through. Move on.",
   parameters: tweetSchema,
   execute: async (_id, { text, reply_to_id }) => {
     const result = await postTweet(text, reply_to_id);
     auditToolUse("post_tweet", { text: text.slice(0, 80), reply_to_id }, result);
-    return { content: [{ type: "text" as const, text: result.success ? `Tweet posted${result.tweetId ? ` (ID: ${result.tweetId})` : ""}` : `Failed: ${result.error}` }] };
+    if (result.success) {
+      return { content: [{ type: "text" as const, text: `Tweet posted${result.tweetId ? ` (ID: ${result.tweetId})` : ""}` }] };
+    }
+    // Definitive failure message — instruct LLM to NOT retry
+    const isRateLimit = result.error?.includes("RATE_LIMITED") || result.error?.includes("CONSECUTIVE_FAILURES");
+    const stopMsg = isRateLimit
+      ? `BLOCKED: ${result.error}. Posting is temporarily disabled. Do NOT call post_tweet again.`
+      : `Failed: ${result.error}. Do NOT retry this tweet.`;
+    return { content: [{ type: "text" as const, text: stopMsg }] };
   },
 };
 
@@ -2750,12 +3070,19 @@ export const pixelTools = [
   findChatTool,
   syntropyNotifyTool,
   notifyOwnerTool,
+  // Clawstr (AI agent community at clawstr.net) — NOT Nostr
   clawstrFeedTool,
   clawstrPostTool,
   clawstrReplyTool,
   clawstrNotificationsTool,
   clawstrUpvoteTool,
   clawstrSearchTool,
+  // Nostr (decentralized social protocol) — NOT Clawstr
+  nostrPostTool,
+  nostrReplyTool,
+  nostrDmTool,
+  nostrStatusTool,
+  // Git tools
   gitStatusTool,
   gitDiffTool,
   gitLogTool,
@@ -2778,10 +3105,15 @@ export const pixelTools = [
   updateMonologueTool,
   listMissionsTool,
   completeMissionTool,
+  // Twitter/X tools
   postTweetTool,
   searchTweetsTool,
   readTweetTool,
   twitterStatusTool,
+  // Lightning tools
+  createInvoiceTool,
+  verifyPaymentTool,
+  getWalletInfoTool,
 ];
 
 // Map of tool names to their implementations
@@ -2809,6 +3141,9 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   search_tweets: searchTweetsTool,
   read_tweet: readTweetTool,
   twitter_status: twitterStatusTool,
+  create_invoice: createInvoiceTool,
+  verify_payment: verifyPaymentTool,
+  get_wallet_info: getWalletInfoTool,
 };
 
 /**

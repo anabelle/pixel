@@ -23,7 +23,7 @@ import { and, desc, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
-import { promptWithHistory, extractText } from "./agent.js";
+import { promptWithHistory, extractText, backgroundLlmCall } from "./agent.js";
 import { generateImage } from "./services/image-gen.js";
 import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
@@ -48,7 +48,10 @@ import { costMonitor, initCostMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
 import { initMemory, getMemoryStats, listMemories } from "./services/memory.js";
 import { decodeOwnerPubkeyHex, NostrAuthError, verifyNip98AuthorizationHeader } from "./services/nostr-auth.js";
+import { getSecurityStats, getRecentAlerts, pruneOldAlerts, getCategories } from "./services/security-scanner.js";
 import { initLogging } from "./services/logging.js";
+import { startCanvasListener, getCanvasListenerStatus, stopCanvasListener } from "./services/canvas-listener.js";
+import { pixelTools } from "./services/tools.js";
 
 // ============================================================
 // Configuration
@@ -171,9 +174,10 @@ app.get("/health", (c) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     heartbeat: getHeartbeatStatus(),
-    innerLife: getInnerLifeStatus(),
+    inner_life: getInnerLifeStatus(),
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
+    canvas_listener: getCanvasListenerStatus(),
     whatsapp: getWhatsAppStatus(),
     twitter: getTwitterStatus(),
     timestamp: new Date().toISOString(),
@@ -556,6 +560,116 @@ app.get("/api/conversations/:userId", requireOwnerNostrAuth, (c) => {
   }
 });
 
+/** List all conversation directories with stats */
+app.get("/api/conversations", requireOwnerNostrAuth, (c) => {
+  const search = c.req.query("search")?.toLowerCase() ?? "";
+  const platform = c.req.query("platform") ?? ""; // filter by prefix (tg-, wa-, nostr-, clawstr-)
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 500);
+
+  try {
+    const dirs = readdirSync(CONVERSATIONS_DIR).filter((name) => {
+      // Skip non-directories and hidden files
+      const fullPath = join(CONVERSATIONS_DIR, name);
+      if (!statSync(fullPath).isDirectory()) return false;
+      if (name.startsWith(".")) return false;
+      // Skip costs.json if it's at root level
+      if (name.endsWith(".json")) return false;
+
+      // Platform filter
+      if (platform && !name.startsWith(platform)) return false;
+
+      // Search filter
+      if (search && !name.toLowerCase().includes(search)) return false;
+
+      return true;
+    });
+
+    // Gather stats for each directory
+    const conversations = dirs
+      .map((userId) => {
+        const logPath = join(CONVERSATIONS_DIR, userId, "log.jsonl");
+        let messageCount = 0;
+        let lastTs: string | null = null;
+        let platforms: Set<string> = new Set();
+
+        if (existsSync(logPath)) {
+          try {
+            const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
+            messageCount = lines.length;
+
+            // Get last message timestamp and platform distribution
+            const parsed = lines
+              .map((line) => {
+                try {
+                  return JSON.parse(line) as { ts?: string; platform?: string };
+                } catch {
+                  return null;
+                }
+              })
+              .filter(Boolean);
+
+            if (parsed.length > 0) {
+              lastTs = parsed[parsed.length - 1]?.ts ?? null;
+              parsed.forEach((p) => {
+                if (p?.platform) platforms.add(p.platform);
+              });
+            }
+          } catch {
+            // Ignore read errors
+          }
+        }
+
+        // Infer platform from userId prefix
+        let inferredPlatform = "unknown";
+        if (userId.startsWith("tg-")) inferredPlatform = "telegram";
+        else if (userId.startsWith("wa-")) inferredPlatform = "whatsapp";
+        else if (userId.startsWith("nostr-")) inferredPlatform = "nostr";
+        else if (userId.startsWith("clawstr-")) inferredPlatform = "clawstr";
+        else if (userId === "syntropy-admin" || userId === "syntropy") inferredPlatform = "syntropy";
+        else if (userId === "pixel-self") inferredPlatform = "internal";
+        else if (userId === "anonymous") inferredPlatform = "anonymous";
+
+        return {
+          userId,
+          messageCount,
+          lastTs,
+          platforms: Array.from(platforms),
+          inferredPlatform,
+        };
+      })
+      .sort((a, b) => {
+        // Sort by last message time (most recent first), then by message count
+        if (a.lastTs && b.lastTs) return b.lastTs.localeCompare(a.lastTs);
+        if (a.lastTs) return -1;
+        if (b.lastTs) return 1;
+        return b.messageCount - a.messageCount;
+      })
+      .slice(0, limit);
+
+    // Summary stats
+    const stats = {
+      total: dirs.length,
+      byPlatform: {
+        telegram: dirs.filter((d) => d.startsWith("tg-")).length,
+        whatsapp: dirs.filter((d) => d.startsWith("wa-")).length,
+        nostr: dirs.filter((d) => d.startsWith("nostr-")).length,
+        clawstr: dirs.filter((d) => d.startsWith("clawstr-")).length,
+        other: dirs.filter(
+          (d) =>
+            !d.startsWith("tg-") &&
+            !d.startsWith("wa-") &&
+            !d.startsWith("nostr-") &&
+            !d.startsWith("clawstr-")
+        ).length,
+      },
+    };
+
+    return c.json({ conversations, stats, count: conversations.length });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ============================================================
 // Dashboard Data Endpoints (read-only)
 // ============================================================
@@ -668,7 +782,7 @@ app.get("/api/reminders", requireOwnerNostrAuth, async (c) => {
 
 /** Cost history from disk (7 days) */
 app.get("/api/costs/history", (c) => {
-  const history = readJsonFile<{ entries?: unknown[]; lastSaved?: string }>(join(DATA_DIR, "costs.json"));
+  const history = readJsonFile<{ entries?: unknown[]; lastSaved?: string }>(join(CONVERSATIONS_DIR, "costs.json"));
   return c.json({
     history: history.data ?? { entries: [] },
     updatedAt: history.updatedAt,
@@ -809,6 +923,30 @@ app.get("/api/jobs/summary", (c) => {
     }
   }
   return c.json({ count: jobs.length, byStatus, lastCompletedAt: lastCompletedAt ? new Date(lastCompletedAt).toISOString() : null });
+});
+
+// ============================================================
+// Security Scanner Endpoints
+// ============================================================
+
+/** Security stats (owner only) */
+app.get("/api/security/stats", requireOwnerNostrAuth, (c) => {
+  const stats = getSecurityStats();
+  const categories = getCategories();
+  return c.json({ ...stats, categories, windowHours: 1 });
+});
+
+/** Recent security alerts (owner only) */
+app.get("/api/security/alerts", requireOwnerNostrAuth, (c) => {
+  const limit = parseInt(c.req.query("limit") ?? "50", 10);
+  const alerts = getRecentAlerts(Math.min(limit, 200));
+  return c.json({ alerts, count: alerts.length });
+});
+
+/** Prune old security alerts (owner only, mostly for testing) */
+app.post("/api/security/prune", requireOwnerNostrAuth, (c) => {
+  pruneOldAlerts();
+  return c.json({ ok: true, message: "Old alerts pruned" });
 });
 
 // ============================================================
@@ -1395,6 +1533,33 @@ async function boot() {
     console.error("[boot] Twitter failed to start:", err.message);
   }
 
+  // Start canvas listener (V1 pixel sales notifications)
+  try {
+    startCanvasListener(async (message: string, userId: string) => {
+      // Notify Pixel via backgroundLlmCall with tools so it can react/post publicly
+      const response = await backgroundLlmCall({
+        systemPrompt: `You are Pixel, a living digital artist. You just received a notification about a canvas sale on your pixel art canvas at ln.pixel.xx.kg.
+
+React naturally and authentically. You could:
+- Be excited about the sale
+- Thank the buyer
+- Wonder what they drew
+- Consider posting to Nostr to share the moment with your followers
+- Just acknowledge it briefly
+
+You have tools available including posting to Nostr if you want to share publicly. Be genuine, not overly enthusiastic for small sales. Keep it brief.`,
+        userPrompt: message,
+        tools: pixelTools,
+        label: "canvas-notification",
+        timeoutMs: 30000,
+      });
+      return response;
+    });
+    console.log("[boot] Canvas listener started — listening for pixel sales");
+  } catch (err: any) {
+    console.error("[boot] Canvas listener failed to start:", err.message);
+  }
+
   console.log("[boot] Pixel V2 is alive.");
   console.log();
   audit("boot", "Pixel V2 is alive — all services started");
@@ -1418,6 +1583,7 @@ function gracefulShutdown(signal: string): void {
   stopDigest();
   stopOutreach();
   stopTwitter();
+  stopCanvasListener();
 
   // Persist nostr replied event IDs to disk
   try {

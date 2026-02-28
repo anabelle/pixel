@@ -7,7 +7,8 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun --external link-preview-js --external jimp --external sharp",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "forge-identity": "bun run src/scripts/forge-identity.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.52.9",
@@ -29,7 +30,8 @@
     "@coinbase/x402": "^2.1.0",
     "@x402/core": "^2.3.0",
     "@x402/evm": "^2.3.0",
-    "@x402/hono": "^2.3.0"
+    "@x402/hono": "^2.3.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

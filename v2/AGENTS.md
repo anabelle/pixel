@@ -1,16 +1,16 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-19 | Session: 52
+> Last updated: 2026-02-26 | Session: 55b
 
 ---
 
 ## 1. CURRENT STATUS
 
-**V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,225+ pixels, 81,971+ sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 56 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
+**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
-**Disk:** ~69% (24GB free) | **RAM:** ~3.1GB / 3.8GB + 4GB swap
+**Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
 **External:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 
@@ -28,6 +28,7 @@
 | Outreach | ✅ 4h cycle, LLM-judged owner pings |
 | Syntropy↔Pixel | ✅ Bidirectional (debrief + mailbox + cron monitor) |
 | Autonomous dispatch | ✅ Headless Syntropy via cron |
+| Canvas listener | ✅ Live — Socket.IO client, real-time pixel sale notifications, revenue recording |
 | Canvas migration | ❌ Deferred (V1 canvas works, earns sats) |
 | Sandbox container | ❌ Not started |
 
@@ -68,46 +69,51 @@ WhatsApp/Telegram/Twitter/Instagram/Nostr/HTTP/Canvas → PIXEL AGENT (Pi agent-
 
 Every connector: receive → identify user → load context → prompt agent → stream response → persist.
 
-### File Inventory (37 source files, ~19,216 lines)
+### File Inventory (41 source files, ~21,534 lines)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/index.ts` | ~1451 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
-| `src/agent.ts` | ~1167 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skill-graph injection, memory extraction, context compaction |
+| `src/index.ts` | ~1617 | Boot, Hono HTTP, all API routes, DB init, user tracking, outreach startup, Twitter boot, nostr persistence shutdown, error handlers |
+| `src/agent.ts` | ~1178 | Pi agent wrapper, promptWithHistory(), backgroundLlmCall(), sanitizeMessagesForContext(), skill-graph injection, memory extraction, context compaction |
 | `src/conversations.ts` | ~329 | JSONL persistence, context compaction, tool-boundary-aware trimming |
-| `src/db.ts` | ~152 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
-| `src/connectors/telegram.ts` | ~886 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
-| `src/connectors/nostr.ts` | ~430 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
-| `src/connectors/whatsapp.ts` | ~938 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
-| `src/connectors/twitter.ts` | ~559 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting, disk-persisted state |
-| `src/services/tools.ts` | ~2839 | 56 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter |
-| `src/services/heartbeat.ts` | ~2012 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
-| `src/services/inner-life.ts` | ~1271 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
+| `src/db.ts` | ~164 | Drizzle schema (users, revenue, canvas_pixels, conversation_log) |
+| `src/connectors/telegram.ts` | ~896 | grammY bot — vision, groups, notify_owner, voice transcription, TTS |
+| `src/connectors/nostr.ts` | ~433 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
+| `src/connectors/whatsapp.ts` | ~1329 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
+| `src/connectors/twitter.ts` | ~624 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting (2/day, 4h gap, 4h lockout), disk-persisted state |
+| `src/services/tools.ts` | ~3134 | 63 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
+| `src/services/heartbeat.ts` | ~2424 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, quality filtering, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
+| `src/services/inner-life.ts` | ~1457 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
 | `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
-| `src/services/memory.ts` | ~866 | Persistent memory — save/search/update/delete per user, vector-aware |
-| `src/services/jobs.ts` | ~564 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
-| `src/services/reminders.ts` | ~540 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
+| `src/services/memory.ts` | ~926 | Persistent memory — save/search/update/delete per user, vector-aware |
+| `src/services/jobs.ts` | ~654 | Job system — scheduled tasks, ecosystem reports, idea garden, alarm-style wake-up |
+| `src/services/reminders.ts` | ~558 | Alarm/reminder system — schedule, list, cancel, modify, list_all, cancel_all |
 | `src/services/outreach.ts` | ~397 | Proactive owner outreach — LLM-judged Telegram pings, cooldowns, dedup |
-| `src/services/cost-monitor.ts` | ~347 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
+| `src/services/cost-monitor.ts` | ~379 | LLM cost tracking, budget monitoring, per-model error tracking with cascade analysis |
 | `src/services/l402.ts` | ~301 | L402 Lightning HTTP 402 middleware |
-| `src/services/audit.ts` | ~257 | Structured JSONL audit trail |
+| `src/services/audit.ts` | ~259 | Structured JSONL audit trail |
 | `src/services/dvm.ts` | ~249 | NIP-90 text gen DVM + NIP-89 + Lightning payment + revenue |
-| `src/services/lightning.ts` | ~225 | LNURL-pay invoices, invoiceCache |
+| `src/services/lightning.ts` | ~254 | LNURL-pay invoices, invoiceCache |
 | `src/services/digest.ts` | ~198 | Periodic digest + instant alert system for owner |
 | `src/services/nostr-auth.ts` | ~169 | NIP-98 HTTP auth for dashboard |
 | `src/services/clawstr.ts` | ~168 | Clawstr CLI wrapper — docker-in-docker, config at `/app/data/.clawstr` (mounted from `data/clawstr`), 6h check cycle |
-| `src/services/image-gen.ts` | ~145 | Gemini image generation service |
-| `src/services/revenue.ts` | ~141 | PostgreSQL revenue tracking |
-| `src/services/x402.ts` | ~134 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
+| `src/services/security-scanner.ts` | ~285 | Security scanning and threat detection |
+| `src/services/content-filter.ts` | ~230 | Content filtering and moderation |
+| `src/services/security-patterns.ts` | ~222 | Security pattern definitions and matching |
+| `src/services/image-gen.ts` | ~152 | Gemini image generation service |
+| `src/services/revenue.ts` | ~168 | PostgreSQL revenue tracking |
+| `src/services/x402.ts` | ~142 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
 | `src/services/primal.ts` | ~136 | Primal Cache API for trending Nostr posts |
 | `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log |
-| `src/services/audio.ts` | ~132 | Audio transcription via Gemini 2.0 Flash REST API |
+| `src/services/audio.ts` | ~199 | Audio transcription via Gemini 2.0 Flash REST API |
 | `src/services/users.ts` | ~124 | User tracking — upsert, stats |
 | `src/services/tts.ts` | ~73 | Edge TTS → ffmpeg → OGG/Opus, auto language detection |
 | `src/services/blossom.ts` | ~47 | Blossom media upload for Nostr image posts |
 | `src/services/vision.ts` | ~46 | Image URL extraction for multi-modal input |
 | `src/services/google-key.ts` | ~52 | Google API key failover (primary → fallback) used by Gemini calls |
-| `src/services/server-registry.ts` | ~213 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
+| `src/services/server-registry.ts` | ~230 | Multi-server SSH registry + authorization — resolves named servers, key lookup, tool tiers, per-server access, command safety blocklists |
+| `src/services/canvas-listener.ts` | ~262 | Socket.IO client for V1 canvas — real-time pixel sale notifications, revenue recording, Pixel wake-up |
+| `src/scripts/forge-identity.ts` | ~400 | Identity forging/generation script |
 
 ---
 
@@ -158,7 +164,7 @@ Same Pixel, same brain, different payment doors:
 | Nostr zaps | Tips | Variable | ✅ Organic |
 | WhatsApp/Telegram | Lightning QR / tips | Variable | ⚠️ Needs users |
 
-**Treasury:** ~80,000 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
+**Treasury:** ~84,444 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ---
 ## 6. SECURITY & AUTHORIZATION
@@ -189,7 +195,7 @@ Authorization config lives in `servers.json`:
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 56 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 63 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — skill-graph injects relevant arscontexta + marketplace nodes. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
@@ -252,7 +258,7 @@ Authorization config lives in `servers.json`:
 7. **Meet normies where they are.** WhatsApp/Telegram/Instagram matter as much as Nostr.
 8. **Debrief Pixel** after infrastructure changes (see syntropy-admin.md protocol).
 9. **Check Syntropy mailbox** on session start.
-10. **Complexity is debt.** ~19.2K lines current, 16K soft limit exceeded (Twitter integration).
+10. **Complexity is debt.** ~21.5K lines current, 16K soft limit exceeded (Twitter + Lightning + security tools).
 
 ### Anti-Patterns
 
@@ -280,3 +286,60 @@ Authorization config lives in `servers.json`:
 **Solution:** Use Docker named volume for postgres instead of bind mount. Named volumes are managed by Docker with proper ownership semantics and are isolated from other containers.
 
 **Lesson:** When two containers need access to the same data, use named volumes or separate bind mounts. Never share a subdirectory of another container's bind mount.
+
+### Session 54: Nostr vs Clawstr Tool Confusion
+
+**Problem:** Pixel was confusing Nostr and Clawstr when trying to post. He would try using `clawstr_post` when he wanted to post to Nostr, because Clawstr had explicit tools (`clawstr_post`, `clawstr_reply`, etc.) but Nostr did NOT.
+
+**Root cause:** Nostr posting was handled automatically by heartbeat.ts (proactive engagement), with no explicit tools for user-initiated posting. When Pixel decided "I want to post to Nostr", he only saw Clawstr tools in his toolbelt.
+
+**Solution:** Added explicit Nostr tools with clear descriptions:
+- `nostr_post` — Post a public note to Nostr (decentralized social protocol)
+- `nostr_reply` — Reply to a Nostr note
+- `nostr_dm` — Send encrypted direct message
+- `nostr_status` — Check Nostr connection status
+
+Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and clarify they're for the "AI agent community platform (clawstr.net)".
+
+**Lesson:** When you have multiple similar platforms, each needs explicit tools with clear, distinguishing descriptions. The LLM cannot infer from absence — it will use whatever tools exist.
+
+### Session 54b: Twitter 429 Retry Storm
+
+**Problem:** Pixel called `post_tweet` 482 times in 52 minutes, all returning 429 "Too Many Requests", all with the same tweet text. Hammered Twitter's API continuously.
+
+**Root cause:** `postTweet()` only incremented `postsToday` on success (line 285). On 429 failure, `canPost()` kept returning `{ok: true}`, and the LLM agent retried because the tool returned a soft `"Failed: Too Many Requests"` message that didn't definitively stop it.
+
+**Solution (3 layers of defense):**
+1. **429 lockout:** On 429, posting is locked for 4 hours AND `postsToday` is maxed to daily limit. Persisted to disk.
+2. **Consecutive failure lockout:** After 3 consecutive failures of any kind, 15 minute lockout.
+3. **Definitive tool response:** `post_tweet` tool now returns `"BLOCKED: ... Do NOT call post_tweet again"` on rate limit errors, instead of soft `"Failed:"` messages.
+
+**Lesson:** LLMs will retry failed tool calls indefinitely unless the response is unambiguously final. Soft failure messages ("Failed: X") invite retries. Hard messages ("BLOCKED: ... Do NOT retry") stop the loop. Also: always count failures against rate limits, not just successes.
+
+### Session 55: Post Content Repetition Loop
+
+**Problem:** Pixel's Nostr and Twitter posts recycled identical phrases across consecutive posts ("ghost wears thin", "112k sats recorded, zero collected", "pixel of oxygen"). Posts also contained markdown artifacts (`# headers`, `**bold**`).
+
+**Root cause (repetition):** Jaccard word-similarity scored only 48% on posts sharing 21 identical 4-word phrases. The phrases were spread across enough unique words to dilute the Jaccard score below the 70% threshold. Semantic meaning was nearly identical, but word-level dedup couldn't see it.
+
+**Root cause (markdown):** LLM sometimes outputs markdown formatting despite plain-text instructions. No post-processing stripped it.
+
+**Solution (4 layers):**
+1. **N-gram phrase dedup:** Extract 4-word phrases from new post and recent 5 posts. If 2+ distinctive phrases match, reject and regenerate. Common filler n-grams are excluded.
+2. **`cleanPostContent()` function:** Strips markdown headers, bold/italic markers, code blocks, wrapping quotes, collapses whitespace. Applied to both Nostr and Twitter post generators.
+3. **Anti-recycling prompt instructions:** Added "NEVER recycle phrases from recent posts" to both Nostr and Twitter post prompts. User prompt also asks for "completely different angle and vocabulary."
+4. **Accurate context:** Updated architecture stats (6 containers, ~21K lines), complete service/pricing list, hustling mood guidance to mention ONE specific service naturally.
+
+**Lesson:** Word-level similarity (Jaccard) is blind to phrase-level repetition. Two posts can share 21 identical 4-word phrases and still score under 50% Jaccard. N-gram phrase matching catches structural repetition that word-bag methods miss. Also: always post-process LLM output for the target format — LLMs will emit markdown even when told not to.
+
+### Session 55b: Discovery Quality Filter + Twitter Rate Limits
+
+**Problem (Discovery):** Pixel was replying to low-quality Nostr posts — GM/GN greetings, price bot noise, engagement bait, URL-only posts, cross-posted content. The content-safety filter (`getUnsafeReason`) only caught explicit/hate content, not low-effort noise. Existing `isLowQualityPost()` and `isBotContent()` functions existed but were NOT called during discovery.
+
+**Solution:** Added `isLowQualityDiscovery()` — comprehensive quality filter checking 9 patterns: empty, too_short (<40 chars), existing low_quality patterns, greeting_only (GM/GN under 80 chars), hashtag_spam (>50% hashtags), price_bot, financial_spam, engagement_bait, url_only, cross_post, news_bot. Applied at 3 checkpoints: discoveryLoop candidate filtering, enqueueDiscoveryCandidates, processDiscoveryQueue. Primal candidates with zero engagement (0 likes/replies/zaps/reposts) are also filtered. Discovery audit entries now include original post content preview for debugging.
+
+**Problem (Twitter):** Scraper package (@the-convocation/twitter-scraper 0.21.1) does NOT have `sendTweet()` method — only reading methods. So the planned scraper-based posting fallback is impossible with this package. Meanwhile, every single API v2 post attempt returns 429 (likely free tier exhaustion).
+
+**Solution:** Made posting more conservative to stay within free tier: MAX_POSTS_PER_DAY 5→2, MIN_POST_GAP 2h→4h, 429 lockout 30min→4h. Added rate limit header logging (x-rate-limit-remaining/reset/limit) on every post attempt for debugging. The scraper fallback approach is dead — would need a different package or raw GraphQL implementation.
+
+**Lesson:** Always verify library capabilities at runtime (`typeof obj.method`) before planning features around them. Documentation and training data may reference methods that don't exist in installed versions. Also: when API rate limits are opaque, log the headers to understand actual limits before optimizing.

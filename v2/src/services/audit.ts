@@ -42,6 +42,7 @@ export type AuditType =
   | "heartbeat_post"
   | "heartbeat_silent"
   | "heartbeat_error"
+  | "heartbeat_duplicate"
   // Engagement
   | "engagement_reply"
   | "engagement_check"
@@ -52,7 +53,11 @@ export type AuditType =
   | "inner_life_reflect"
   | "inner_life_ideate"
   | "inner_life_evolve"
+  | "inner_life_derive"
+  | "inner_life_duplicate"
   | "inner_life_error"
+  // Skill graph
+  | "claim_derived"
   // Revenue
   | "revenue"
   // Conversations
@@ -75,7 +80,9 @@ export type AuditType =
   // Clawstr
   | "clawstr_notifications"
   | "clawstr_reply"
-  | "clawstr_error";
+  | "clawstr_error"
+  // Security
+  | "security_scan";
 
 export interface AuditEntry {
   ts: string;         // ISO timestamp

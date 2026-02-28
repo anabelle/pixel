@@ -1,0 +1,487 @@
+================================================================================
+                    PIXEL ARCHITECTURE DIAGRAM
+                    Living Digital Artist & AI Agent
+                    Full System Overview (V1 + V2)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        EXTERNAL INTERFACES LAYER                           │
+│   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│   │Telegram  │ │ WhatsApp │ │  Nostr   │ │Twitter/X │ │  HTTP   │           │
+│   │   Bot    │ │ Baileys  │ │   NDK    │ │ Scraper  │ │  API    │           │
+│   │ @Pixel   │ │  QR Auth │ │ + DVM    │ │ + OAuth  │ │ L402 +  │           │
+│   │Survival  │ │          │ │          │ │          │ │ x402    │           │
+│   └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           │
+│        │            │            │            │            │                  │
+│        │            │            │            │            │                  │
+│        └────────────┴────────────┴────────────┴────────────┘                  │
+│                                   │                                         │
+│                     ┌─────────────┴─────────────┐                            │
+│                     │     INGRESS / ROUTING    │                            │
+│                     │  Nginx Reverse Proxy      │                            │
+│                     │  SSL Termination         │                            │
+│                     │  Domain Routing          │                            │
+│                     │  • pixel.xx.kg → V1/V2  │                            │
+│                     │  • ln.pixel.xx.kg → API │                            │
+│                     │  • /v2/* → V2 Pixel      │                            │
+│                     └─────────────┬─────────────┘                            │
+│                                   │                                         │
+└───────────────────────────────────┼─────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     DOCKER CONTAINER LAYER (6 total)                        │
+│                                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────┐                        │
+│  │    V2 CONTAINERS    │    │    V1 CONTAINERS    │                        │
+│  ├─────────────────────┤    ├─────────────────────┤                        │
+│  │   pixel (V2)        │    │   pixel-api-1       │                        │
+│  │   Port: 4000        │    │   Port: 3000        │                        │
+│  │   ━━━━━━━━━━━       │    │   Canvas API       │                        │
+│  │   Agent Brain       │    │   Socket.IO        │                        │
+│  │   + All Connectors  │    └─────────┬───────────┘                        │
+│  │   + All Services    │              │                                    │
+│  │   + 60 Tools        │    ┌─────────┴───────────┐                        │
+│  └─────────┬───────────┘    │   pixel-web-1       │                        │
+│            │               │   Port: 3002        │                        │
+│  ┌─────────┴───────────┐   │   Canvas Frontend   │                        │
+│  │   postgres-v2       │   └─────────┬───────────┘                        │
+│  │   Port: 5433       │             │                                      │
+│  │   pgvector:pg16    │   ┌─────────┴───────────┐                        │
+│  │   pixel_v2 DB      │   │   pixel-landing-1   │                        │
+│  └─────────────────────┘   │   Port: 3001        │                        │
+│                             │   Landing Page      │                        │
+│                             └─────────┬───────────┘                        │
+│                                       │                                    │
+│                             ┌─────────┴───────────┐                        │
+│                             │   pixel-nginx-1     │                        │
+│                             │   Ports: 80/443    │                        │
+│                             │   Reverse Proxy     │                        │
+│                             └─────────────────────┘                        │
+│                                                                             │
+│  NETWORKS:                                                                  │
+│  • pixel-v2-net (bridge) — V2 containers                                   │
+│  • pixel-v1-net (external) — V1 containers                                  │
+│  • pixel-net — Legacy V1 network                                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     V2 PIXEL AGENT CORE (Single Brain)                     │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                        HTTP SERVER (Hono)                           │   │
+│  │                     Port 4000, Bun Runtime                          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│         ┌──────────────────────────┼──────────────────────────┐            │
+│         │                          │                          │            │
+│         ▼                          ▼                          ▼            │
+│  ┌─────────────┐          ┌─────────────┐          ┌─────────────┐        │
+│  │ CONNECTORS  │          │   AGENT     │          │  SERVICES   │        │
+│  │             │          │             │          │             │        │
+│  │ telegram.ts │          │  agent.ts   │          │  tools.ts   │        │
+│  │ whatsapp.ts │◄────────►│             │◄────────►│  (60 tools) │        │
+│  │ nostr.ts    │  prompt  │ promptWith │  tool    │             │        │
+│  │ twitter.ts  │  +History│  History() │  calls   │  • fs/bash  │        │
+│  │              │          │             │          │  • git/ssh │        │
+│  └─────────────┘          └──────┬──────┘          │  • web      │        │
+│                                 │                  │  • nostr    │        │
+│                                 ▼                  │  • lightning│        │
+│                        ┌──────────────────┐        │  • memory   │        │
+│                        │   PI AGENT CORE  │        │  • alarms   │        │
+│                        │                  │        │  • image    │        │
+│                        │  Events          │        │  • twitter  │        │
+│                        │  Steering        │        │  • notify   │        │
+│                        │  Follow-ups      │        │  • ...      │        │
+│                        │  Context Mgmt    │        └──────┬──────┘        │
+│                        └──────────────────┘               │               │
+│                                 │                         │               │
+│                                 ▼                         │               │
+│  ┌───────────────────────────────────────────────────────┘               │
+│  │                    SYSTEM PROMPT BUILDER                                 │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                │
+│  │  │ Character│ │Inner Life│ │  Skills  │ │  Memory  │                │
+│  │  │   .md    │ │ .json    │ │  Graph   │ │ (vector) │                │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘                │
+│  └───────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          AUTONOMOUS SYSTEMS                                │
+│                                                                             │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐               │
+│  │   HEARTBEAT   │  │   INNER LIFE   │  │    OUTREACH    │               │
+│  │   15 min      │  │   ~hourly      │  │    4 hours     │               │
+│  ├────────────────┤  ├────────────────┤  ├────────────────┤               │
+│  │ Topics/Moods  │  │ Reflect        │  │ LLM-judged     │               │
+│  │ Nostr engage  │  │ Learn          │  │ Telegram pings  │               │
+│  │ Clawstr       │  │ Ideate         │  │ Cooldowns      │               │
+│  │ Primal disc.  │  │ Evolve         │  │ SHA256 dedup   │               │
+│  │ Zaps/Follows  │  │ Claim derive   │  │ 3/day max      │               │
+│  │ Revenue-goal  │  │                │  │                │               │
+│  │ Canvas stats  │  │                │  │                │               │
+│  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘               │
+│          │                    │                    │                         │
+│          └────────────────────┴────────────────────┘                         │
+│                               │                                              │
+│                               ▼                                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐               │
+│  │     JOBS       │  │   REMINDERS    │  │    DIGEST     │               │
+│  │   Scheduled    │  │    Alarm       │  │   Periodic    │               │
+│  │   Tasks        │  │    System      │  │   + Alerts    │               │
+│  └────────────────┘  └────────────────┘  └────────────────┘               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            AI PROVIDER LAYER                               │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    MODEL CASCADE CHAIN                            │    │
+│  │                                                                     │    │
+│  │   PRIMARY (Priority Users)                                         │    │
+│  │   ┌─────────┐                                                     │    │
+│  │   │ Z.AI    │  GLM-5 (744B reasoning)                            │    │
+│  │   │         │  → 429? → Cascade to Gemini                         │    │
+│  │   └────┬────┘                                                     │    │
+│  │        │                                                            │    │
+│  │        ▼                                                            │    │
+│  │   ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐             │    │
+│  │   │ Gemini  │ │ Gemini   │ │ Gemini   │ │ Gemini   │             │    │
+│  │   │  3 Flash│ │ 2.5 Pro  │ │2.5 Flash│ │2.0 Flash│             │    │
+│  │   └─────────┘ └──────────┘ └──────────┘ └──────────┘             │    │
+│  │                                                                     │    │
+│  │   PUBLIC (Free Tier)                                                │    │
+│  │   ┌─────────────────────┐                                          │    │
+│  │   │ OpenRouter Z.AI    │  GLM-4.5 Air (free, tool-capable)       │    │
+│  │   └─────────────────────┘                                          │    │
+│  │                                                                     │    │
+│  │   BACKGROUND (Heartbeat/InnerLife/Jobs)                            │    │
+│  │   ┌─────────────────────┐                                          │    │
+│  │   │ OpenRouter Trinity  │  → Z.AI GLM-4.7 → Gemini cascade        │    │
+│  │   └─────────────────────┘                                          │    │
+│  │                                                                     │    │
+│  │   VISION/AUDIO                                                      │    │
+│  │   ┌─────────────────────┐                                          │    │
+│  │   │ Gemini 2.5 Flash   │  (upgraded from 2.0)                    │    │
+│  │   └─────────────────────┘                                          │    │
+│  │                                                                     │    │
+│  │   GOOGLE KEY FAILOVER                                               │    │
+│  │   Primary ($300 credits) → Fallback (billed)                       │    │
+│  │   Used by: agent, embeddings, image gen, audio transcription      │    │
+│  │                                                                     │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  RUNTIME: Bun (TypeScript-native)                                         │
+│  PROVIDERS: @mariozechner/pi-ai (18+ providers, typed tools, cost track)│
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DATA LAYER                                         │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    POSTGRESQL (postgres-v2)                        │   │
+│  │                    Port: 5433 | pgvector:pg16                    │   │
+│  │                                                                     │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │   │
+│  │  │  users   │ │revenue   │ │  costs   │ │ reminders│           │   │
+│  │  │          │ │          │ │          │ │          │           │   │
+│  │  │platformId│ │source    │ │model     │ │userId    │           │   │
+│  │  │platform  │ │amountSats│ │inputTok  │ │dueAt     │           │   │
+│  │  │displayN. │ │amountUsd │ │outputTok │ │status    │           │   │
+│  │  │memoryMd  │ │txHash    │ │task      │ │repeat    │           │   │
+│  │  │msgCount  │ │          │ │          │ │          │           │   │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │   │
+│  │                                                                     │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                         │   │
+│  │  │memories  │ │conversation│canvas_  │                         │   │
+│  │  │(vector)  │ │   _log   │ │pixels    │                         │   │
+│  │  │          │ │          │ │          │                         │   │
+│  │  │content   │ │userId    │ │x, y      │                         │   │
+│  │  │type      │ │role      │ │color     │                         │   │
+│  │  │embedding │ │content   │ │placedBy  │                         │   │
+│  │  │(vector)  │ │metadata  │ │paymentH  │                         │   │
+│  │  │metadata  │ │          │ │          │                         │   │
+│  │  └──────────┘ └──────────┘ └──────────┘                         │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    FILE STORAGE (JSONL)                            │   │
+│  │                                                                     │   │
+│  │  /app/conversations/*.jsonl    — Per-user conversation logs       │   │
+│  │  /app/data/agent.log           — Structured audit trail           │   │
+│  │  /app/data/whatsapp-auth/      — Baileys session cache            │   │
+│  │  /app/data/.clawstr/          — Clawstr CLI config                │   │
+│  │  /app/skills/*.md             — Skill definitions                 │   │
+│  │  /app/external/pixel/         — External skills (arscontexta)     │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         REVENUE PROTOCOLS                                   │
+│                                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │  LNPixels   │  │  NIP-90 DVM │  │    L402     │  │    x402     │     │
+│  │   Canvas    │  │   (Nostr)   │  │  HTTP API   │  │  (USDC)     │     │
+│  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────┤     │
+│  │ Lightning   │  │ Lightning   │  │ Lightning   │  │   Base      │     │
+│  │ per-pixel   │  │ per-job     │  │ micropay    │  │   USDC      │     │
+│  │ 1-10 sats   │  │ 100 sats    │  │ 10-50 sats  │  │ $0.01-0.08  │     │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘     │
+│         │                │                │                │              │
+│         │                │                │                │              │
+│         └────────────────┴────────┬───────┴────────────────┘              │
+│                                    │                                       │
+│                                    ▼                                       │
+│                        ┌─────────────────────┐                            │
+│                        │    REVENUE TABLE    │                            │
+│                        │   (PostgreSQL)      │                            │
+│                        │                     │                            │
+│                        │  Sources:           │                            │
+│                        │  • canvas           │                            │
+│                        │  • nostr_dvm        │                            │
+│                        │  • l402             │                            │
+│                        │  • x402             │                            │
+│                        │  • zap              │                            │
+│                        │  • lightning_invoice │                            │
+│                        └─────────────────────┘                            │
+│                                                                             │
+│  TREASURY: ~80,000 sats | Lightning: sparepiccolo55@walletofsatoshi.com  │
+│            Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         EXTERNAL SERVICES                                   │
+│                                                                             │
+│  ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐      │
+│  │   LIGHTNING      │   │     BLOSSOM      │   │     PRIMAL       │      │
+│  │   NETWORK        │   │   (Media CDN)    │   │   (Nostr Cache)  │      │
+│  │                  │   │                  │   │                  │      │
+│  │ LNURL-pay        │   │ Image upload    │   │ Trending posts   │      │
+│  │ Invoice gen      │   │ Nostr media     │   │ Discovery        │      │
+│  │ Payment verify   │   │                  │   │                  │      │
+│  │ Wallet of Satoshi│   │                  │   │                  │      │
+│  └──────────────────┘   └──────────────────┘   └──────────────────┘      │
+│                                                                             │
+│  ┌──────────────────┐   ┌──────────────────┐                              │
+│  │   GRAMMY         │   │    BAILEYS       │                              │
+│  │   (Telegram)    │   │   (WhatsApp)     │                              │
+│  │                  │   │                  │                              │
+│  │ Bot API          │   │ WhatsApp Web     │                              │
+│  │ Vision capture   │   │ QR Auth          │                              │
+│  │ Voice transcript │   │ Voice transcript │                              │
+│  │ TTS (Edge)       │   │ TTS (Edge)       │                              │
+│  └──────────────────┘   └──────────────────┘                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                         DATA FLOW EXAMPLES
+================================================================================
+
+MESSAGE FROM TELEGRAM USER:
+──────────────────────────────────────────────────────────────────────────────
+┌────────┐    ┌─────────────┐    ┌───────────┐    ┌──────────┐
+│Telegram│───►│telegram.ts  │───►│  agent.ts │───►│  pi-agent│
+│  User  │    │ (connector) │    │           │    │  -core   │
+└────────┘    └─────────────┘    └─────┬─────┘    └────┬─────┘
+                                        │              │
+                                        ▼              ▼
+                                  ┌───────────┐  ┌──────────┐
+                                  │buildSystem│  │ Z.AI/    │
+                                  │  Prompt   │  │ Gemini   │
+                                  └─────┬─────┘  └────┬─────┘
+                                        │              │
+                                        ▼              ▼
+                                  ┌───────────┐  ┌──────────┐
+                                  │ loadMemory│  │ Response │
+                                  │ loadSkills│  └────┬─────┘
+                                  └─────┬─────┘       │
+                                        │             ▼
+                                        │      ┌──────────┐
+                                        │      │ Response │
+                                        │      │  Stream  │
+                                        │      └────┬─────┘
+                                        │             │
+                                        ▼             ▼
+                                  ┌─────────────────────┐
+                                  │  PromptWithHistory  │
+                                  │  (return to user)   │
+                                  └─────────────────────┘
+
+
+REVENUE PAYMENT FLOW (L402):
+──────────────────────────────────────────────────────────────────────────────
+┌────────┐    ┌───────────┐    ┌───────────┐    ┌────────────┐
+│  User  │───►│ HTTP API  │───►│  l402.ts  │───►│  Lightning │
+│ Request│    │/api/chat  │    │ middleware │    │   Node    │
+└────────┘    └─────┬─────┘    └─────┬─────┘    └─────┬────┘
+                    │                │                 │
+                    │                │                 ▼
+                    │                │          ┌────────────┐
+                    │                │          │  Invoice   │
+                    │                │          │  Verify    │
+                    │                │          └─────┬──────┘
+                    │                │                │
+                    │                ▼                │
+                    │         ┌───────────┐          │
+                    └────────►│  Revenue  │◄─────────┘
+                              │  Table   │
+                              └───────────┘
+
+
+================================================================================
+                         CONTAINER SUMMARY
+================================================================================
+
+  ┌────────────────┬────────┬─────────────────────────────────────────────┐
+  │   CONTAINER    │  PORT  │  PURPOSE                                   │
+  ├────────────────┼────────┼─────────────────────────────────────────────┤
+  │ pixel (V2)     │  4000  │  Agent brain + all connectors + services  │
+  │ postgres-v2    │  5433  │  PostgreSQL 16 with pgvector               │
+  │ pixel-api-1    │  3000  │  V1 Canvas API + Socket.IO                │
+  │ pixel-web-1    │  3002  │  V1 Canvas frontend (Next.js)              │
+  │ pixel-landing-1│  3001  │  Landing page (Next.js)                    │
+  │ pixel-nginx-1  │ 80/443 │  Reverse proxy + SSL termination           │
+  └────────────────┴────────┴─────────────────────────────────────────────┘
+
+  TOTAL: 6 containers | DISK: ~69% | RAM: ~3.1GB / 3.8GB + 4GB swap
+
+
+================================================================================
+                         TOOL BELT (60 TOOLS)
+================================================================================
+
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │  FILESYSTEM          │  NETWORK              │  CREATIVE            │
+  │  ─────────────        │  ─────────           │  ─────────           │
+  │  • read_file         │  • web_search         │  • image_gen         │
+  │  • write_file        │  • fetch_url          │  • voice_speak       │
+  │  • list_dir          │  • research_task      │  • transcribe_audio  │
+  │  • bash              │  • list_servers       │                      │
+  │  • glob              │  • ssh_execute        │                      │
+  │                      │  • wp                 │                      │
+  ├──────────────────────┼───────────────────────┼──────────────────────┤
+  │  SOCIAL              │  MEMORY               │  AUTONOMOUS          │
+  │  ──────              │  ──────              │  ──────────          │
+  │  • nostr_post        │  • memory_save        │  • schedule_alarm    │
+  │  • nostr_reply       │  • memory_search      │  • list_alarms       │
+  │  • nostr_dm          │  • memory_update      │  • cancel_alarm      │
+  │  • clawstr_post      │  • memory_delete      │  • notify_owner      │
+  │  • clawstr_reply     │  • list_memories      │  • syntropy_notify   │
+  │  • twitter_post      │                       │                      │
+  │  • twitter_search    │                       │                      │
+  ├──────────────────────┼───────────────────────┼──────────────────────┤
+  │  BITCOIN             │  INTERNAL            │  SYSTEM             │
+  │  ───────             │  ────────            │  ───────            │
+  │  • create_invoice    │  • introspect         │  • health_check     │
+  │  • verify_payment    │  • get_logs           │  • get_revenue      │
+  │  • get_wallet_info   │  • list_jobs          │  • cost_analysis    │
+  │                      │                       │                      │
+  └──────────────────────┴───────────────────────┴──────────────────────┘
+
+
+================================================================================
+                         DOMAIN ROUTING
+================================================================================
+
+  pixel.xx.kg          ──► Nginx ──► Landing (3001)
+                                          │
+                        ┌─────────────────┼─────────────────┐
+                        │                 │                 │
+                   /v2/*            /.well-known     (default)
+                                         │
+                                    V2 Agent (4000)
+
+
+  ln.pixel.xx.kg       ──► Nginx ──► Canvas API (3000)
+                                          │
+                                    Canvas Web (3002)
+
+
+================================================================================
+                         KEY CONFIGURATIONS
+================================================================================
+
+  • Character:        /app/character.md
+  • Skills:          /app/skills/*.md, /app/external/pixel/skills/arscontexta
+  • Conversations:   /app/conversations/*.jsonl
+  • DB Credentials:  user=pixel, pass=pixel, db=pixel_v2, port=5433
+  • Docker Socket:   /var/run/docker.sock (group 988)
+  • Cron Jobs:       auto-update (hourly), host-health (daily 3:15am)
+  • Alerts:          Syntropy mailbox via cron
+
+
+================================================================================
+                         SECURITY MODEL
+================================================================================
+
+  TOOL FILTERING (Agent-Level):
+  ─────────────────────────────
+  • servers.json defines tool tiers: public vs server_admin
+  • getPermittedTools() filters based on caller identity
+  • Applied in agent.ts before tool execution
+
+  RUNTIME ENFORCEMENT (Tool-Level):
+  ─────────────────────────────────
+  • ssh/wp require per-server authorization
+  • Ad-hoc connections require global admin
+  • Defense-in-depth approach
+
+  AUTHORIZATION CONFIG (servers.json):
+  ────────────────────────────────────
+  • global_admins: full tool access
+  • tool_tiers.public: safe subset
+  • servers.<name>.authorized_users/groups
+
+
+================================================================================
+                         REVENUE STREAMS
+================================================================================
+
+       ┌─────────────────────────────────────────────────────────────┐
+       │                                                             │
+       │   ┌──────────┐   9,225+ pixels @ 1-10 sats   ┌──────────┐ │
+       │   │ Canvas   │ ───────────────────────────────►│ ~81K     │ │
+       │   │ LNPixels │   Lightning per-pixel           │ sats     │ │
+       │   └──────────┘                                └──────────┘ │
+       │                                                             │
+       │   ┌──────────┐   NIP-90 DVM Jobs               ┌──────────┐ │
+       │   │  Nostr   │ ───────────────────────────────►│ Revenue  │ │
+       │   │   DVM    │   100 sats/job                  │ Table    │ │
+       │   └──────────┘                                └──────────┘ │
+       │                                                             │
+       │   ┌──────────┐   L402 Micropayments             ┌──────────┐ │
+       │   │ HTTP API │ ───────────────────────────────►│ (Postgre)│ │
+       │   │          │   10-50 sats/call                └──────────┘ │
+       │   └──────────┘                                                      │
+       │                                                             │
+       │   ┌──────────┐   x402 USDC on Base            ┌──────────┐ │
+       │   │          │ ───────────────────────────────►│          │ │
+       │   │ x402     │   $0.01-0.08/call               │          │ │
+       │   └──────────┘                                └──────────┘ │
+       │                                                             │
+       │   ┌──────────┐   Nostr Zaps (tips)             ┌──────────┐ │
+       │   │          │ ───────────────────────────────►│          │ │
+       │   └──────────┘                                └──────────┘ │
+       │                                                             │
+       └─────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                         END OF ARCHITECTURE DIAGRAM
+================================================================================
