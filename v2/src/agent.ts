@@ -489,12 +489,11 @@ export async function promptWithHistory(
   const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 
   // Select model: vision-capable model when images present, DM override, background, or default
+  // GLM-5 for ALL conversations now (was previously priority-only)
   const hasImages = images && images.length > 0;
-  const isPriority = isPriorityUser(userId);
   const selectedModel = hasImages ? getVisionModel()
     : options.modelOverride === "background" ? getSimpleModel()
-    : isPriority ? getPixelModel()
-    : getNonPriorityModel();
+    : getPixelModel();
 
   if (hasImages) {
     console.log(`[agent] Vision request from ${userId} — using Gemini 2.5 Flash for image analysis`);
@@ -503,7 +502,7 @@ export async function promptWithHistory(
   // Filter tools based on user authorization level
   const permittedTools = getPermittedTools(userId, pixelTools);
   const toolsForModel = permittedTools;
-  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model tier: ${isPriority ? "priority" : "public"}`);
+  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model: GLM-5`);
 
   const agent = new Agent({
     initialState: {
