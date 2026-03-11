@@ -45,6 +45,22 @@ type PendingAck = {
 
 const pendingAcks = new Map<string, PendingAck>();
 
+// Deduplication for incoming messages — prevents processing same message twice
+const processedMessageIds = new Set<string>();
+const PROCESSED_IDS_MAX = 1000; // Keep last 1000 to prevent memory bloat
+
+function isMessageProcessed(messageId: string): boolean {
+  if (processedMessageIds.has(messageId)) return true;
+  processedMessageIds.add(messageId);
+  // Prune old entries
+  if (processedMessageIds.size > PROCESSED_IDS_MAX) {
+    const arr = [...processedMessageIds];
+    processedMessageIds.clear();
+    for (const id of arr.slice(-PROCESSED_IDS_MAX)) processedMessageIds.add(id);
+  }
+  return false;
+}
+
 function clearPendingAcks() {
   for (const [, pending] of pendingAcks) {
     clearTimeout(pending.timeout);
@@ -657,6 +673,13 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       if (msg.key.fromMe) continue;
       if (msg.key.remoteJid === "status@broadcast") continue;
       if (!msg.message) continue;
+
+      // Deduplication: skip if we've already processed this message
+      const msgId = msg.key.id;
+      if (msgId && isMessageProcessed(msgId)) {
+        console.log(`[whatsapp] Skipping duplicate message: ${msgId}`);
+        continue;
+      }
 
       // DEBUG: Log every incoming message JID to understand group format
       const rawJid = msg.key.remoteJid ?? "(none)";
