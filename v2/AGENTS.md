@@ -18,7 +18,7 @@
 |-----------|--------|
 | Telegram (@PixelSurvival_bot) | ✅ Live — vision, voice, groups, notify_owner |
 | Nostr (NDK) | ✅ Live — mentions, DMs, DVM, engagement |
-| WhatsApp (Baileys) | ✅ Live — voice, QR pairing at /v2/api/whatsapp/qr |
+| WhatsApp (Baileys) | ✅ Live — voice, QR pairing/status endpoints now internal/admin-only |
 | Twitter/X (@PixelSurvivor) | ✅ Live — cookie auth, mention polling, rate-limited posting, read-only default |
 | Instagram | ❌ Not started |
 | HTTP API + L402 | ✅ Live — /api/chat/premium (10 sats), /api/generate (50 sats) |
@@ -136,7 +136,7 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) for priority users → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Public users use OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). promptWithHistory handles fallback transparently.
+- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
 - **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
@@ -192,7 +192,7 @@ Authorization config lives in `servers.json`:
 - **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` prefers `github-copilot/gpt-5.4` first for headless opencode sessions, then falls back to `zai-coding-plan/glm-5`, then the rest of the approved cascade.
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
-- **Zero Dockerfile patches.** If a dep needs patching, switch deps.
+- **No Dockerfile source patches.** Runtime patching in `entrypoint.sh` is still used for the Baileys LID bug.
 
 ### Agent Behavior
 
@@ -344,3 +344,19 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 **Solution:** Made posting more conservative to stay within free tier: MAX_POSTS_PER_DAY 5→2, MIN_POST_GAP 2h→4h, 429 lockout 30min→4h. Added rate limit header logging (x-rate-limit-remaining/reset/limit) on every post attempt for debugging. The scraper fallback approach is dead — would need a different package or raw GraphQL implementation.
 
 **Lesson:** Always verify library capabilities at runtime (`typeof obj.method`) before planning features around them. Documentation and training data may reference methods that don't exist in installed versions. Also: when API rate limits are opaque, log the headers to understand actual limits before optimizing.
+
+### Session 56: HTTP Boundary Hardening + Paywall Integrity
+
+**Problem:** The public HTTP surface trusted caller-supplied `userId`, exposed WhatsApp control endpoints and audit logs without auth, allowed x402 routes to fail open when payment config was missing, and accepted arbitrary valid Lightning preimages for L402 without verifying Pixel issued or settled the invoice.
+
+**Solution:**
+1. **HTTP userId namespacing:** untrusted HTTP callers now get `http-...` identities, so they cannot impersonate `syntropy-admin`, Telegram/WhatsApp/Nostr users, or other elevated identities to unlock tools.
+2. **Internal/admin-only ops:** `/api/whatsapp/status`, `/api/whatsapp/qr`, `/api/whatsapp/qr/data`, `/api/whatsapp/repair`, `/api/whatsapp/send`, and `/api/audit` now require localhost or `PIXEL_ADMIN_TOKEN` (audit also still allows owner NIP-98 auth).
+3. **L402 verification:** after preimage hash verification, L402 now confirms the invoice exists in Pixel's own cache, is settled via Nakapay, matches the expected amount, and then consumes the proof to prevent replay.
+4. **x402 fail-closed:** if x402 configuration is missing, protected routes now return 503 instead of silently serving paid content for free.
+5. **Marketplace hardening:** `/api/pixels/x402` is temporarily restricted to the correctly priced `2x2` tier while dynamic x402 pricing is hardened; broken duplicate revenue recording path was removed.
+6. **Public tool tier trim:** removed memory mutation, file/log reading, proactive messaging, alarm control, owner notification, and git write actions from the public tool tier.
+
+**Verification:** external requests to `https://pixel.xx.kg/v2/api/whatsapp/status` and `/v2/api/audit` now return `401`; external `/v2/api/chat` with `userId:"syntropy-admin"` is rewritten to `http-syntropy-admin`; localhost admin access still works; `/api/chat` still responds normally after rebuild.
+
+**New risk discovered:** WhatsApp is currently hitting repeated Baileys `stream:error conflict type=replaced` disconnects after boot. The connector recovers, but this indicates another active WhatsApp Web session or session conflict that needs a focused follow-up.

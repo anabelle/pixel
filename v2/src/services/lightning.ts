@@ -196,8 +196,6 @@ export async function verifyPayment(
       data.settled === true;
 
     if (isPaid) {
-      invoiceCache.delete(paymentHash);
-      saveInvoiceCache();
       console.log(`[lightning] Payment confirmed: ${paymentHash.slice(0, 16)}...`);
     }
 
@@ -211,6 +209,18 @@ export async function verifyPayment(
     console.error("[lightning] Payment verification failed:", err.message);
     return { paid: false, amountSats: cached.amountSats, description: cached.description };
   }
+}
+
+/**
+ * Consume a verified invoice proof so simplified L402 credentials cannot be replayed forever.
+ * Returns true if a cached invoice entry was removed.
+ */
+export function consumeInvoice(paymentHash: string): boolean {
+  const existed = invoiceCache.delete(paymentHash);
+  if (existed) {
+    saveInvoiceCache();
+  }
+  return existed;
 }
 
 /**

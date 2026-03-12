@@ -52,6 +52,7 @@ import { getSecurityStats, getRecentAlerts, pruneOldAlerts, getCategories } from
 import { initLogging } from "./services/logging.js";
 import { startCanvasListener, getCanvasListenerStatus, stopCanvasListener } from "./services/canvas-listener.js";
 import { pixelTools } from "./services/tools.js";
+import { isElevatedUser } from "./services/server-registry.js";
 
 // ============================================================
 // Configuration
@@ -93,6 +94,63 @@ function getRequestOrigin(c: any): string {
   const proto = c.req.header("x-forwarded-proto") ?? c.req.header("x-forwarded-scheme") ?? "http";
   const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? "localhost";
   return `${proto}://${host}`;
+}
+
+function getRequestHost(c: any): string {
+  try {
+    return new URL(c.req.url).hostname;
+  } catch {
+    return (c.req.header("x-forwarded-host") ?? c.req.header("host") ?? "").split(":")[0];
+  }
+}
+
+function isTrustedLocalRequest(c: any): boolean {
+  const host = getRequestHost(c);
+  if (["localhost", "127.0.0.1", "::1"].includes(host)) return true;
+
+  const forwardedFor = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwardedFor && ["127.0.0.1", "::1"].includes(forwardedFor)) return true;
+
+  return false;
+}
+
+function hasAdminToken(c: any): boolean {
+  const expected = process.env.PIXEL_ADMIN_TOKEN?.trim();
+  if (!expected) return false;
+
+  const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const direct = c.req.header("x-pixel-admin-token")?.trim();
+  const provided = bearer || direct;
+  return !!provided && provided === expected;
+}
+
+function normalizePublicHttpUserId(userId: unknown): string {
+  const raw = typeof userId === "string" && userId.trim() ? userId.trim() : "anonymous";
+  const safe = raw.replace(/[^a-zA-Z0-9_.:-]/g, "_").slice(0, 120) || "anonymous";
+  return `http-${safe}`;
+}
+
+function resolveHttpUserId(c: any, requestedUserId: unknown): string {
+  const raw = typeof requestedUserId === "string" && requestedUserId.trim() ? requestedUserId.trim() : "anonymous";
+  if (isTrustedLocalRequest(c) || hasAdminToken(c)) return raw;
+  if (isElevatedUser(raw) || /^(tg|wa|nostr|clawstr|syntropy|pixel-self)/i.test(raw)) {
+    return normalizePublicHttpUserId(raw);
+  }
+  return normalizePublicHttpUserId(raw);
+}
+
+async function requireInternalAdmin(c: any, next: any) {
+  if (isTrustedLocalRequest(c) || hasAdminToken(c)) {
+    return await next();
+  }
+  return c.json({ error: "Unauthorized" }, 401);
+}
+
+async function requireOwnerOrInternalAdmin(c: any, next: any) {
+  if (isTrustedLocalRequest(c) || hasAdminToken(c)) {
+    return await next();
+  }
+  return requireOwnerNostrAuth(c, next);
 }
 
 async function requireOwnerNostrAuth(c: any, next: any) {
@@ -185,7 +243,7 @@ app.get("/health", (c) => {
 });
 
 /** WhatsApp re-pairing endpoint — clears auth, reconnects in specified mode */
-app.post("/api/whatsapp/repair", async (c) => {
+app.post("/api/whatsapp/repair", requireInternalAdmin, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const mode = body?.mode === "pairing" ? "pairing" : "qr";
   console.log(`[http] WhatsApp re-pair requested (mode: ${mode})`);
@@ -194,12 +252,12 @@ app.post("/api/whatsapp/repair", async (c) => {
 });
 
 /** WhatsApp status endpoint */
-app.get("/api/whatsapp/status", (c) => {
+app.get("/api/whatsapp/status", requireInternalAdmin, (c) => {
   return c.json(getWhatsAppStatus());
 });
 
 /** WhatsApp QR code scanning page — renders QR for phone to scan */
-app.get("/api/whatsapp/qr", (c) => {
+app.get("/api/whatsapp/qr", requireInternalAdmin, (c) => {
   const { qr, timestamp, expired } = getWhatsAppQr();
   const status = getWhatsAppStatus();
 
@@ -314,12 +372,12 @@ pollInterval = setInterval(poll, 3000);
 });
 
 /** WhatsApp QR data endpoint (JSON — used by the QR page's JS) */
-app.get("/api/whatsapp/qr/data", (c) => {
+app.get("/api/whatsapp/qr/data", requireInternalAdmin, (c) => {
   return c.json(getWhatsAppQr());
 });
 
 /** WhatsApp send endpoint — proactive messaging to DMs and groups */
-app.post("/api/whatsapp/send", async (c) => {
+app.post("/api/whatsapp/send", requireInternalAdmin, async (c) => {
   try {
     const body = await c.req.json();
     const { to, message } = body as { to?: string; message?: string };
@@ -387,7 +445,8 @@ app.get("/.well-known/agent-card.json", (c) => {
 app.post("/api/chat", async (c) => {
   try {
     const body = await c.req.json();
-    const { message, userId = "anonymous" } = body;
+    const { message, userId: requestedUserId = "anonymous" } = body;
+    const userId = resolveHttpUserId(c, requestedUserId);
 
     if (!message || typeof message !== "string") {
       return c.json({ error: "message is required" }, 400);
@@ -430,7 +489,7 @@ app.get("/api/stats", async (c) => {
     },
     users: userStats,
     memory: memStats,
-    containers: 4,
+    containers: 6,
     version: "2.0.0",
   });
 });
@@ -504,7 +563,7 @@ app.post("/api/job", requireOwnerNostrAuth, async (c) => {
 });
 
 /** Recent audit entries (public — operational telemetry, no secrets) */
-app.get("/api/audit", (c) => {
+app.get("/api/audit", requireOwnerOrInternalAdmin, (c) => {
   const limit = parseInt(c.req.query("limit") ?? "50", 10);
   const entries = getRecentAudit(Math.min(limit, 200));
   return c.json({ entries, count: entries.length });
@@ -966,7 +1025,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { message, userId = "anonymous" } = body;
+      const { message, userId: requestedUserId = "anonymous" } = body;
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!message || typeof message !== "string") {
         return c.json({ error: "message is required" }, 400);
@@ -1006,7 +1066,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { message, userId = "anonymous" } = body;
+      const { message, userId: requestedUserId = "anonymous" } = body;
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!message || typeof message !== "string") {
         return c.json({ error: "message is required" }, 400);
@@ -1047,7 +1108,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { prompt, userId = "anonymous", maxLength } = body;
+      const { prompt, userId: requestedUserId = "anonymous", maxLength } = body;
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!prompt || typeof prompt !== "string") {
         return c.json({ error: "prompt is required" }, 400);
@@ -1088,7 +1150,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { prompt, userId = "anonymous", maxLength } = body;
+      const { prompt, userId: requestedUserId = "anonymous", maxLength } = body;
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!prompt || typeof prompt !== "string") {
         return c.json({ error: "prompt is required" }, 400);
@@ -1129,7 +1192,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { prompt, model, ratio, size, upload = true, userId = "anonymous" } = body ?? {};
+      const { prompt, model, ratio, size, upload = true, userId: requestedUserId = "anonymous" } = body ?? {};
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!prompt || typeof prompt !== "string") {
         return c.json({ error: "prompt is required" }, 400);
@@ -1176,7 +1240,8 @@ app.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { prompt, model, ratio, size, upload = true, userId = "anonymous" } = body ?? {};
+      const { prompt, model, ratio, size, upload = true, userId: requestedUserId = "anonymous" } = body ?? {};
+      const userId = resolveHttpUserId(c, requestedUserId);
 
       if (!prompt || typeof prompt !== "string") {
         return c.json({ error: "prompt is required" }, 400);
@@ -1227,6 +1292,7 @@ app.get("/api/pixels/x402", async (c) => {
     name: "Agent Pixel Marketplace",
     description: "Permanent digital footprints for AI agents. Buy a pixel that survives your session.",
     pricing: PIXEL_PRICES,
+    supportedSizes: ["2x2"],
     payTo: process.env.X402_PAY_TO ?? "0xac928e9D53219dC5B71d22396ce58aee53044B88",
     instructions: {
       step1: "POST to this endpoint with { prompt, identity, size }",
@@ -1260,6 +1326,10 @@ app.post(
 
       const pricing = PIXEL_PRICES[size] ?? PIXEL_PRICES["2x2"];
 
+      if (size !== "2x2") {
+        return c.json({ error: "Only size '2x2' is currently available while dynamic x402 pricing is hardened." }, 400);
+      }
+
       // Generate pixel art
       const fullPrompt = `Abstract pixel art representing: ${prompt}. Style: minimalist, vibrant, ${size} grid, digital artifact.`;
       const image = await generateImage(fullPrompt, { ratio: "1:1" });
@@ -1280,8 +1350,8 @@ app.post(
         paymentProtocol: "x402",
       };
       try {
-        const { appendFileSync, existsSync, mkdirSync, dirname } = await import("fs");
-        const dir = dirname(registryPath);
+        const { appendFileSync, existsSync, mkdirSync } = await import("fs");
+        const dir = registryPath.substring(0, registryPath.lastIndexOf("/"));
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         appendFileSync(registryPath, JSON.stringify(entry) + "\n", "utf8");
       } catch (e: any) {
@@ -1291,9 +1361,9 @@ app.post(
       // Post to Nostr (optional, best-effort)
       let nostrEventId: string | null = null;
       try {
-        const { getNDK } = await import("./connectors/nostr.js");
+        const { getNostrInstance } = await import("./connectors/nostr.js");
         const { NDKEvent } = await import("@nostr-dev-kit/ndk");
-        const ndk = getNDK();
+        const ndk = getNostrInstance()?.ndk;
         if (ndk) {
           const event = new NDKEvent(ndk);
           event.kind = 1;
@@ -1311,14 +1381,6 @@ app.post(
         }
       } catch (e: any) {
         console.error("[pixels/x402] Nostr publish failed:", e.message);
-      }
-
-      // Record revenue
-      try {
-        const { recordRevenue } = await import("./services/revenue.js");
-        await recordRevenue("x402", pricing.priceUsd * 100, `agent_pixel_${size}`, identity ?? "anonymous");
-      } catch (e: any) {
-        console.error("[pixels/x402] Revenue record failed:", e.message);
       }
 
       audit("pixel_purchase", `Agent pixel purchased (${size})`, {

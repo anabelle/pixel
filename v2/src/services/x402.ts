@@ -116,7 +116,14 @@ export interface X402RouteOptions {
 export function x402(routePattern: string, opts: X402RouteOptions): MiddlewareHandler {
   if (!X402_PAY_TO || !resourceServer) {
     console.warn(`[x402] Route ${routePattern} disabled — missing EVM_PRIVATE_KEY or facilitator`);
-    return async (_c, next) => await next();
+    return async (c, _next) =>
+      c.json(
+        {
+          error: "x402 payment unavailable",
+          hint: "Server payment configuration is missing or disabled",
+        },
+        503
+      );
   }
 
   const price = `$${opts.priceUsd.toFixed(2)}`;

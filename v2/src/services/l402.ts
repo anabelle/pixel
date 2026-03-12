@@ -13,7 +13,7 @@
 
 import { createHash, timingSafeEqual } from "crypto";
 import type { Context, MiddlewareHandler } from "hono";
-import { createInvoice } from "./lightning.js";
+import { createInvoice, verifyPayment, consumeInvoice } from "./lightning.js";
 import { recordRevenue } from "./revenue.js";
 
 // ============================================================
@@ -100,6 +100,9 @@ export interface L402Options {
     endpoint: string;
     method: string;
   }) => void | Promise<void>;
+
+  /** Require proof that the invoice was issued by Pixel and actually settled. Default: true */
+  requireInvoiceVerification?: boolean;
 }
 
 /**
@@ -119,6 +122,7 @@ export interface L402Options {
  */
 export function l402(opts: L402Options = {}): MiddlewareHandler {
   const defaultSats = opts.sats ?? 10;
+  const requireInvoiceVerification = opts.requireInvoiceVerification ?? true;
 
   return async (c, next) => {
     const authHeader = c.req.header("Authorization");
@@ -148,8 +152,42 @@ export function l402(opts: L402Options = {}): MiddlewareHandler {
         );
       }
 
+      let amountSats = await resolvePrice(c, opts, defaultSats);
+
+      if (requireInvoiceVerification) {
+        const payment = await verifyPayment(paymentHash);
+        if (!payment.paid) {
+          return c.json(
+            {
+              error: "Invoice not settled or not issued by this server",
+              hint: "Use the invoice returned by this endpoint and retry after payment settles",
+            },
+            401
+          );
+        }
+
+        if (payment.preimage && payment.preimage.toLowerCase() !== creds.preimage.toLowerCase()) {
+          return c.json({ error: "Provided preimage does not match settled invoice" }, 401);
+        }
+
+        if (payment.amountSats && payment.amountSats !== amountSats) {
+          return c.json(
+            {
+              error: "Invoice amount mismatch",
+              hint: `Expected ${amountSats} sats but settled invoice was ${payment.amountSats} sats`,
+            },
+            401
+          );
+        }
+
+        amountSats = payment.amountSats ?? amountSats;
+
+        if (!consumeInvoice(paymentHash)) {
+          return c.json({ error: "Invoice proof already consumed" }, 401);
+        }
+      }
+
       // Payment verified — attach info to request context
-      const amountSats = await resolvePrice(c, opts, defaultSats);
       c.set("l402", {
         paid: true,
         paymentHash,
