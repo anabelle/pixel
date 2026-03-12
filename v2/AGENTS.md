@@ -189,6 +189,7 @@ Authorization config lives in `servers.json`:
 - **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
 - **Model objects constructed manually** — not in pi-ai registry. Uses `openai-completions` provider.
 - **Multi-level fallback:** GLM-5/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
+- **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` prefers `github-copilot/gpt-5.4` first for headless opencode sessions, then falls back to `zai-coding-plan/glm-5`, then the rest of the approved cascade.
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
 - **Zero Dockerfile patches.** If a dep needs patching, switch deps.

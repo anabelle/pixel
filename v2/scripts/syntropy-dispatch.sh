@@ -182,13 +182,13 @@ notify_owner_and_retry() {
 }
 
 select_model() {
-  # First choice: opencode/glm-5-free (promo, maximize free tokens)
-  if model_exists "opencode/glm-5-free"; then
-    echo "opencode/glm-5-free"
+  # First choice: GitHub Copilot GPT-5.4 for autonomous opencode sessions
+  if model_exists "github-copilot/gpt-5.4"; then
+    echo "github-copilot/gpt-5.4"
     return 0
   fi
 
-  # Fallback: Z.AI paid GLM-5
+  # Second choice: Z.AI GLM-5 on the coding plan
   if probe_zai; then
     echo "zai-coding-plan/glm-5"
     return 0
@@ -200,6 +200,11 @@ select_model() {
   fi
   if model_exists "github-copilot/claude-opus-4.6"; then
     echo "github-copilot/claude-opus-4.6"
+    return 0
+  fi
+
+  if model_exists "opencode/glm-5-free"; then
+    echo "opencode/glm-5-free"
     return 0
   fi
 
