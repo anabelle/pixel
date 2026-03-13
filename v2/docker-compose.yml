@@ -30,6 +30,7 @@ services:
       - "dev.tallerubens.com:68.66.224.4"
       - "ambienteniwa.com:68.66.224.4"
     volumes:
+      - ./.pi:/app/.pi
       - ./conversations:/app/conversations
       - ./skills:/app/skills
       - ./tools:/app/tools

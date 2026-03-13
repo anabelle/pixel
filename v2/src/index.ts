@@ -21,7 +21,7 @@ import { serve } from "bun";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, desc, eq } from "drizzle-orm";
 import postgres from "postgres";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { promptWithHistory, extractText, backgroundLlmCall } from "./agent.js";
 import { generateImage } from "./services/image-gen.js";
@@ -53,6 +53,7 @@ import { initLogging } from "./services/logging.js";
 import { startCanvasListener, getCanvasListenerStatus, stopCanvasListener } from "./services/canvas-listener.js";
 import { pixelTools } from "./services/tools.js";
 import { isElevatedUser } from "./services/server-registry.js";
+import { ensureSelfLearningInstalled, getSelfLearningConfig, getSelfLearningRoot } from "./services/self-learning.js";
 
 // ============================================================
 // Configuration
@@ -65,6 +66,41 @@ const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://postgres:postgres
 const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const SKILLS_DIR = process.env.SKILLS_DIR ?? "./skills";
 const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
+
+function ensurePiSelfLearningSetup() {
+  const piDir = join(process.cwd(), ".pi");
+  mkdirSync(piDir, { recursive: true });
+
+  const settingsFile = join(piDir, "settings.json");
+  const settings = (() => {
+    if (!existsSync(settingsFile)) return {} as Record<string, any>;
+    try {
+      return JSON.parse(readFileSync(settingsFile, "utf-8")) as Record<string, any>;
+    } catch {
+      return {} as Record<string, any>;
+    }
+  })();
+
+  const packages = Array.isArray(settings.packages) ? settings.packages.filter((value) => typeof value === "string") : [];
+  if (!packages.includes("npm:pi-self-learning")) {
+    packages.push("npm:pi-self-learning");
+  }
+
+  const config = getSelfLearningConfig();
+  const merged = {
+    ...settings,
+    packages,
+    selfLearning: {
+      ...(settings.selfLearning && typeof settings.selfLearning === "object" ? settings.selfLearning : {}),
+      ...config,
+    },
+  };
+
+  writeFileSync(settingsFile, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
+  const { root } = ensureSelfLearningInstalled(getSelfLearningConfig());
+  mkdirSync("/app/external", { recursive: true });
+  return { settingsFile, root };
+}
 
 // Dashboard privacy: public metrics by default, sensitive details behind NIP-07+NIP-98 owner auth
 const DASHBOARD_OWNER_NPUB =
@@ -1519,6 +1555,13 @@ async function boot() {
       console.error("[db] PostgreSQL connection stack:", err.stack);
     }
     console.error("[db] Will continue without database — some features unavailable");
+  }
+
+  try {
+    const setup = ensurePiSelfLearningSetup();
+    console.log(`[boot] Self-learning ready — settings at ${setup.settingsFile}, memory at ${setup.root}`);
+  } catch (err: any) {
+    console.error("[boot] Self-learning setup failed:", err.message);
   }
 
   // Start HTTP server

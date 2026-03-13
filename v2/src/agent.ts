@@ -23,6 +23,7 @@ import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
 import { getSkillGraph, discoverRelevantSkills, formatSkillsForInjection, getSkillGraphStats } from "./services/skill-graph.js";
 import { scanMessage } from "./services/security-scanner.js";
+import { buildSelfLearningReflectionPrompt, getSelfLearningConfig, getSelfLearningPromptContext, parseSelfLearningReflection, recordSelfLearningReflection } from "./services/self-learning.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 
@@ -108,6 +109,11 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
   if (userMemory) {
     prompt += `\n\n## Memory about this user (from conversations)\n${userMemory}`;
+  }
+
+  const selfLearningContext = getSelfLearningPromptContext();
+  if (selfLearningContext) {
+    prompt += `\n\n${selfLearningContext}`;
   }
 
   if (platform === "telegram" && userId.startsWith("tg-group-")) {
@@ -772,6 +778,9 @@ export async function promptWithHistory(
     captureObservation(agent.state.messages as any[], userId, platform).catch((err) => {
       console.error(`[agent] Observation capture failed for ${userId}:`, err.message);
     });
+    captureSelfLearning(agent.state.messages as any[], userId, platform).catch((err) => {
+      console.error(`[agent] Self-learning capture failed for ${userId}:`, err.message);
+    });
   }
 
   return responseText || "";
@@ -1049,6 +1058,58 @@ ${observation.trim()}
   } catch (err: any) {
     console.error("[agent] Observation capture failed:", err.message);
   }
+}
+
+async function captureSelfLearning(messages: any[], userId: string, platform: string): Promise<void> {
+  const config = getSelfLearningConfig();
+  if (!config.enabled || !config.autoAfterTask) return;
+  if (!messages || messages.length < 2) return;
+
+  const recentMessages = messages.slice(-Math.max(2, config.maxMessagesForReflection));
+  const conversationText = recentMessages
+    .map((msg: any) => {
+      const role = msg.role === "user" ? "User" : msg.role === "toolResult" ? "Tool" : "Pixel";
+      const text = extractText(msg).trim();
+      if (!text) return "";
+      return `${role}: ${text}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  if (!conversationText.trim()) return;
+
+  const reflectionRaw = await backgroundLlmCall({
+    systemPrompt: "You extract self-learning notes for future turns.",
+    userPrompt: buildSelfLearningReflectionPrompt(conversationText.slice(0, 12000), config),
+    label: "self_learning",
+    timeoutMs: 45_000,
+  });
+
+  if (!reflectionRaw || !reflectionRaw.trim()) return;
+  const reflection = parseSelfLearningReflection(reflectionRaw, config.maxLearnings);
+  if (!reflection) {
+    console.warn(`[agent] Self-learning parse failed for ${userId}`);
+    return;
+  }
+  if (reflection.mistakes.length === 0 && reflection.fixes.length === 0) return;
+
+  const result = recordSelfLearningReflection(
+    reflection,
+    {
+      userId,
+      platform,
+      source: "conversation",
+    },
+    config,
+  );
+
+  console.log(`[agent] Self-learning updated for ${userId} at ${result.dailyFile}`);
+  audit("self_learning", `Self-learning updated for ${userId}`, {
+    userId,
+    platform,
+    dailyFile: result.dailyFile,
+    coreFile: result.coreFile,
+  });
 }
 
 /** Create a raw Pixel agent instance (for advanced use cases) */

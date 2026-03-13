@@ -23,7 +23,8 @@ FROM oven/bun:1-alpine
 # bash for agent's bash tool, curl for healthcheck/web fetch, docker-cli for Clawstr tool, git for git tools, openssh-client for SSH
 # su-exec for entrypoint to drop privileges (alpine equivalent of gosu)
 # ffmpeg for audio format conversion (MP3→OGG/Opus for Telegram voice replies)
-RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg
+# nodejs/npm for pi-compatible extension tooling and self-learning setup
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm
 
 WORKDIR /app
 
@@ -34,8 +35,8 @@ COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/character.md* ./
 
-# Create data directories (including external for bind-mount fallback)
-RUN mkdir -p /app/conversations /app/skills /app/tools /app/data /app/external && \
+# Create data directories (including .pi/external for bind-mount fallback)
+RUN mkdir -p /app/conversations /app/skills /app/tools /app/data /app/external /app/.pi && \
     chown -R bun:bun /app
 
 # Copy server registry (multi-server SSH config)
