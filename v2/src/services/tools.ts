@@ -23,7 +23,7 @@ import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
 import { appendToLog } from "../conversations.js";
-import { parse as parseHTML } from "node-html-parser";
+import { parse } from "node-html-parser";
 import { generateImage } from "./image-gen.js";
 import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
@@ -424,7 +424,7 @@ export const readLogsTool: AgentTool<typeof logsSchema> = {
 // ─── HTML EXTRACTION HELPER ───────────────────────────────────
 
 function extractReadableText(html: string): { text: string; links: { href: string; text: string }[] } {
-  const root = parseHTML(html);
+  const root = parse(html);
   root.querySelectorAll("script, style, nav, noscript, iframe, svg, [role='navigation'], [role='banner']")
     .forEach(el => el.remove());
 
@@ -442,6 +442,132 @@ function extractReadableText(html: string): { text: string; links: { href: strin
     .filter(l => l.href && l.text && !l.href.startsWith("#") && !l.href.startsWith("javascript:"));
 
   return { text, links };
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x2F;/gi, "/");
+}
+
+function unwrapSearchResultUrl(rawUrl: string): string {
+  if (!rawUrl) return "";
+  const normalized = rawUrl.startsWith("//") ? `https:${rawUrl}` : rawUrl;
+
+  try {
+    const parsed = new URL(normalized);
+    const redirectTarget = parsed.searchParams.get("uddg");
+    return redirectTarget ? decodeURIComponent(redirectTarget) : normalized;
+  } catch {
+    return normalized;
+  }
+}
+
+function isAutomotiveLightningResult(query: string, title: string, url: string, snippet: string): boolean {
+  if (!/\blightning network\b/i.test(query)) return false;
+
+  const haystack = `${title} ${url} ${snippet}`.toLowerCase();
+  const automotiveMarkers = [
+    "lightningrodder",
+    "ford",
+    "f150",
+    "svt",
+    "harley davidson",
+    "pickup",
+    "truck",
+    "gen 1 lightning",
+    "gen 2 lightning",
+  ];
+
+  return automotiveMarkers.some((marker) => haystack.includes(marker));
+}
+
+function parseDuckDuckGoHtmlResults(html: string, query: string, limit: number): { title: string; url: string; snippet: string }[] {
+  const root = parse(html);
+  const candidates = root.querySelectorAll(".result");
+  const results: { title: string; url: string; snippet: string }[] = [];
+
+  for (const candidate of candidates) {
+    if (results.length >= limit) break;
+
+    const titleNode = candidate.querySelector("a.result__a") ?? candidate.querySelector("a.result-link");
+    const snippetNode = candidate.querySelector(".result__snippet") ?? candidate.querySelector(".result-snippet");
+
+    const title = decodeHtmlEntities(titleNode?.textContent.trim() ?? "");
+    const url = unwrapSearchResultUrl(titleNode?.getAttribute("href") ?? "");
+    const snippet = decodeHtmlEntities(snippetNode?.textContent.trim() ?? "");
+
+    if (!title || !url) continue;
+    if (isAutomotiveLightningResult(query, title, url, snippet)) continue;
+
+    results.push({ title, url, snippet });
+  }
+
+  return results;
+}
+
+function parseBingRssResults(rss: string, query: string, limit: number): { title: string; url: string; snippet: string }[] {
+  const results: { title: string; url: string; snippet: string }[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+
+  for (const match of rss.matchAll(itemRegex)) {
+    if (results.length >= limit) break;
+    const item = match[1];
+    const title = decodeHtmlEntities(item.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? "");
+    const url = decodeHtmlEntities(item.match(/<link>([\s\S]*?)<\/link>/)?.[1]?.trim() ?? "");
+    const snippet = decodeHtmlEntities(item.match(/<description>([\s\S]*?)<\/description>/)?.[1]?.trim() ?? "");
+
+    if (!title || !url) continue;
+    if (isAutomotiveLightningResult(query, title, url, snippet)) continue;
+
+    results.push({ title, url, snippet });
+  }
+
+  return results;
+}
+
+function parseGoogleNewsRssResults(rss: string, query: string, limit: number): { title: string; url: string; snippet: string }[] {
+  const results: { title: string; url: string; snippet: string }[] = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+
+  for (const match of rss.matchAll(itemRegex)) {
+    if (results.length >= limit) break;
+    const item = match[1];
+    const title = decodeHtmlEntities(item.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? "");
+    const url = decodeHtmlEntities(item.match(/<link>([\s\S]*?)<\/link>/)?.[1]?.trim() ?? "");
+    const snippet = decodeHtmlEntities(item.match(/<description>([\s\S]*?)<\/description>/)?.[1]?.trim() ?? "");
+
+    if (!title || !url) continue;
+    if (isAutomotiveLightningResult(query, title, url, snippet)) continue;
+
+    results.push({ title, url, snippet });
+  }
+
+  return results;
+}
+
+function rewriteSearchQuery(query: string, site?: string): string {
+  let fullQuery = site ? `site:${site} ${query}` : query;
+  const hasLightning = /\blightning\b/i.test(fullQuery);
+  const hasBitcoinContext = /\b(bitcoin|btc|ln|lightning network|crypto|cryptocurrency|sats?|satoshis?)\b/i.test(fullQuery);
+  const financeIntent = /\b(adoption|payment|payments|statistics|stats|capacity|channel|channels|node|nodes|wallet|wallets|invoice|invoices|merchant|merchants|volume|transaction|transactions|layer\s*2|l2|routing|liquidity|fees?)\b/i.test(fullQuery);
+  const weatherIntent = /\b(weather|storm|storms|thunder|thunderstorm|strike|strikes|cdc|fatalities|forecast)\b/i.test(fullQuery);
+  const automotiveIntent = /\b(ford|f-?150|truck|pickup|rodder|svt|harley)\b/i.test(fullQuery);
+
+  if (hasLightning && !hasBitcoinContext && financeIntent && !weatherIntent && !automotiveIntent) {
+    fullQuery = `${fullQuery} bitcoin`;
+  }
+
+  if (/\blightning network\b/i.test(fullQuery) && !/\bbitcoin\b|\bln\b/i.test(fullQuery)) {
+    fullQuery = `${fullQuery} bitcoin`;
+  }
+
+  return fullQuery;
 }
 
 // ─── WEB FETCH ────────────────────────────────────────────────
@@ -516,11 +642,11 @@ const SEARCH_MIN_INTERVAL_MS = 2500; // minimum 2.5s between searches
 export const webSearchTool: AgentTool<typeof webSearchSchema> = {
   name: "web_search",
   label: "Search the Web",
-  description: "Search the web using DuckDuckGo. Returns titles, URLs, and snippets. Use this to find information, discover URLs, and research topics. For site-specific search, use the 'site' parameter (e.g. site: 'unal.edu.co').",
+  description: "Search the web and return titles, URLs, and snippets. Uses DuckDuckGo HTML with fallback parsing. Use this to find information, discover URLs, and research topics. For site-specific search, use the 'site' parameter (e.g. site: 'unal.edu.co').",
   parameters: webSearchSchema,
   execute: async (_id, { query, max_results, time_range, site }) => {
     const limit = Math.min(max_results ?? 8, 20);
-    const fullQuery = site ? `site:${site} ${query}` : query;
+    const fullQuery = rewriteSearchQuery(query, site);
 
     // Rate-limit to prevent DDG from blocking rapid-fire searches
     const now = Date.now();
@@ -534,45 +660,41 @@ export const webSearchTool: AgentTool<typeof webSearchSchema> = {
     if (time_range) params.set("df", time_range);
 
     try {
-      // Use curl instead of fetch — Bun's TLS fingerprint gets blocked by DDG (returns 202 lite page)
-      const curlProc = Bun.spawn(["curl", "-s", "-X", "POST",
-        "-H", "Content-Type: application/x-www-form-urlencoded",
-        "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "-d", params.toString(),
-        "--max-time", "15",
-        "https://html.duckduckgo.com/html/",
-      ], { stdout: "pipe", stderr: "pipe" });
-      const html = await new Response(curlProc.stdout).text();
-      await curlProc.exited;
-      const root = parseHTML(html);
-      const resultNodes = root.querySelectorAll(".result.web-result");
+      const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+      let results: { title: string; url: string; snippet: string }[] = [];
 
-      const results: { title: string; url: string; snippet: string }[] = [];
-      for (const node of resultNodes) {
-        if (results.length >= limit) break;
+      const ddgRes = await fetch(`https://html.duckduckgo.com/html/?${params.toString()}`, {
+        headers: { "User-Agent": userAgent },
+        signal: AbortSignal.timeout(15_000),
+      });
+      const ddgHtml = await ddgRes.text();
+      results = parseDuckDuckGoHtmlResults(ddgHtml, fullQuery, limit);
 
-        const titleEl = node.querySelector("h2.result__title a.result__a");
-        const snippetEl = node.querySelector("a.result__snippet");
+      if (results.length === 0) {
+        const liteRes = await fetch(`https://lite.duckduckgo.com/lite/?${params.toString()}`, {
+          headers: { "User-Agent": userAgent },
+          signal: AbortSignal.timeout(15_000),
+        });
+        const liteHtml = await liteRes.text();
+        results = parseDuckDuckGoHtmlResults(liteHtml, fullQuery, limit);
+      }
 
-        if (!titleEl) continue;
+      if (results.length === 0) {
+        const googleNewsRes = await fetch(`https://news.google.com/rss/search?${params.toString()}`, {
+          headers: { "User-Agent": userAgent },
+          signal: AbortSignal.timeout(15_000),
+        });
+        const googleNewsRss = await googleNewsRes.text();
+        results = parseGoogleNewsRssResults(googleNewsRss, fullQuery, limit);
+      }
 
-        // Extract actual URL from DDG redirect wrapper
-        const rawHref = titleEl.getAttribute("href") ?? "";
-        let url = "";
-        try {
-          const uddgMatch = rawHref.match(/[?&]uddg=([^&]+)/);
-          url = uddgMatch ? decodeURIComponent(uddgMatch[1]) : rawHref;
-        } catch {
-          url = rawHref;
-        }
-        if (url.startsWith("//")) url = "https:" + url;
-
-        const title = titleEl.textContent.trim();
-        const snippet = snippetEl?.textContent.trim() ?? "";
-
-        if (title && url) {
-          results.push({ title, url, snippet });
-        }
+      if (results.length === 0) {
+        const rssRes = await fetch(`https://www.bing.com/search?format=rss&${params.toString()}`, {
+          headers: { "User-Agent": userAgent },
+          signal: AbortSignal.timeout(15_000),
+        });
+        const rss = await rssRes.text();
+        results = parseBingRssResults(rss, fullQuery, limit);
       }
 
       const formatted = results.length > 0
