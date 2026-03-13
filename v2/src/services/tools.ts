@@ -32,6 +32,94 @@ import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connect
 import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
+const OPENVIKING_ROOT = "/app/data/openviking";
+
+function normalizeVikingUri(uri: string): string {
+  const trimmed = uri.trim();
+  if (!trimmed) return "viking://";
+  if (trimmed === "viking://") return trimmed;
+  if (trimmed.startsWith("viking://")) return trimmed;
+  return `viking://${trimmed.replace(/^\/+/, "")}`;
+}
+
+function resolveVikingUri(uri: string): { uri: string; path: string } {
+  const normalized = normalizeVikingUri(uri);
+  const withoutScheme = normalized.replace(/^viking:\/\//, "");
+  const safe = withoutScheme
+    .split("/")
+    .filter(Boolean)
+    .filter((segment) => segment !== "." && segment !== "..")
+    .join("/");
+  return {
+    uri: normalized,
+    path: safe ? join(OPENVIKING_ROOT, safe) : OPENVIKING_ROOT,
+  };
+}
+
+function toVikingUriFromPath(path: string): string {
+  const suffix = path.startsWith(OPENVIKING_ROOT) ? path.slice(OPENVIKING_ROOT.length).replace(/^\/+/, "") : "";
+  return suffix ? `viking://${suffix.replace(/\\/g, "/")}` : "viking://";
+}
+
+function readVikingFileLevel(path: string, level: "abstract" | "overview" | "read" | "auto"): { effectivePath: string; content: string } {
+  const stat = statSync(path);
+  if (!stat.isDirectory()) {
+    return { effectivePath: path, content: readFileSync(path, "utf-8") };
+  }
+
+  const candidates = level === "abstract"
+    ? [join(path, ".abstract.md")]
+    : level === "overview"
+      ? [join(path, ".overview.md")]
+      : level === "read"
+        ? [join(path, ".overview.md"), join(path, ".abstract.md")]
+        : [join(path, ".overview.md"), join(path, ".abstract.md")];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return { effectivePath: candidate, content: readFileSync(candidate, "utf-8") };
+    }
+  }
+
+  const entries = readdirSync(path);
+  return {
+    effectivePath: path,
+    content: `Directory listing for ${toVikingUriFromPath(path)}\n${entries.join("\n")}`,
+  };
+}
+
+function renderVikingTree(path: string, depth = 0, maxDepth = 3): string[] {
+  const name = depth === 0 ? toVikingUriFromPath(path) : path.split("/").at(-1) || path;
+  const lines = [`${"  ".repeat(depth)}${name}`];
+  if (depth >= maxDepth) return lines;
+  if (!existsSync(path) || !statSync(path).isDirectory()) return lines;
+
+  const entries = readdirSync(path).sort((a, b) => a.localeCompare(b));
+  for (const entry of entries) {
+    lines.push(...renderVikingTree(join(path, entry), depth + 1, maxDepth));
+  }
+  return lines;
+}
+
+function collectVikingFiles(path: string, recursive: boolean): string[] {
+  if (!existsSync(path)) return [];
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return [path];
+
+  const results: string[] = [];
+  for (const entry of readdirSync(path)) {
+    const child = join(path, entry);
+    const childStat = statSync(child);
+    if (childStat.isDirectory()) {
+      if (recursive) results.push(...collectVikingFiles(child, true));
+      else results.push(child);
+    } else {
+      results.push(child);
+    }
+  }
+  return results;
+}
+
 // ─── READ FILE ────────────────────────────────────────────────
 
 const readSchema = Type.Object({
@@ -2689,6 +2777,116 @@ const memoryDeleteTool: AgentTool<typeof memoryDeleteSchema> = {
   },
 };
 
+// ─── OPENVIKING COMPATIBILITY TOOLS ───────────────────────────
+
+const vikingBrowseSchema = Type.Object({
+  uri: Type.Optional(Type.String({ description: "OpenViking-style URI to browse. Default: viking://agent/" })),
+  view: Type.Optional(Type.Union([
+    Type.Literal("list"),
+    Type.Literal("tree"),
+    Type.Literal("stat"),
+  ], { description: "Browse mode. Default: list" })),
+  recursive: Type.Optional(Type.Boolean({ description: "For list mode, recurse into subdirectories." })),
+});
+
+const vikingBrowseTool: AgentTool<typeof vikingBrowseSchema> = {
+  name: "viking_browse",
+  label: "Browse Viking Workspace",
+  description: "Browse Pixel's OpenViking-compatible filesystem workspace using viking:// URIs. Useful for exploring memories, skills, tasks, and instructions in compatibility mode.",
+  parameters: vikingBrowseSchema,
+  execute: async (_id, { uri, view, recursive }) => {
+    const target = resolveVikingUri(uri || "viking://agent/");
+    if (!existsSync(target.path)) {
+      throw new Error(`Viking URI not found: ${target.uri}`);
+    }
+
+    const mode = view || "list";
+    let text = "";
+    if (mode === "tree") {
+      text = renderVikingTree(target.path).join("\n");
+    } else if (mode === "stat") {
+      const stat = statSync(target.path);
+      text = [
+        `URI: ${target.uri}`,
+        `Path: ${target.path}`,
+        `Type: ${stat.isDirectory() ? "directory" : "file"}`,
+        `Size: ${stat.size}`,
+        `Modified: ${stat.mtime.toISOString()}`,
+      ].join("\n");
+    } else {
+      const entries = collectVikingFiles(target.path, !!recursive)
+        .map((entry) => toVikingUriFromPath(entry))
+        .sort();
+      text = entries.length > 0 ? entries.join("\n") : `${target.uri} is empty.`;
+    }
+
+    auditToolUse("viking_browse", { uri: target.uri, view: mode, recursive: !!recursive }, { path: target.path });
+    return { content: [{ type: "text" as const, text }], details: { uri: target.uri } };
+  },
+};
+
+const vikingReadSchema = Type.Object({
+  uri: Type.String({ description: "OpenViking-style URI to read" }),
+  level: Type.Optional(Type.Union([
+    Type.Literal("auto"),
+    Type.Literal("abstract"),
+    Type.Literal("overview"),
+    Type.Literal("read"),
+  ], { description: "Read level. Directories prefer .overview/.abstract. Default: auto" })),
+});
+
+const vikingReadTool: AgentTool<typeof vikingReadSchema> = {
+  name: "viking_read",
+  label: "Read Viking URI",
+  description: "Read content from Pixel's OpenViking-compatible workspace using viking:// URIs. Supports abstract, overview, and full read levels.",
+  parameters: vikingReadSchema,
+  execute: async (_id, { uri, level }) => {
+    const target = resolveVikingUri(uri);
+    if (!existsSync(target.path)) {
+      throw new Error(`Viking URI not found: ${target.uri}`);
+    }
+    const selected = readVikingFileLevel(target.path, level || "auto");
+    auditToolUse("viking_read", { uri: target.uri, level: level || "auto" }, { path: selected.effectivePath });
+    return { content: [{ type: "text" as const, text: selected.content }], details: { uri: target.uri, path: selected.effectivePath } };
+  },
+};
+
+const vikingSearchSchema = Type.Object({
+  query: Type.String({ description: "Text to search for inside the OpenViking-compatible workspace" }),
+  target_uri: Type.Optional(Type.String({ description: "Optional viking:// URI prefix to narrow the search" })),
+  limit: Type.Optional(Type.Number({ description: "Maximum matches to return (default 10, max 50)" })),
+});
+
+const vikingSearchTool: AgentTool<typeof vikingSearchSchema> = {
+  name: "viking_search",
+  label: "Search Viking Workspace",
+  description: "Search Pixel's OpenViking-compatible workspace by text. Useful for finding matching memories, skills, tasks, or instructions before reading specific URIs.",
+  parameters: vikingSearchSchema,
+  execute: async (_id, { query, target_uri, limit }) => {
+    const target = resolveVikingUri(target_uri || "viking://agent/");
+    if (!existsSync(target.path)) {
+      throw new Error(`Viking URI not found: ${target.uri}`);
+    }
+
+    const max = Math.min(Math.max(limit || 10, 1), 50);
+    const q = query.toLowerCase();
+    const matches: string[] = [];
+    for (const file of collectVikingFiles(target.path, true)) {
+      if (statSync(file).isDirectory()) continue;
+      try {
+        const content = readFileSync(file, "utf-8");
+        if (!content.toLowerCase().includes(q)) continue;
+        matches.push(`${toVikingUriFromPath(file)}\n${content.split("\n").find((line) => line.toLowerCase().includes(q)) || "(match found)"}`);
+        if (matches.length >= max) break;
+      } catch {}
+    }
+
+    const text = matches.length > 0 ? matches.join("\n\n") : `No matches for "${query}" under ${target.uri}`;
+    auditToolUse("viking_search", { query, target_uri: target.uri, limit: max }, { resultCount: matches.length });
+    return { content: [{ type: "text" as const, text }], details: { resultCount: matches.length } };
+  },
+};
+
 // ─── INTROSPECT ───────────────────────────────────────────────
 
 const introspectSchema = Type.Object({
@@ -2915,9 +3113,11 @@ const updateMissionsTool: AgentTool<typeof updateMissionsSchema> = {
   parameters: updateMissionsSchema,
   execute: async (_id, { content }) => {
     const path = "/app/data/active_missions.md";
+    const compatibilityPath = "/app/data/openviking/agent/tasks/active-missions.md";
     try {
       const { writeFileSync } = await import("fs");
       writeFileSync(path, content, "utf8");
+      writeFileSync(compatibilityPath, content, "utf8");
       return { content: [{ type: "text" as const, text: `Updated active missions (${content.length} chars)` }] };
     } catch (err: any) {
       return { content: [{ type: "text" as const, text: `Failed to update missions: ${err.message}` }] };
@@ -2936,9 +3136,11 @@ const updateMonologueTool: AgentTool<typeof updateMonologueSchema> = {
   parameters: updateMonologueSchema,
   execute: async (_id, { content }) => {
     const path = "/app/data/inner_monologue.md";
+    const compatibilityPath = "/app/data/openviking/agent/instructions/inner-monologue.md";
     try {
       const { writeFileSync } = await import("fs");
       writeFileSync(path, content, "utf8");
+      writeFileSync(compatibilityPath, content, "utf8");
       return { content: [{ type: "text" as const, text: `Updated inner monologue (${content.length} chars)` }] };
     } catch (err: any) {
       return { content: [{ type: "text" as const, text: `Failed to update monologue: ${err.message}` }] };
@@ -2985,6 +3187,7 @@ const completeMissionTool: AgentTool<typeof completeMissionSchema> = {
   parameters: completeMissionSchema,
   execute: async (_id, { mission_text, notes }) => {
     const path = "/app/data/active_missions.md";
+    const compatibilityPath = "/app/data/openviking/agent/tasks/active-missions.md";
     try {
       const { existsSync, readFileSync, writeFileSync } = await import("fs");
       if (!existsSync(path)) {
@@ -3018,6 +3221,7 @@ const completeMissionTool: AgentTool<typeof completeMissionSchema> = {
       lines.splice(completedIdx + 1, 0, completedMission);
       
       writeFileSync(path, lines.join("\n"), "utf8");
+      writeFileSync(compatibilityPath, lines.join("\n"), "utf8");
       auditToolUse("complete_mission", { mission_text, notes }, { success: true });
       return { content: [{ type: "text" as const, text: `Mission completed: ${missionLine}\n${notes ? `Notes: ${notes}` : ""}` }] };
     } catch (err: any) {
@@ -3182,6 +3386,9 @@ export const pixelTools = [
   memorySearchTool,
   memoryUpdateTool,
   memoryDeleteTool,
+  vikingBrowseTool,
+  vikingReadTool,
+  vikingSearchTool,
   scheduleAlarmTool,
   listAlarmsTool,
   listAllAlarmsTool,
@@ -3253,6 +3460,9 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   memory_search: memorySearchTool,
   memory_update: memoryUpdateTool,
   memory_delete: memoryDeleteTool,
+  viking_browse: vikingBrowseTool,
+  viking_read: vikingReadTool,
+  viking_search: vikingSearchTool,
   introspect: introspectTool,
   generate_image: generateImageTool,
   update_missions: updateMissionsTool,

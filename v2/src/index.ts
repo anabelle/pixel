@@ -87,17 +87,89 @@ function ensurePiSelfLearningSetup() {
   }
 
   const config = getSelfLearningConfig();
+  const openViking = {
+    enabled: true,
+    workspace: "/app/data/openviking",
+    agentSpace: "agent",
+    memoryBaseUri: "viking://agent/memories",
+    skillsUri: "viking://agent/skills/",
+    tasksUri: "viking://agent/tasks/",
+    mappings: {
+      fact: "viking://agent/memories/fact/",
+      episode: "viking://agent/memories/episode/",
+      identity: "viking://agent/memories/identity/",
+      procedural: "viking://agent/memories/procedural/",
+      selfLearning: "viking://agent/skills/self-learning-memory/",
+      missions: "viking://agent/tasks/active-missions.md",
+      monologue: "viking://agent/instructions/inner-monologue.md",
+    },
+    status: {
+      runtimeInstalled: false,
+      reason: "filesystem-compatibility-mode",
+      pythonRequired: true,
+    },
+  };
   const merged = {
     ...settings,
     packages,
     selfLearning: {
       ...(settings.selfLearning && typeof settings.selfLearning === "object" ? settings.selfLearning : {}),
       ...config,
+      storage: {
+        ...((settings.selfLearning && typeof settings.selfLearning === "object" && (settings.selfLearning as any).storage && typeof (settings.selfLearning as any).storage === "object") ? (settings.selfLearning as any).storage : {}),
+        ...config.storage,
+        projectPath: "data/openviking/agent/skills/self-learning-memory",
+      },
+    },
+    openViking: {
+      ...(settings.openViking && typeof settings.openViking === "object" ? settings.openViking : {}),
+      ...openViking,
     },
   };
 
   writeFileSync(settingsFile, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
   const { root } = ensureSelfLearningInstalled(getSelfLearningConfig());
+  const openVikingRoot = "/app/data/openviking";
+  const openVikingAgentRoot = join(openVikingRoot, "agent");
+  const ensureFile = (path: string, content: string) => {
+    if (existsSync(path)) return;
+    writeFileSync(path, content, "utf-8");
+  };
+
+  mkdirSync(join(openVikingAgentRoot, "memories", "fact"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "memories", "episode"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "memories", "identity"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "memories", "procedural"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "skills", "self-learning-memory"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "tasks"), { recursive: true });
+  mkdirSync(join(openVikingAgentRoot, "instructions"), { recursive: true });
+
+  ensureFile(join(openVikingRoot, ".overview.md"), "# OpenViking compatibility workspace\n\nPersistent filesystem-backed context workspace for Pixel. Stored under /app/data so it survives rebuilds and reboots.\n");
+  ensureFile(join(openVikingRoot, ".abstract.md"), "Persistent OpenViking-compatible workspace for Pixel context and memory.\n");
+  ensureFile(join(openVikingAgentRoot, ".overview.md"), "# Agent space\n\nThis mirrors Pixel agent memory, skills, tasks, and instructions using OpenViking-style paths.\n");
+  ensureFile(join(openVikingAgentRoot, ".abstract.md"), "Agent-level OpenViking-compatible memory, skills, tasks, and instructions for Pixel.\n");
+  ensureFile(join(openVikingAgentRoot, "memories", ".overview.md"), "# Agent memories\n\nType-partitioned memories mapped from the PostgreSQL memory system.\n");
+  ensureFile(join(openVikingAgentRoot, "memories", ".abstract.md"), "Typed agent memories mirrored from Pixel's persistent pgvector memory store.\n");
+  ensureFile(join(openVikingAgentRoot, "skills", ".overview.md"), "# Agent skills\n\nSkill materials and self-learning memory live here in compatibility mode.\n");
+  ensureFile(join(openVikingAgentRoot, "skills", ".abstract.md"), "Agent skills and self-learning artifacts stored in persistent compatibility mode.\n");
+  ensureFile(join(openVikingAgentRoot, "skills", "self-learning-memory", ".overview.md"), "# Self-learning memory\n\nPersistent self-learning store mirrored into the OpenViking-compatible workspace.\n");
+  ensureFile(join(openVikingAgentRoot, "skills", "self-learning-memory", ".abstract.md"), "Self-learning memory persisted under the OpenViking-compatible skills namespace.\n");
+  ensureFile(join(openVikingAgentRoot, "tasks", ".overview.md"), "# Agent tasks\n\nActive missions and other task artifacts live here.\n");
+  ensureFile(join(openVikingAgentRoot, "tasks", ".abstract.md"), "Active missions and task artifacts for Pixel.\n");
+  ensureFile(join(openVikingAgentRoot, "instructions", ".overview.md"), "# Agent instructions\n\nPersistent narrative and instruction files live here.\n");
+  ensureFile(join(openVikingAgentRoot, "instructions", ".abstract.md"), "Persistent instruction and monologue files for Pixel.\n");
+
+  const activeMissionsPath = "/app/data/active_missions.md";
+  if (!existsSync(activeMissionsPath)) {
+    writeFileSync(activeMissionsPath, "# Active Missions\n\n", "utf-8");
+  }
+  const innerMonologuePath = "/app/data/inner_monologue.md";
+  if (!existsSync(innerMonologuePath)) {
+    writeFileSync(innerMonologuePath, "# Inner Monologue\n\n", "utf-8");
+  }
+
+  writeFileSync(join(openVikingAgentRoot, "tasks", "active-missions.md"), readFileSync(activeMissionsPath, "utf-8"), "utf-8");
+  writeFileSync(join(openVikingAgentRoot, "instructions", "inner-monologue.md"), readFileSync(innerMonologuePath, "utf-8"), "utf-8");
   mkdirSync("/app/external", { recursive: true });
   return { settingsFile, root };
 }

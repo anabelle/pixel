@@ -12,7 +12,7 @@
  */
 
 import { type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { memories } from "../db.js";
 import type * as schema from "../db.js";
@@ -57,11 +57,77 @@ const MAX_PROMPT_MEMORIES = 8;
 
 const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
+const OPENVIKING_ROOT = process.env.OPENVIKING_WORKSPACE ?? "/app/data/openviking";
 
 // ─── Late-bound DB reference ─────────────────────────────────
 
 let db: PostgresJsDatabase<typeof schema> | null = null;
 let rawSql: any | null = null;
+
+function slugifySegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "item";
+}
+
+function escapeMd(text: string): string {
+  return text.replace(/[<>]/g, (char) => (char === "<" ? "&lt;" : "&gt;"));
+}
+
+function getOpenVikingMemoryDir(type: string): string {
+  return join(OPENVIKING_ROOT, "agent", "memories", type);
+}
+
+function getOpenVikingMemoryUri(type: string, slug: string): string {
+  return `viking://agent/memories/${type}/${slug}.md`;
+}
+
+function ensureOpenVikingMemoryDir(type: string): string {
+  const dir = getOpenVikingMemoryDir(type);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function syncOpenVikingMemoryFile(record: Pick<MemoryRecord, "id" | "content" | "type" | "userId" | "platform" | "source" | "createdAt" | "updatedAt" | "validUntil">): void {
+  const type = record.type || "fact";
+  const slugBase = `${String(record.id).padStart(6, "0")}-${slugifySegment(record.content)}`;
+  const idPrefix = `${String(record.id).padStart(6, "0")}-`;
+  for (const memoryType of ["fact", "episode", "identity", "procedural"]) {
+    const typeDir = ensureOpenVikingMemoryDir(memoryType);
+    for (const entry of readdirSync(typeDir)) {
+      if (entry.startsWith(idPrefix) && !(memoryType === type && entry === `${slugBase}.md`)) {
+        rmSync(join(typeDir, entry), { force: true });
+      }
+    }
+  }
+  const dir = ensureOpenVikingMemoryDir(type);
+  const slug = slugBase;
+  const filePath = join(dir, `${slug}.md`);
+  const uri = getOpenVikingMemoryUri(type, slug);
+  const status = record.validUntil ? "expired" : "active";
+
+  const body = [
+    `# Memory ${record.id}`,
+    "",
+    `- URI: ${uri}`,
+    `- Type: ${type}`,
+    `- Status: ${status}`,
+    `- Source: ${record.source}`,
+    `- User: ${record.userId ?? "global"}`,
+    `- Platform: ${record.platform ?? "cross-platform"}`,
+    `- Created: ${record.createdAt.toISOString()}`,
+    `- Updated: ${record.updatedAt.toISOString()}`,
+    record.validUntil ? `- Valid Until: ${record.validUntil.toISOString()}` : "- Valid Until: never",
+    "",
+    "## Content",
+    escapeMd(record.content),
+    "",
+  ].join("\n");
+
+  writeFileSync(filePath, body, "utf-8");
+}
 
 /**
  * Initialize the memory system.
@@ -110,6 +176,16 @@ export async function initMemory(
     const [{ count }] = await rawSql`SELECT COUNT(*) as count FROM memories WHERE valid_until IS NULL`;
     console.log(`[memory] Memory system initialized (${count} active memories)`);
     audit("memory", `Memory system initialized (${count} active memories)`);
+
+    // Mirror active memories into the OpenViking-compatible persistent workspace
+    try {
+      const existing = await listMemories({ limit: 200, includeExpired: true });
+      for (const memory of existing) {
+        syncOpenVikingMemoryFile(memory);
+      }
+    } catch (syncErr: any) {
+      console.warn("[memory] OpenViking compatibility sync failed:", syncErr.message);
+    }
 
     // One-time legacy migration (from markdown files)
     await migrateLegacyMemory();
@@ -319,7 +395,9 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
 
     audit("memory", `UPDATED memory ${closestMatch.id}: merged new fact`);
     const [updated] = await rawSql`SELECT * FROM memories WHERE id = ${closestMatch.id}`;
-    return rowToRecord(updated);
+    const updatedRecord = rowToRecord(updated);
+    syncOpenVikingMemoryFile(updatedRecord);
+    return updatedRecord;
   }
 
   // ADD: insert new memory
@@ -339,7 +417,9 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
   `;
 
   audit("memory", `ADDED memory ${created.id}: "${content.slice(0, 80)}..." (type=${type}, user=${userId ?? "global"})`);
-  return rowToRecord(created);
+  const createdRecord = rowToRecord(created);
+  syncOpenVikingMemoryFile(createdRecord);
+  return createdRecord;
 }
 
 /**
@@ -455,7 +535,9 @@ export async function memoryUpdate(
 
   audit("memory", `Updated memory ${id}: "${newContent.slice(0, 80)}..."`);
   const [updated] = await rawSql`SELECT * FROM memories WHERE id = ${id}`;
-  return rowToRecord(updated);
+  const updatedRecord = rowToRecord(updated);
+  syncOpenVikingMemoryFile(updatedRecord);
+  return updatedRecord;
 }
 
 /**
@@ -473,6 +555,10 @@ export async function memoryDelete(id: number): Promise<boolean> {
   `;
 
   audit("memory", `Soft-deleted memory ${id}: "${existing.content?.slice(0, 60)}..."`);
+  const [updated] = await rawSql`SELECT * FROM memories WHERE id = ${id}`;
+  if (updated) {
+    syncOpenVikingMemoryFile(rowToRecord(updated));
+  }
   return true;
 }
 

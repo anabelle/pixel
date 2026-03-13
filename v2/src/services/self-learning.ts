@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { join, relative } from "path";
 
@@ -62,7 +62,7 @@ const DEFAULT_CONFIG: SelfLearningConfig = {
   maxCoreItems: 20,
   storage: {
     mode: "project",
-    projectPath: ".pi/self-learning-memory",
+    projectPath: "data/openviking/agent/skills/self-learning-memory",
     globalPath: "~/.pi/agent/self-learning-memory",
   },
   git: {
@@ -171,6 +171,38 @@ function coreIndexFile(root: string): string {
 
 function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true });
+}
+
+function isDirectoryEmpty(dir: string): boolean {
+  if (!existsSync(dir)) return true;
+  try {
+    return readdirSync(dir).length === 0;
+  } catch {
+    return true;
+  }
+}
+
+function copyRecursive(src: string, dest: string): void {
+  const srcStat = statSync(src);
+  if (srcStat.isDirectory()) {
+    ensureDir(dest);
+    for (const entry of readdirSync(src)) {
+      copyRecursive(join(src, entry), join(dest, entry));
+    }
+    return;
+  }
+
+  ensureDir(join(dest, ".."));
+  copyFileSync(src, dest);
+}
+
+function migrateLegacyProjectSelfLearningRoot(root: string): void {
+  const legacyRoot = join(projectRoot(), ".pi", "self-learning-memory");
+  if (root === legacyRoot) return;
+  if (!existsSync(legacyRoot)) return;
+  if (!isDirectoryEmpty(root)) return;
+
+  copyRecursive(legacyRoot, root);
 }
 
 function ensureMemoryFiles(root: string): void {
@@ -477,6 +509,7 @@ function commitMemoryFiles(root: string, files: string[], config: SelfLearningCo
 
 export function ensureSelfLearningInstalled(config = getSelfLearningConfig()): { root: string } {
   const root = getSelfLearningRoot(config);
+  migrateLegacyProjectSelfLearningRoot(root);
   ensureMemoryFiles(root);
   if (config.git.enabled && !existsSync(join(root, ".git"))) {
     runGit(root, ["init"]);
