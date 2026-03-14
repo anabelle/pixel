@@ -33,6 +33,7 @@ import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendW
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
 import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
+import { getSkillGraph, resolveWikiLink } from "./skill-graph.js";
 
 const OPENVIKING_ROOT = "/app/data/openviking";
 const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
@@ -70,6 +71,160 @@ function resolveVikingUri(uri: string): { uri: string; path: string } {
 function toVikingUriFromPath(path: string): string {
   const suffix = path.startsWith(OPENVIKING_ROOT) ? path.slice(OPENVIKING_ROOT.length).replace(/^\/+/, "") : "";
   return suffix ? `viking://${suffix.replace(/\\/g, "/")}` : "viking://";
+}
+
+function getAgentSkillsRoots(): string[] {
+  return [
+    process.env.SKILLS_DIR || "/app/external/pixel/skills/arscontexta",
+    join(OPENVIKING_ROOT, "agent", "skills", "self-learning-memory"),
+  ];
+}
+
+function getAgentSkillsRelativePath(uri: string): string {
+  const normalized = normalizeVikingUri(uri);
+  if (!normalized.startsWith("viking://agent/skills/")) return "";
+  return normalized.replace(/^viking:\/\/agent\/skills\/?/, "").replace(/^\/+/, "");
+}
+
+function getAgentSkillsPath(uri: string): string | null {
+  const relativePath = getAgentSkillsRelativePath(uri);
+  if (!relativePath) {
+    return join(OPENVIKING_ROOT, "agent", "skills");
+  }
+  const candidates = getAgentSkillsRoots().map((root) => join(root, relativePath));
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function toAgentSkillsUri(path: string): string {
+  for (const root of getAgentSkillsRoots()) {
+    if (path === root) return root.endsWith("self-learning-memory")
+      ? "viking://agent/skills/self-learning-memory/"
+      : "viking://agent/skills/";
+    if (path.startsWith(`${root}/`)) {
+      const suffix = path.slice(root.length).replace(/^\/+/, "").replace(/\\/g, "/");
+      const prefix = root.endsWith("self-learning-memory") ? "viking://agent/skills/self-learning-memory/" : "viking://agent/skills/";
+      return `${prefix}${suffix}`;
+    }
+  }
+  return toVikingUriFromPath(path);
+}
+
+function renderAgentSkillsTree(path: string, depth = 0, maxDepth = 4): string[] {
+  const name = depth === 0 ? toAgentSkillsUri(path) : path.split("/").at(-1) || path;
+  const lines = [`${"  ".repeat(depth)}${name}`];
+  if (depth >= maxDepth) return lines;
+  if (!existsSync(path) || !statSync(path).isDirectory()) return lines;
+
+  const entries = readdirSync(path).sort((a, b) => a.localeCompare(b));
+  for (const entry of entries) {
+    lines.push(...renderAgentSkillsTree(join(path, entry), depth + 1, maxDepth));
+  }
+  return lines;
+}
+
+function collectAgentSkillFiles(path: string, recursive: boolean): string[] {
+  if (!existsSync(path)) return [];
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return [path];
+
+  const results: string[] = [];
+  for (const entry of readdirSync(path)) {
+    const child = join(path, entry);
+    const childStat = statSync(child);
+    if (childStat.isDirectory()) {
+      if (recursive) results.push(...collectAgentSkillFiles(child, true));
+      else results.push(child);
+    } else {
+      results.push(child);
+    }
+  }
+  return results;
+}
+
+async function readAgentSkillUri(uri: string, level: "abstract" | "overview" | "read" | "auto"): Promise<{ effectivePath: string; content: string }> {
+  const targetPath = getAgentSkillsPath(uri);
+  if (!targetPath) {
+    throw new Error(`Viking URI not found: ${uri}`);
+  }
+
+  const selected = readVikingFileLevel(targetPath, level);
+  if (statSync(selected.effectivePath).isDirectory()) {
+    return selected;
+  }
+
+  if (!selected.effectivePath.endsWith(".md")) {
+    return selected;
+  }
+
+  const graph = await getSkillGraph();
+  const relativeUriPath = getAgentSkillsRelativePath(uri);
+  const targetTitle = selected.effectivePath.split("/").at(-1)?.replace(/\.md$/, "") || "";
+  const resolvedPath = resolveWikiLink(relativeUriPath, graph) || resolveWikiLink(targetTitle, graph, relativeUriPath);
+  if (!resolvedPath) {
+    return selected;
+  }
+
+  const node = graph.nodes.get(resolvedPath);
+  if (!node) return selected;
+
+  const related = node.links
+    .map((link) => {
+      const linkedPath = resolveWikiLink(link, graph, node.path);
+      return linkedPath ? `- [[${link}]] -> viking://agent/skills/${linkedPath}` : `- [[${link}]]`;
+    })
+    .slice(0, 20);
+
+  if (related.length === 0) return selected;
+
+  return {
+    effectivePath: selected.effectivePath,
+    content: `${selected.content.trimEnd()}\n\n## Resolved Links\n${related.join("\n")}\n`,
+  };
+}
+
+async function searchAgentSkills(query: string, targetUri: string, limit: number): Promise<{ text: string; resultCount: number }> {
+  const graph = await getSkillGraph();
+  const targetRelative = getAgentSkillsRelativePath(targetUri);
+  const targetPrefix = targetRelative ? `${targetRelative.replace(/\/+$/, "")}/` : "";
+  const q = query.toLowerCase();
+  const scored = Array.from(graph.nodes.values())
+    .filter((node) => {
+      if (!targetRelative) return true;
+      if (targetRelative === "self-learning-memory") return false;
+      return node.path === targetRelative || node.path.startsWith(targetPrefix);
+    })
+    .map((node) => {
+      let score = 0;
+      const haystacks = [node.title, node.description, node.content, ...(node.topics || []), ...(node.links || [])]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      for (const haystack of haystacks) {
+        if (haystack.includes(q)) score += 3;
+      }
+      for (const word of q.split(/\s+/).filter((word) => word.length > 2)) {
+        for (const haystack of haystacks) {
+          if (haystack.includes(word)) score += 1;
+        }
+      }
+      return { node, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.node.path.localeCompare(b.node.path))
+    .slice(0, limit);
+
+  if (scored.length === 0) {
+    return { text: `No matches for "${query}" under ${targetUri}`, resultCount: 0 };
+  }
+
+  const text = scored.map(({ node, score }) => {
+    const preview = node.description || node.content.split("\n").find((line) => line.trim()) || "(match found)";
+    return [`viking://agent/skills/${node.path}`, `score=${score}`, preview].join("\n");
+  }).join("\n\n");
+
+  return { text, resultCount: scored.length };
 }
 
 function readVikingFileLevel(path: string, level: "abstract" | "overview" | "read" | "auto"): { effectivePath: string; content: string } {
@@ -3220,6 +3375,36 @@ const vikingBrowseTool: AgentTool<typeof vikingBrowseSchema> = {
       return { content: [{ type: "text" as const, text }], details: { uri: requestedUri, runtime: true } };
     }
 
+    if (requestedUri.startsWith("viking://agent/skills/")) {
+      const targetPath = getAgentSkillsPath(requestedUri);
+      if (!targetPath) {
+        throw new Error(`Viking URI not found: ${requestedUri}`);
+      }
+
+      const mode = view || "list";
+      let text = "";
+      if (mode === "tree") {
+        text = renderAgentSkillsTree(targetPath).join("\n");
+      } else if (mode === "stat") {
+        const stat = statSync(targetPath);
+        text = [
+          `URI: ${requestedUri}`,
+          `Path: ${targetPath}`,
+          `Type: ${stat.isDirectory() ? "directory" : "file"}`,
+          `Size: ${stat.size}`,
+          `Modified: ${stat.mtime.toISOString()}`,
+        ].join("\n");
+      } else {
+        const entries = collectAgentSkillFiles(targetPath, !!recursive)
+          .map((entry) => toAgentSkillsUri(entry))
+          .sort();
+        text = entries.length > 0 ? entries.join("\n") : `${requestedUri} is empty.`;
+      }
+
+      auditToolUse("viking_browse", { uri: requestedUri, view: mode, recursive: !!recursive }, { path: targetPath, namespace: "agent-skills" });
+      return { content: [{ type: "text" as const, text }], details: { uri: requestedUri, path: targetPath } };
+    }
+
     const target = resolveVikingUri(uri || "viking://agent/");
     if (!existsSync(target.path)) {
       throw new Error(`Viking URI not found: ${target.uri}`);
@@ -3274,6 +3459,13 @@ const vikingReadTool: AgentTool<typeof vikingReadSchema> = {
       return { content: [{ type: "text" as const, text }], details: { uri: requestedUri, runtime: true } };
     }
 
+    if (requestedUri.startsWith("viking://agent/skills/")) {
+      const selectedLevel = level || "auto";
+      const selected = await readAgentSkillUri(requestedUri, selectedLevel);
+      auditToolUse("viking_read", { uri: requestedUri, level: selectedLevel }, { path: selected.effectivePath, namespace: "agent-skills" });
+      return { content: [{ type: "text" as const, text: selected.content }], details: { uri: requestedUri, path: selected.effectivePath } };
+    }
+
     const target = resolveVikingUri(uri);
     if (!existsSync(target.path)) {
       throw new Error(`Viking URI not found: ${target.uri}`);
@@ -3302,6 +3494,12 @@ const vikingSearchTool: AgentTool<typeof vikingSearchSchema> = {
       const result = await runtimeVikingSearch(query, requestedUri, max);
       auditToolUse("viking_search", { query, target_uri: requestedUri, limit: max, runtime: true }, { resultCount: result.resultCount, namespace: "user-runtime" });
       return { content: [{ type: "text" as const, text: result.text }], details: { resultCount: result.resultCount, runtime: true } };
+    }
+
+    if (requestedUri.startsWith("viking://agent/skills/")) {
+      const result = await searchAgentSkills(query, requestedUri, max);
+      auditToolUse("viking_search", { query, target_uri: requestedUri, limit: max }, { resultCount: result.resultCount, namespace: "agent-skills" });
+      return { content: [{ type: "text" as const, text: result.text }], details: { resultCount: result.resultCount } };
     }
 
     const target = resolveVikingUri(target_uri || "viking://agent/");

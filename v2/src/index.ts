@@ -21,7 +21,7 @@ import { serve } from "bun";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, desc, eq } from "drizzle-orm";
 import postgres from "postgres";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { promptWithHistory, extractText, backgroundLlmCall } from "./agent.js";
 import { generateImage } from "./services/image-gen.js";
@@ -145,6 +145,15 @@ function ensurePiSelfLearningSetup() {
   mkdirSync(join(openVikingAgentRoot, "skills", "self-learning-memory"), { recursive: true });
   mkdirSync(join(openVikingAgentRoot, "tasks"), { recursive: true });
   mkdirSync(join(openVikingAgentRoot, "instructions"), { recursive: true });
+
+  const curatedSkillsRoot = process.env.SKILLS_DIR || "/app/external/pixel/skills/arscontexta";
+  if (existsSync(curatedSkillsRoot)) {
+    for (const entry of readdirSync(curatedSkillsRoot, { withFileTypes: true })) {
+      const linkPath = join(openVikingAgentRoot, "skills", entry.name);
+      if (existsSync(linkPath)) continue;
+      symlinkSync(join(curatedSkillsRoot, entry.name), linkPath, entry.isDirectory() ? "dir" : "file");
+    }
+  }
 
   ensureFile(join(openVikingRoot, ".overview.md"), "# OpenViking compatibility workspace\n\nPersistent filesystem-backed context workspace for Pixel. Stored under /app/data so it survives rebuilds and reboots.\n");
   ensureFile(join(openVikingRoot, ".abstract.md"), "Persistent OpenViking-compatible workspace for Pixel context and memory.\n");

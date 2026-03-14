@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, unlinkSync } from "fs";
-import { join, dirname, basename } from "path";
+import { join, dirname, basename, posix } from "path";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -455,20 +455,66 @@ export function discoverRelevantSkills(graph: SkillGraph, hint: string): SkillNo
 /**
  * Resolve a wiki link to a node path.
  */
-export function resolveWikiLink(link: string, graph: SkillGraph): string | null {
-  const linkLower = link.toLowerCase();
+function normalizeWikiValue(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\.md$/g, "")
+    .replace(/[^a-z0-9/]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
 
-  // Exact match
-  const exact = graph.index.get(linkLower);
-  if (exact && exact.size > 0) {
+function buildWikiPathCandidates(link: string, fromPath?: string): string[] {
+  const raw = link.trim();
+  const stripped = raw.replace(/\.md$/i, "").replace(/^\/+/, "");
+  const candidates = new Set<string>();
+
+  const addCandidate = (candidate: string) => {
+    const normalized = posix.normalize(candidate).replace(/^\/+/, "").replace(/\/+/g, "/");
+    if (!normalized || normalized === ".") return;
+    const base = normalized.replace(/\/$/, "");
+    candidates.add(base);
+    candidates.add(`${base}.md`);
+    candidates.add(`${base}/index.md`);
+  };
+
+  addCandidate(raw);
+  addCandidate(stripped);
+  if (fromPath) {
+    const fromDir = posix.dirname(fromPath);
+    addCandidate(posix.join(fromDir, raw));
+    addCandidate(posix.join(fromDir, stripped));
+  }
+
+  return Array.from(candidates);
+}
+
+export function resolveWikiLink(link: string, graph: SkillGraph, fromPath?: string): string | null {
+  for (const candidate of buildWikiPathCandidates(link, fromPath)) {
+    if (graph.nodes.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const normalizedLink = normalizeWikiValue(link);
+  if (!normalizedLink) return null;
+
+  const exact = graph.index.get(link.toLowerCase()) ?? graph.index.get(link.replace(/\.md$/i, "").toLowerCase());
+  if (exact && exact.size === 1) {
     return Array.from(exact)[0];
   }
 
-  // Fuzzy match (substring)
-  for (const [key, paths] of graph.index) {
-    if (key.includes(linkLower) || linkLower.includes(key)) {
-      if (paths.size > 0) return Array.from(paths)[0];
-    }
+  const matches = Array.from(graph.nodes.values()).filter((node) => {
+    const normalizedTitle = normalizeWikiValue(node.title);
+    const normalizedBase = normalizeWikiValue(basename(node.path, ".md"));
+    const normalizedPath = normalizeWikiValue(node.path);
+    return normalizedLink === normalizedTitle || normalizedLink === normalizedBase || normalizedLink === normalizedPath;
+  });
+
+  if (matches.length === 1) {
+    return matches[0].path;
   }
 
   return null;
@@ -483,7 +529,7 @@ export function traverseMOC(graph: SkillGraph, mocPath: string): SkillNode[] {
 
   const nodes: SkillNode[] = [];
   for (const link of moc.links) {
-    const resolvedPath = resolveWikiLink(link, graph);
+    const resolvedPath = resolveWikiLink(link, graph, moc.path);
     if (resolvedPath) {
       const node = graph.nodes.get(resolvedPath);
       if (node) nodes.push(node);
