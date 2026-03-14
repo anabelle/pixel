@@ -33,6 +33,7 @@ import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 
 const OPENVIKING_ROOT = "/app/data/openviking";
+const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
 
 function normalizeVikingUri(uri: string): string {
   const trimmed = uri.trim();
@@ -118,6 +119,58 @@ function collectVikingFiles(path: string, recursive: boolean): string[] {
     }
   }
   return results;
+}
+
+async function fetchOpenViking<T = any>(endpoint: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${OPENVIKING_ENDPOINT}${endpoint}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenViking HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function getOpenVikingIdentity() {
+  const ctx = getToolContext();
+  const rawUserId = ctx.userId || "unknown";
+  const safeUserId = rawUserId.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return {
+    sessionId: `pixel-${safeUserId}`,
+    account: "pixel",
+    user: safeUserId,
+    agent: "pixel",
+  };
+}
+
+async function ensureOpenVikingSession(sessionId: string) {
+  const identity = getOpenVikingIdentity();
+  await fetchOpenViking(`/api/v1/sessions`, {
+    method: "POST",
+    headers: {
+      "X-OpenViking-Account": identity.account,
+      "X-OpenViking-User": identity.user,
+      "X-OpenViking-Agent": identity.agent,
+    },
+  });
+
+  if (sessionId !== identity.sessionId) {
+    await fetchOpenViking(`/api/v1/sessions`, {
+      method: "POST",
+      headers: {
+        "X-OpenViking-Account": identity.account,
+        "X-OpenViking-User": identity.user,
+        "X-OpenViking-Agent": identity.agent,
+      },
+    });
+  }
 }
 
 // ─── READ FILE ────────────────────────────────────────────────
@@ -2887,6 +2940,49 @@ const vikingSearchTool: AgentTool<typeof vikingSearchSchema> = {
   },
 };
 
+const memCommitSchema = Type.Object({
+  session_id: Type.Optional(Type.String({ description: "Optional explicit OpenViking session id" })),
+});
+
+const memCommitTool: AgentTool<typeof memCommitSchema> = {
+  name: "memcommit",
+  label: "Commit OpenViking Session",
+  description: "Commit the current OpenViking session and extract persistent memories using the real OpenViking HTTP runtime when available.",
+  parameters: memCommitSchema,
+  execute: async (_id, { session_id }) => {
+    try {
+      const identity = getOpenVikingIdentity();
+      const sid = session_id || identity.sessionId;
+      await ensureOpenVikingSession(sid);
+      await fetchOpenViking(`/api/v1/sessions/${encodeURIComponent(sid)}/messages`, {
+        method: "POST",
+        headers: {
+          "X-OpenViking-Account": identity.account,
+          "X-OpenViking-User": identity.user,
+          "X-OpenViking-Agent": identity.agent,
+        },
+        body: JSON.stringify({
+          role: "user",
+          content: `memcommit triggered by Pixel for ${identity.user} at ${new Date().toISOString()}`,
+        }),
+      });
+      const result = await fetchOpenViking(`/api/v1/sessions/${encodeURIComponent(sid)}/commit?wait=false`, {
+        method: "POST",
+        headers: {
+          "X-OpenViking-Account": identity.account,
+          "X-OpenViking-User": identity.user,
+          "X-OpenViking-Agent": identity.agent,
+        },
+      });
+      auditToolUse("memcommit", { session_id: sid }, { ok: true });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result };
+    } catch (err: any) {
+      auditToolUse("memcommit", { session_id }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `memcommit failed: ${err.message}` }], details: { error: err.message } };
+    }
+  },
+};
+
 // ─── INTROSPECT ───────────────────────────────────────────────
 
 const introspectSchema = Type.Object({
@@ -3389,6 +3485,7 @@ export const pixelTools = [
   vikingBrowseTool,
   vikingReadTool,
   vikingSearchTool,
+  memCommitTool,
   scheduleAlarmTool,
   listAlarmsTool,
   listAllAlarmsTool,
@@ -3463,6 +3560,7 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   viking_browse: vikingBrowseTool,
   viking_read: vikingReadTool,
   viking_search: vikingSearchTool,
+  memcommit: memCommitTool,
   introspect: introspectTool,
   generate_image: generateImageTool,
   update_missions: updateMissionsTool,

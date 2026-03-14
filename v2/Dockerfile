@@ -17,6 +17,19 @@ COPY character.md* ./
 # Type check (optional, non-blocking)
 # RUN bun run check || true
 
+# ---- OpenViking builder ----
+FROM oven/bun:1-alpine AS openviking-builder
+
+RUN apk add --no-cache curl python3 python3-dev py3-pip py3-virtualenv go make gcc g++ cmake musl-dev libffi-dev openssl-dev && \
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN python3 -m venv /opt/openviking-venv && \
+    . /opt/openviking-venv/bin/activate && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir openviking
+
 # ---- Runtime ----
 FROM oven/bun:1-alpine
 
@@ -24,12 +37,14 @@ FROM oven/bun:1-alpine
 # su-exec for entrypoint to drop privileges (alpine equivalent of gosu)
 # ffmpeg for audio format conversion (MP3→OGG/Opus for Telegram voice replies)
 # nodejs/npm for pi-compatible extension tooling and self-learning setup
-RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm
+# python3 + libstdc++ for OpenViking runtime server
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm python3 libstdc++
 
 WORKDIR /app
 
 # Copy installed deps and source
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=openviking-builder /opt/openviking-venv /opt/openviking-venv
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/src ./src

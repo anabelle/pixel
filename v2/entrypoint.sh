@@ -7,10 +7,75 @@ set -e
 
 # Fix ownership on all writable mount points
 # These are bind-mounted from the host and may be root-owned after rebuild
-chown -R bun:bun /app/conversations /app/skills /app/tools /app/external 2>/dev/null || true
+chown -R bun:bun /app/conversations /app/skills /app/tools /app/external /app/.pi 2>/dev/null || true
 
 # Chown /app/data (postgres now uses named volume, so no conflict)
 chown -R bun:bun /app/data 2>/dev/null || true
+
+# Ensure OpenViking runtime directories exist and are writable by bun
+mkdir -p /app/data/openviking /app/data/log 2>/dev/null || true
+chown -R bun:bun /app/data/openviking /app/data/log 2>/dev/null || true
+
+# Generate OpenViking runtime config at boot so provider keys do not persist to disk
+cat > /tmp/openviking-ov.conf <<EOF
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 1933,
+    "workers": 1,
+    "cors_origins": ["*"]
+  },
+  "storage": {
+    "workspace": "/app/data/openviking",
+    "agfs": {
+      "mode": "http-client",
+      "backend": "local",
+      "port": 1833,
+      "log_level": "warn",
+      "timeout": 10
+    },
+    "vectordb": {
+      "backend": "local"
+    }
+  },
+  "log": {
+    "level": "INFO",
+    "output": "stdout"
+  },
+  "embedding": {
+    "dense": {
+      "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key": "${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-}}",
+      "provider": "openai",
+      "dimension": 3072,
+      "model": "gemini-embedding-001"
+    },
+    "max_concurrent": 4
+  },
+  "vlm": {
+    "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "api_key": "${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-}}",
+    "provider": "openai",
+    "model": "gemini-2.5-flash",
+    "max_concurrent": 8
+  }
+}
+EOF
+
+chown bun:bun /tmp/openviking-ov.conf 2>/dev/null || true
+
+export OPENVIKING_CONFIG_FILE=/tmp/openviking-ov.conf
+
+# Start OpenViking server in background if runtime is available
+if [ -x /opt/openviking-venv/bin/openviking-server ]; then
+  su-exec bun sh -lc 'if [ -f "$OPENVIKING_CONFIG_FILE" ]; then nohup /opt/openviking-venv/bin/openviking-server --host 127.0.0.1 --port 1933 --config "$OPENVIKING_CONFIG_FILE" </dev/null > /app/data/log/openviking.log 2>&1 & fi' || true
+fi
+
+# Some pi docs and extensions expect /external to exist.
+# Keep it pointed at Pixel's canonical bind mount.
+if [ ! -e /external ]; then
+  ln -s /app/external /external 2>/dev/null || true
+fi
 
 # Add bun user to docker group (GID from group_add) so it can use docker.sock
 DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "")

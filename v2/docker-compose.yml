@@ -25,6 +25,8 @@ services:
       - AI_MODEL=glm-5
       - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
+      - OPENVIKING_WORKSPACE=/app/data/openviking
+      - OPENVIKING_ENDPOINT=http://127.0.0.1:1933
     extra_hosts:
       - "tallerubens.com:68.66.224.4"
       - "dev.tallerubens.com:68.66.224.4"

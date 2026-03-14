@@ -360,3 +360,38 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 **Verification:** external requests to `https://pixel.xx.kg/v2/api/whatsapp/status` and `/v2/api/audit` now return `401`; external `/v2/api/chat` with `userId:"syntropy-admin"` is rewritten to `http-syntropy-admin`; localhost admin access still works; `/api/chat` still responds normally after rebuild.
 
 **New risk discovered:** WhatsApp is currently hitting repeated Baileys `stream:error conflict type=replaced` disconnects after boot. The connector recovers, but this indicates another active WhatsApp Web session or session conflict that needs a focused follow-up.
+
+### Session 57: Real OpenViking Runtime Booted with Google Backend
+
+**Problem:** Pixel had a persistent OpenViking compatibility filesystem, but not the real OpenViking runtime. Initial runtime attempts on Alpine failed in two separate ways: (1) native AGFS binding mode segfaulted during startup, and (2) OpenViking was incorrectly configured with a Google API key against OpenAI endpoints, causing 401 failures for embeddings and memory extraction.
+
+**Solution:**
+1. **Installed real OpenViking in a dedicated builder stage** inside `v2/Dockerfile`, then copied the Python venv into the runtime image.
+2. **Boot-time config generation in `entrypoint.sh`**: `ov.conf` is now rendered to `/tmp/openviking-ov.conf` on every boot so provider keys are not persisted to bind-mounted disk.
+3. **Forced AGFS to HTTP mode** (`storage.agfs.mode = http-client`) with local backend on port `1833`, avoiding the crashing native binding path.
+4. **Switched embeddings to Google OpenAI-compatible endpoint**:
+   - `api_base = https://generativelanguage.googleapis.com/v1beta/openai/`
+   - model = `gemini-embedding-001`
+   - dimension = `3072`
+5. **Switched OpenViking VLM/memory extraction to Google too**:
+   - same Google OpenAI-compatible base URL
+   - model = `gemini-2.5-flash`
+6. **Added runtime-backed `memcommit` tool wiring** in `src/services/tools.ts`:
+   - creates/uses per-user session ids like `pixel-<userId>`
+   - appends a session message before commit
+   - commits against the live OpenViking HTTP runtime on `127.0.0.1:1933`
+
+**Verification:**
+- `http://127.0.0.1:1833/api/v1/health` returns `200` (AGFS healthy)
+- `http://127.0.0.1:1933/openapi.json` returns `200` (OpenViking healthy)
+- Direct Google embedding test via OpenAI-compatible endpoint returned a 3072-dim vector for `gemini-embedding-001`
+- Pixel chat test: `memcommit` returned success after the session fix
+- OpenViking logs confirmed successful extraction:
+  - session committed asynchronously
+  - `Extracted 1 candidate memories`
+  - created `viking://user/syntropy-admin/memories/events/...`
+  - semantic generation completed
+
+**Important architecture note:** current `viking_search` still searches the compatibility filesystem rooted at `viking://agent/...`, not the OpenViking runtime's `viking://user/...` namespace. So real runtime-extracted user memories do not appear in `viking_search` yet. A future improvement is either (a) extend `viking_search` to query both namespaces, or (b) add a dedicated runtime-backed query tool.
+
+**Lesson:** OpenViking can run fine on Alpine if you avoid the native AGFS binding path and treat Google's Gemini endpoints as OpenAI-compatible for both embeddings and chat. The runtime itself was not the blocker — the provider wiring and AGFS mode were.
