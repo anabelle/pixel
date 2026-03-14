@@ -15,7 +15,7 @@ Structured knowledge for autonomous operation. Navigate, don't memorize.
 
 ## Operations
 
-- `/app/data/observations/` — runtime friction capture (not curated skill graph content)
+- `ops/observations/` — captured frictions
 - `ops/tensions/` — detected contradictions
 - `ops/queue/` — pending tasks (mirrors active_missions.md)
 
