@@ -41,7 +41,7 @@ import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/he
 import { getSkillGraph, getSkillGraphStats } from "./services/skill-graph.js";
 import { l402 } from "./services/l402.js";
 import { x402 } from "./services/x402.js";
-import { getInnerLifeStatus } from "./services/inner-life.js";
+import { startInnerLife, stopInnerLife, getInnerLifeStatus, getProjectState, updateProjectState } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
 import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
@@ -851,6 +851,7 @@ app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
   const evolution = readTextFile(join(DATA_DIR, "evolution.md"));
   const ideaGarden = readTextFile(join(DATA_DIR, "idea-garden.md"));
   const projects = readTextFile(join(DATA_DIR, "projects.md"));
+  const structuredProjects = getProjectState();
 
   const activeMissions = readTextFile(join(DATA_DIR, "active_missions.md"));
   const innerMonologueFile = readTextFile(join(DATA_DIR, "inner_monologue.md"));
@@ -862,10 +863,35 @@ app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
     evolution,
     ideaGarden,
     projects,
+    structuredProjects,
     activeMissions,
     innerMonologueFile,
     status: getInnerLifeStatus(),
   });
+});
+
+app.get("/api/projects", requireOwnerNostrAuth, (c) => {
+  const projects = getProjectState();
+  return c.json({ projects, count: projects.length });
+});
+
+app.post("/api/projects/update", requireOwnerNostrAuth, async (c) => {
+  try {
+    const body = await c.req.json();
+    const project = updateProjectState({
+      projectId: body.projectId,
+      title: body.title,
+      status: body.status,
+      kind: body.kind,
+      why: body.why,
+      next: body.next,
+      outcome: body.outcome,
+    });
+    if (!project) return c.json({ error: "Project not found" }, 404);
+    return c.json({ ok: true, project });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400);
+  }
 });
 
 /** Heartbeat status + raw heartbeat state file */
@@ -1701,6 +1727,9 @@ async function boot() {
   // Start heartbeat AFTER Nostr (needs NDK instance)
   startHeartbeat();
 
+  // Start inner life independently of Nostr heartbeat
+  startInnerLife();
+
   // Start digest/notification service
   startDigest();
 
@@ -1781,6 +1810,7 @@ function gracefulShutdown(signal: string): void {
   // Stop accepting new work
   stopJobs();
   stopHeartbeat();
+  stopInnerLife();
   stopDigest();
   stopOutreach();
   stopTwitter();

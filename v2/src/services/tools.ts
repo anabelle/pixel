@@ -37,6 +37,14 @@ import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 const OPENVIKING_ROOT = "/app/data/openviking";
 const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
 
+async function getInnerLifeProjectApi() {
+  const mod = await import("./inner-life.js");
+  return {
+    getProjectState: mod.getProjectState,
+    updateProjectState: mod.updateProjectState,
+  };
+}
+
 function normalizeVikingUri(uri: string): string {
   const trimmed = uri.trim();
   if (!trimmed) return "viking://";
@@ -3706,6 +3714,120 @@ const completeMissionTool: AgentTool<typeof completeMissionSchema> = {
   },
 };
 
+const listProjectsSchema = Type.Object({
+  status: Type.Optional(Type.String({ description: "Optional status filter: planned|active|blocked|completed|abandoned" })),
+});
+
+const listProjectsTool: AgentTool<typeof listProjectsSchema> = {
+  name: "list_projects",
+  label: "List Projects",
+  description: "List Pixel's structured autonomous projects and their status. Admin-only.",
+  parameters: listProjectsSchema,
+  execute: async (_id, { status }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: list_projects is admin-only." }], details: undefined };
+      }
+      const { getProjectState } = await getInnerLifeProjectApi();
+      const projects = getProjectState();
+      const filtered = status ? projects.filter((project) => project.status === status) : projects;
+      if (filtered.length === 0) {
+        return { content: [{ type: "text" as const, text: "No matching projects found." }], details: { count: 0 } };
+      }
+      const lines = filtered.map((project, i) => `${i + 1}. ${project.id} | ${project.title} | ${project.kind} | ${project.status} | next: ${project.next || "(none)"}`);
+      auditToolUse("list_projects", { status }, { count: filtered.length });
+      return { content: [{ type: "text" as const, text: `Projects (${filtered.length}):\n${lines.join("\n")}` }], details: { projects: filtered } };
+    } catch (err: any) {
+      auditToolUse("list_projects", { status }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to list projects: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const updateProjectSchema = Type.Object({
+  project_id: Type.Optional(Type.String({ description: "Structured project id, e.g. project-vendor-voice-system" })),
+  title: Type.Optional(Type.String({ description: "Project title if project_id is not known" })),
+  status: Type.Optional(Type.String({ description: "New status: planned|active|blocked|completed|abandoned" })),
+  kind: Type.Optional(Type.String({ description: "New kind: implementation|research|general" })),
+  why: Type.Optional(Type.String({ description: "Updated why field" })),
+  next: Type.Optional(Type.String({ description: "Updated next step" })),
+  outcome: Type.Optional(Type.String({ description: "Outcome or notes for this transition" })),
+});
+
+const updateProjectTool: AgentTool<typeof updateProjectSchema> = {
+  name: "update_project",
+  label: "Update Project",
+  description: "Update a structured project's status, kind, next step, or outcome. Admin-only.",
+  parameters: updateProjectSchema,
+  execute: async (_id, { project_id, title, status, kind, why, next, outcome }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: update_project is admin-only." }], details: undefined };
+      }
+      if (!project_id && !title) {
+        return { content: [{ type: "text" as const, text: "project_id or title is required." }], details: undefined };
+      }
+      const { updateProjectState } = await getInnerLifeProjectApi();
+      const project = updateProjectState({
+        projectId: project_id,
+        title,
+        status: status as any,
+        kind: kind as any,
+        why,
+        next,
+        outcome,
+      });
+      if (!project) {
+        return { content: [{ type: "text" as const, text: "Project not found." }], details: undefined };
+      }
+      auditToolUse("update_project", { project_id, title, status, kind }, { projectId: project.id, updatedStatus: project.status });
+      return { content: [{ type: "text" as const, text: `Updated project ${project.title} (${project.id}) → ${project.status}` }], details: { project } };
+    } catch (err: any) {
+      auditToolUse("update_project", { project_id, title, status, kind }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to update project: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const completeProjectSchema = Type.Object({
+  project_id: Type.Optional(Type.String({ description: "Structured project id" })),
+  title: Type.Optional(Type.String({ description: "Project title if project_id is not known" })),
+  outcome: Type.Optional(Type.String({ description: "Completion summary" })),
+});
+
+const completeProjectTool: AgentTool<typeof completeProjectSchema> = {
+  name: "complete_project",
+  label: "Complete Project",
+  description: "Mark a structured project as completed and optionally attach outcome notes. Admin-only.",
+  parameters: completeProjectSchema,
+  execute: async (_id, { project_id, title, outcome }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: complete_project is admin-only." }], details: undefined };
+      }
+      const { updateProjectState } = await getInnerLifeProjectApi();
+      const project = updateProjectState({
+        projectId: project_id,
+        title,
+        status: "completed",
+        next: "retired",
+        outcome,
+      });
+      if (!project) {
+        return { content: [{ type: "text" as const, text: "Project not found." }], details: undefined };
+      }
+      auditToolUse("complete_project", { project_id, title }, { projectId: project.id, completed: true });
+      return { content: [{ type: "text" as const, text: `Completed project ${project.title} (${project.id})` }], details: { project } };
+    } catch (err: any) {
+      auditToolUse("complete_project", { project_id, title }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to complete project: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
 const generateImageTool: AgentTool<typeof generateImageSchema> = {
   name: "generate_image",
   label: "Generate Image",
@@ -3916,6 +4038,9 @@ export const pixelTools = [
   updateMonologueTool,
   listMissionsTool,
   completeMissionTool,
+  listProjectsTool,
+  updateProjectTool,
+  completeProjectTool,
   // Twitter/X tools
   postTweetTool,
   searchTweetsTool,
@@ -3952,6 +4077,9 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   update_monologue: updateMonologueTool,
   list_missions: listMissionsTool,
   complete_mission: completeMissionTool,
+  list_projects: listProjectsTool,
+  update_project: updateProjectTool,
+  complete_project: completeProjectTool,
   post_tweet: postTweetTool,
   search_tweets: searchTweetsTool,
   read_tweet: readTweetTool,
@@ -3963,9 +4091,9 @@ const toolImplementations: Record<string, AgentTool<any>> = {
 
 /**
  * Execute a tool by name with given arguments.
- * Used by reminder service to run tools before sending reminders.
- * 
- * Only exposes safe read-only tools: check_health, read_logs, web_fetch
+ * Internal utility for trusted runtime callers only.
+ * It executes directly against the full tool implementation map.
+ * Do NOT expose this helper to untrusted paths.
  */
 export async function executeTool(
   toolName: string,

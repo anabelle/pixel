@@ -43,13 +43,16 @@ const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
 const CONVERSATIONS_DIR = process.env.DATA_DIR ?? "./conversations";
 const SKILLS_DIR = process.env.SKILLS_DIR ?? "./external/pixel/skills/arscontexta";
 
-// Phase frequencies (run every N heartbeat cycles)
+// Phase frequencies (run every N inner-life cycles)
 const REFLECT_EVERY = 3;
 const LEARN_EVERY = 2;
 const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 const DERIVE_EVERY = 6;
 const OBSERVATION_KEEP_COUNT = 50;
+const INNER_LIFE_INTERVAL_MS = parseInt(process.env.INNER_LIFE_INTERVAL_MS ?? String(3 * 60 * 60 * 1000), 10);
+const INNER_LIFE_STARTUP_DELAY_MS = parseInt(process.env.INNER_LIFE_STARTUP_DELAY_MS ?? String(3 * 60 * 1000), 10);
+const INNER_LIFE_TIMEOUT_MS = parseInt(process.env.INNER_LIFE_TIMEOUT_MS ?? String(120_000), 10);
 
 // Maximum document sizes (in characters) to prevent bloat
 const MAX_REFLECTIONS_SIZE = 6000;
@@ -59,8 +62,12 @@ const MAX_EVOLUTION_SIZE = 3000;
 const MAX_PROJECTS_SIZE = 4000;
 const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IDEA_GARDEN_PATH = "idea-garden.md";
+const PROJECTS_PATH = "projects.md";
+const PROJECTS_STATE_PATH = "projects.json";
 const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 const SYNTROPY_DISPATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const SYNTROPY_RESULTS_PATH = "/app/data/syntropy-results.jsonl";
+const SYNTROPY_RESULTS_STATE_PATH = "syntropy-results-state.json";
 
 // Deduplication thresholds
 const INNER_SIMILARITY_THRESHOLD = 0.65;
@@ -71,6 +78,8 @@ const INNER_DEDUP_ENTRIES = 5;
 // ============================================================
 
 let cycleCount = 0;
+let innerLifeRunning = false;
+let innerLifeTimer: Timer | null = null;
 
 // ============================================================
 // File helpers
@@ -221,6 +230,45 @@ type Garden = {
   Compost: Seed[];
 };
 
+type ProjectStatus = "planned" | "active" | "blocked" | "completed" | "abandoned";
+type ProjectKind = "implementation" | "research" | "general";
+
+export type ProjectRecord = {
+  id: string;
+  title: string;
+  kind: ProjectKind;
+  status: ProjectStatus;
+  why: string;
+  next: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  dispatchedToSyntropy?: boolean;
+  lastDispatchedAt?: string;
+  outcome?: string;
+  completedAt?: string;
+};
+
+type ParsedProject = {
+  title: string;
+  kind: ProjectKind;
+  status: ProjectStatus;
+  explicitStatus: boolean;
+  why: string;
+  next: string;
+};
+
+type SyntropyResultEntry = {
+  timestamp?: string;
+  projectId?: string;
+  title?: string;
+  project?: string;
+  status?: string;
+  outcome?: string;
+  summary?: string;
+  message?: string;
+};
+
 function ensureIdeaGarden(): void {
   const existing = readLivingDoc(IDEA_GARDEN_PATH);
   if (existing && existing.includes("## Seeds")) return;
@@ -304,6 +352,353 @@ function renderGarden(garden: Garden): string {
   };
 
   return `# Idea Garden\n\n${renderSection("Seeds")}\n\n${renderSection("Sprouting")}\n\n${renderSection("Ready")}\n\n${renderSection("Compost")}\n`;
+}
+
+function slugifyProjectTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "project";
+}
+
+function normalizeProjectTitle(value: string): string {
+  return value.replace(/[*_`]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function projectIdFromTitle(title: string): string {
+  return `project-${slugifyProjectTitle(title)}`;
+}
+
+function loadProjectState(): ProjectRecord[] {
+  ensureDataDir();
+  return readJson<ProjectRecord[]>(join(DATA_DIR, PROJECTS_STATE_PATH), []);
+}
+
+function saveProjectState(projects: ProjectRecord[]): void {
+  ensureDataDir();
+  writeJson(join(DATA_DIR, PROJECTS_STATE_PATH), projects);
+}
+
+function parseProjectStatus(raw?: string): ProjectStatus | null {
+  if (!raw) return null;
+  const normalized = raw.trim().toLowerCase();
+  if (["planned", "plan", "todo", "queued"].includes(normalized)) return "planned";
+  if (["active", "in-progress", "in_progress", "open", "current"].includes(normalized)) return "active";
+  if (["blocked", "stalled", "waiting", "failed", "error"].includes(normalized)) return "blocked";
+  if (["completed", "complete", "done", "success", "fixed"].includes(normalized)) return "completed";
+  if (["abandoned", "cancelled", "canceled", "dropped"].includes(normalized)) return "abandoned";
+  return null;
+}
+
+function summarizeProjectState(projects: ProjectRecord[]): string {
+  if (projects.length === 0) return "(empty)";
+  return projects
+    .slice()
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map((project) => {
+      const flags = [project.kind];
+      if (project.dispatchedToSyntropy) flags.push("dispatched");
+      return `- [${project.status}] ${project.title} (${flags.join(", ")}) — why: ${project.why || "(none)"} — next: ${project.next || "(none)"}`;
+    })
+    .join("\n");
+}
+
+function inferProjectKind(title: string, why: string, next: string): ProjectKind {
+  const haystack = `${title} ${why} ${next}`.toLowerCase();
+  const researchSignals = ["research", "study", "investigate", "explore", "analyze", "survey", "wot", "adoption", "trend"];
+  const implementationSignals = ["build", "implement", "deploy", "fix", "api", "tool", "dashboard", "billing", "invoice", "payment", "filter", "infra", "system", "layer"];
+  if (researchSignals.some((signal) => haystack.includes(signal))) return "research";
+  if (implementationSignals.some((signal) => haystack.includes(signal))) return "implementation";
+  return "general";
+}
+
+function renderProjectsMarkdown(projects: ProjectRecord[]): string {
+  if (projects.length === 0) return "";
+  return projects
+    .map((project) => {
+      const kindTag = project.kind === "general" ? "" : `[${project.kind}]`;
+      const statusTag = `[${project.status}]`;
+      const summary = project.why || project.outcome || project.next || "project";
+      const lines = [
+        `* ${kindTag}${statusTag} **${project.title}**: ${summary}`,
+        `  - why: ${project.why || "(unspecified)"}`,
+        `  - next: ${project.next || "(unspecified)"}`,
+      ];
+      if (project.outcome && ["completed", "blocked", "abandoned"].includes(project.status)) {
+        lines.push(`  - outcome: ${project.outcome}`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n")
+    .trim() + "\n";
+}
+
+function persistProjects(projects: ProjectRecord[]): void {
+  saveProjectState(projects);
+  writeLivingDoc(PROJECTS_PATH, renderProjectsMarkdown(projects));
+}
+
+function parseProjectQueueMarkdown(markdown: string): ParsedProject[] {
+  if (!markdown.trim()) return [];
+  const lines = markdown.split("\n");
+  const projects: ParsedProject[] = [];
+  const projectLine = /^[*-]\s+((?:\[[^\]]+\]\s*)*)(?:\*\*([^*]+)\*\*|([^:]+?))(?::\s*(.+))?$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    const match = line.match(projectLine);
+    if (!match) continue;
+
+    const tagBlock = match[1] || "";
+    const tags = Array.from(tagBlock.matchAll(/\[([^\]]+)\]/g)).map((m) => m[1].trim().toLowerCase());
+    const title = (match[2] || match[3] || "").trim();
+    if (!title) continue;
+
+    const explicitStatus = tags.some((tag) => parseProjectStatus(tag) !== null);
+    let status: ProjectStatus = tags.map(parseProjectStatus).find(Boolean) ?? "active";
+    const kind: ProjectKind = tags.includes("implementation")
+      ? "implementation"
+      : tags.includes("research")
+        ? "research"
+        : "general";
+
+    let why = (match[4] || "").trim();
+    let next = "";
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const nextLine = lines[j];
+      if (/^[*-]\s+/.test(nextLine.trim())) break;
+      if (!nextLine.trim()) break;
+      const trimmed = nextLine.trim();
+      if (/^-\s*why\s*:/i.test(trimmed)) why = trimmed.replace(/^-\s*why\s*:/i, "").trim();
+      if (/^-\s*next\s*:/i.test(trimmed)) next = trimmed.replace(/^-\s*next\s*:/i, "").trim();
+      if (/^-\s*status\s*:/i.test(trimmed)) {
+        const parsedStatus = parseProjectStatus(trimmed.replace(/^-\s*status\s*:/i, "").trim());
+        if (parsedStatus) status = parsedStatus;
+      }
+    }
+
+    projects.push({ title, kind, status, explicitStatus, why, next });
+  }
+
+  return projects;
+}
+
+function syncProjectStateFromMarkdown(markdown: string): ProjectRecord[] {
+  const parsed = parseProjectQueueMarkdown(markdown);
+  const existing = loadProjectState();
+  const existingByTitle = new Map(existing.map((project) => [normalizeProjectTitle(project.title), project]));
+  const seen = new Set<string>();
+  const now = new Date().toISOString();
+  const nextProjects: ProjectRecord[] = [];
+
+  for (const project of parsed) {
+    const key = normalizeProjectTitle(project.title);
+    const existingProject = existingByTitle.get(key);
+    const inferredKind = project.kind === "general"
+      ? inferProjectKind(project.title, project.why, project.next)
+      : project.kind;
+    const status = project.explicitStatus
+      ? project.status
+      : existingProject && ["blocked", "completed", "abandoned"].includes(existingProject.status)
+        ? existingProject.status
+        : project.status;
+
+    nextProjects.push({
+      id: existingProject?.id ?? projectIdFromTitle(project.title),
+      title: project.title,
+      kind: existingProject?.kind && existingProject.kind !== "general" ? existingProject.kind : inferredKind,
+      status,
+      why: project.why || existingProject?.why || "",
+      next: project.next || existingProject?.next || "",
+      source: existingProject?.source ?? "queue",
+      createdAt: existingProject?.createdAt ?? now,
+      updatedAt: now,
+      dispatchedToSyntropy: existingProject?.dispatchedToSyntropy ?? false,
+      lastDispatchedAt: existingProject?.lastDispatchedAt,
+      outcome: existingProject?.outcome,
+      completedAt: existingProject?.completedAt,
+    });
+    seen.add(key);
+  }
+
+  for (const project of existing) {
+    const key = normalizeProjectTitle(project.title);
+    if (seen.has(key)) continue;
+    if (project.dispatchedToSyntropy || ["blocked", "completed", "abandoned"].includes(project.status)) {
+      nextProjects.push(project);
+    }
+  }
+
+  saveProjectState(nextProjects);
+  return nextProjects;
+}
+
+function ensureProjectMarkdownConsistency(): ProjectRecord[] {
+  const existing = readLivingDoc(PROJECTS_PATH);
+  const projects = syncProjectStateFromMarkdown(existing);
+  const normalized = renderProjectsMarkdown(projects);
+  if (normalized.trim() && normalized.trim() !== existing.trim()) {
+    writeLivingDoc(PROJECTS_PATH, normalized);
+  }
+  return projects;
+}
+
+function updateProjectRecord(projectId: string, updater: (project: ProjectRecord) => ProjectRecord): ProjectRecord | null {
+  const projects = loadProjectState();
+  const index = projects.findIndex((project) => project.id === projectId);
+  if (index < 0) return null;
+  projects[index] = updater(projects[index]);
+  persistProjects(projects);
+  return projects[index];
+}
+
+export function updateProjectState(input: ProjectUpdateInput): ProjectRecord | null {
+  const projects = ensureProjectMarkdownConsistency();
+  const key = input.projectId?.trim();
+  const titleKey = input.title ? normalizeProjectTitle(input.title) : null;
+  const index = projects.findIndex((project) =>
+    (key && project.id === key) || (titleKey && normalizeProjectTitle(project.title) === titleKey)
+  );
+  if (index < 0) return null;
+
+  const current = projects[index];
+  const updatedAt = new Date().toISOString();
+  const nextProject: ProjectRecord = {
+    ...current,
+    status: input.status ?? current.status,
+    kind: input.kind ?? current.kind,
+    why: input.why ?? current.why,
+    next: input.next ?? current.next,
+    outcome: input.outcome ?? current.outcome,
+    updatedAt,
+  };
+
+  if (nextProject.status === "completed" && !nextProject.completedAt) nextProject.completedAt = updatedAt;
+  if (nextProject.status !== "completed") delete nextProject.completedAt;
+  if (["completed", "blocked", "abandoned"].includes(nextProject.status)) nextProject.dispatchedToSyntropy = false;
+
+  projects[index] = nextProject;
+  persistProjects(projects);
+  return nextProject;
+}
+
+function readSyntropyResultsState(): { processedLines: number } {
+  return readJson<{ processedLines: number }>(join(DATA_DIR, SYNTROPY_RESULTS_STATE_PATH), { processedLines: 0 });
+}
+
+function writeSyntropyResultsState(state: { processedLines: number }): void {
+  writeJson(join(DATA_DIR, SYNTROPY_RESULTS_STATE_PATH), state);
+}
+
+async function recordSyntropyProjectResult(project: ProjectRecord, result: SyntropyResultEntry): Promise<void> {
+  const timestamp = result.timestamp || new Date().toISOString();
+  const status = parseProjectStatus(result.status || "") ?? (project.status === "completed" ? "completed" : "blocked");
+  const outcome = (result.outcome || result.summary || result.message || "No outcome provided.").trim();
+
+  const note = [
+    `## syntropy result — ${project.title} (${timestamp})`,
+    "",
+    `status: ${status}`,
+    "",
+    outcome,
+    "",
+    "---",
+    "",
+  ].join("\n");
+
+  const existingLearnings = readLivingDoc("learnings.md");
+  writeLivingDoc("learnings.md", note + existingLearnings);
+
+  try {
+    await memorySave({
+      content: `Project ${project.title} ${status}: ${outcome}`,
+      type: "procedural",
+      source: "syntropy_result",
+    });
+  } catch (err: any) {
+    console.warn(`[inner-life] Failed to persist Syntropy result to memory: ${err.message}`);
+    audit("inner_life_error", `Failed to persist Syntropy result memory: ${err.message}`, {
+      phase: "syntropy_results_memory",
+      projectId: project.id,
+      error: err.message,
+    });
+  }
+}
+
+async function checkSyntropyResults(): Promise<void> {
+  if (!existsSync(SYNTROPY_RESULTS_PATH)) return;
+  const raw = readFileSync(SYNTROPY_RESULTS_PATH, "utf-8");
+  const lines = raw.split("\n").filter(Boolean);
+  if (lines.length === 0) return;
+
+  const state = readSyntropyResultsState();
+  const start = Math.max(0, Math.min(state.processedLines, lines.length));
+  const newLines = lines.slice(start);
+  if (newLines.length === 0) return;
+
+  let projects = loadProjectState();
+  let changed = false;
+
+  for (const line of newLines) {
+    let entry: SyntropyResultEntry | null = null;
+    try {
+      entry = JSON.parse(line) as SyntropyResultEntry;
+    } catch {
+      continue;
+    }
+    if (!entry) continue;
+
+    const title = (entry.title || entry.project || "").trim();
+    const projectById = entry.projectId ? projects.find((project) => project.id === entry.projectId) : null;
+    const projectByTitle = title
+      ? projects.find((project) => normalizeProjectTitle(project.title) === normalizeProjectTitle(title))
+      : null;
+    let project = projectById || projectByTitle || null;
+
+    if (!project && title) {
+      const now = entry.timestamp || new Date().toISOString();
+      project = {
+        id: entry.projectId || projectIdFromTitle(title),
+        title,
+        kind: "implementation",
+        status: parseProjectStatus(entry.status || "") ?? "blocked",
+        why: "Created from Syntropy result",
+        next: "Review the result and decide follow-up",
+        source: "syntropy_result",
+        createdAt: now,
+        updatedAt: now,
+        dispatchedToSyntropy: false,
+      };
+      projects.push(project);
+      changed = true;
+    }
+
+    if (!project) continue;
+
+    const mappedStatus = parseProjectStatus(entry.status || "") ?? "blocked";
+    project.status = mappedStatus;
+    project.updatedAt = entry.timestamp || new Date().toISOString();
+    project.dispatchedToSyntropy = false;
+    project.outcome = (entry.outcome || entry.summary || entry.message || project.outcome || "").trim();
+    if (mappedStatus === "completed") {
+      project.completedAt = project.updatedAt;
+      project.next = "retired";
+    } else if (mappedStatus === "blocked") {
+      project.next = "review block and choose a new path";
+    }
+
+    await recordSyntropyProjectResult(project, entry);
+    audit("tool_use", `Processed Syntropy result for ${project.title}`, {
+      projectId: project.id,
+      status: mappedStatus,
+    });
+    changed = true;
+  }
+
+  if (changed) persistProjects(projects);
+  writeSyntropyResultsState({ processedLines: lines.length });
 }
 
 function findSimilarSeed(title: string, content: string, garden: Garden): Seed | null {
@@ -425,15 +820,25 @@ function autoHarvestProjects(garden: Garden): void {
   const titles = new Set(lines.map((l) => l.toLowerCase()));
 
   const additions: string[] = [];
+  const harvestedTitles = new Set<string>();
   for (const seed of garden.Ready.slice(0, 2)) {
     const titleLine = `- ${seed.title}`;
     if (titles.has(titleLine.toLowerCase())) continue;
     additions.push(`${titleLine}\n  - why: ${seed.origin}\n  - next: define a concrete first step`);
+    harvestedTitles.add(seed.title.toLowerCase());
   }
 
   if (additions.length === 0) return;
   const updated = `${existing.trim()}\n\n## Auto-harvested\n${additions.join("\n")}`.trim() + "\n";
   writeLivingDoc("projects.md", updated);
+
+  garden.Ready = garden.Ready.filter((seed) => {
+    if (!harvestedTitles.has(seed.title.toLowerCase())) return true;
+    seed.notes.push("auto-harvested to projects");
+    garden.Compost.push(seed);
+    return false;
+  });
+  writeLivingDoc(IDEA_GARDEN_PATH, renderGarden(garden));
 }
 
 /** Run a simple LLM prompt and return the response text (with 60s timeout, full fallback cascade) */
@@ -929,7 +1334,8 @@ Write in first person, lowercase, present tense.`
 // ============================================================
 
 async function updateProjectQueue(reflections: string, learnings: string, ideas: string): Promise<void> {
-  const existing = readLivingDoc("projects.md");
+  const existing = readLivingDoc(PROJECTS_PATH);
+  const existingState = syncProjectStateFromMarkdown(existing);
   const gardenSummary = summarizeIdeaGarden();
   const autoProjects = deriveProjectsFromGarden();
   const response = await llmCall(
@@ -941,15 +1347,26 @@ Keep 3-5 projects max. Each entry should include:
 - why it matters (1 sentence)
 - next step (1 sentence)
 
-IMPORTANT: For projects requiring code changes or infrastructure work, prefix with [implementation]:
-* [implementation] **Title**: description
+Use ONE status tag per project: [planned], [active], [blocked], [completed], or [abandoned].
+
+IMPORTANT: For projects requiring code changes or infrastructure work, prefix with [implementation] before the status tag:
+* [implementation][active] **Title**: description
+  - why: one sentence
+  - next: concrete action
+
+For non-code projects, use:
+* [active] **Title**: description
   - why: one sentence
   - next: concrete action
 
 Code/infra projects get dispatched to Syntropy (coding models). Research projects use Pixel's job queue.
+Do NOT include prose before or after the list.
 
 Current queue:
 ${existing || "(empty)"}
+
+Current structured state:
+${summarizeProjectState(existingState)}
 
 Idea garden (ready/sprouting):
 ${gardenSummary}
@@ -974,7 +1391,10 @@ ${ideas.slice(0, 800) || "(none)"}
     if (updated.length > MAX_PROJECTS_SIZE) {
       updated = updated.slice(0, MAX_PROJECTS_SIZE);
     }
-    writeLivingDoc("projects.md", updated);
+    writeLivingDoc(PROJECTS_PATH, updated);
+    ensureProjectMarkdownConsistency();
+  } else {
+    ensureProjectMarkdownConsistency();
   }
 }
 
@@ -1020,9 +1440,33 @@ ${ideas.slice(0, 800) || "(none)"}
   try {
     writeFileSync(path, response.trim(), "utf-8");
     writeJson(metaPath, { lastSkillAt: Date.now() });
+    await rebuildSkillGraph();
     console.log(`[inner-life] Skill created: ${filename}`);
   } catch (err: any) {
     console.error("[inner-life] Failed to write skill:", err.message);
+  }
+}
+
+function scheduleNextInnerLife(delayMs: number = INNER_LIFE_INTERVAL_MS): void {
+  if (!innerLifeRunning) return;
+  if (innerLifeTimer) clearTimeout(innerLifeTimer);
+  innerLifeTimer = setTimeout(() => {
+    void runInnerLifeTick();
+  }, Math.max(1_000, delayMs));
+}
+
+async function runInnerLifeTick(): Promise<void> {
+  if (!innerLifeRunning) return;
+  scheduleNextInnerLife();
+
+  try {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Inner life cycle timed out after ${INNER_LIFE_TIMEOUT_MS}ms`)), INNER_LIFE_TIMEOUT_MS)
+    );
+    await Promise.race([runInnerLifeCycle(), timeout]);
+  } catch (err: any) {
+    console.error("[inner-life] Scheduled cycle failed:", err.message);
+    audit("inner_life_error", `Scheduled cycle failed: ${err.message}`, { phase: "scheduler", error: err.message });
   }
 }
 
@@ -1075,50 +1519,26 @@ async function maybeEnqueueIdeaJob(): Promise<void> {
 }
 
 async function maybeDispatchToSyntropy(): Promise<void> {
-  const projects = readLivingDoc("projects.md");
-  if (!projects.includes("[implementation]")) return;
+  const projects = ensureProjectMarkdownConsistency();
+  const candidates = projects.filter((project) =>
+    project.kind === "implementation"
+    && ["planned", "active"].includes(project.status)
+    && !project.dispatchedToSyntropy
+  );
+  if (candidates.length === 0) return;
 
   const metaPath = join(DATA_DIR, "project-dispatch.json");
   const meta = readJson<{ lastDispatchAt?: number; dispatchedProject?: string }>(metaPath, {});
   const last = meta.lastDispatchAt ?? 0;
   if (Date.now() - last < SYNTROPY_DISPATCH_COOLDOWN_MS) return;
 
-  const lines = projects.split("\n");
-  const implementationProjects: Array<{ title: string; lineIndex: number }> = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const match = line.match(/^[*-]\s+\[implementation\]\s+\*\*([^*]+)\*\*:\s*(.+)$/);
-    if (match) {
-      implementationProjects.push({
-        title: match[1].trim(),
-        lineIndex: i,
-      });
-    }
-  }
-
-  if (implementationProjects.length === 0) {
-    console.log("[inner-life] No implementation projects found for Syntropy dispatch");
-    return;
-  }
-
-  const project = implementationProjects[0];
+  const project = candidates[0];
   if (meta.dispatchedProject && meta.dispatchedProject === project.title) {
     console.log(`[inner-life] Skipping Syntropy dispatch (already sent): ${project.title}`);
     return;
   }
 
-  let why = "";
-  let next = "";
-  for (let i = project.lineIndex + 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) break;
-    if (/^[*-]\s+/.test(line)) break;
-    if (line.includes("why:")) why = line.split("why:")[1]?.trim() || "";
-    if (line.includes("next:")) next = line.split("next:")[1]?.trim() || "";
-  }
-
-  const message = `PROJECT: ${project.title}\nWHY: ${why || "See projects.md"}\nNEXT: ${next || "Define and implement"}\n\nImplement this project. Commit working code. Verify by chatting with Pixel.`;
+  const message = `PROJECT_ID: ${project.id}\nPROJECT: ${project.title}\nWHY: ${project.why || "See projects.md"}\nNEXT: ${project.next || "Define and implement"}\n\nImplement this project. Commit working code. Verify by chatting with Pixel. When you finish, append ONE JSON line to /app/data/syntropy-results.jsonl with this shape: {"timestamp":"${new Date().toISOString()}","projectId":"${project.id}","title":"${project.title}","status":"completed|blocked|abandoned","outcome":"what happened and what remains"}`;
 
   const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
   const entry = {
@@ -1130,6 +1550,13 @@ async function maybeDispatchToSyntropy(): Promise<void> {
   try {
     writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
     writeJson(metaPath, { lastDispatchAt: Date.now(), dispatchedProject: project.title });
+    updateProjectRecord(project.id, (current) => ({
+      ...current,
+      status: current.status === "planned" ? "active" : current.status,
+      dispatchedToSyntropy: true,
+      lastDispatchedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
     audit("tool_use", `Project dispatched to Syntropy: ${project.title}`);
     console.log(`[inner-life] Dispatched project to Syntropy: ${project.title}`);
   } catch (err: any) {
@@ -1335,10 +1762,17 @@ function pruneObservations(observationsDir: string, keepCount: number): void {
 // ============================================================
 
 /**
- * Run the inner life cycle. Called by heartbeat after each post.
+ * Run the inner life cycle.
  * Staggered phases — not all run every cycle.
  */
 export async function runInnerLifeCycle(): Promise<void> {
+  try {
+    await checkSyntropyResults();
+  } catch (err: any) {
+    console.error("[inner-life] Failed to process Syntropy results:", err.message);
+    audit("inner_life_error", `Failed to process Syntropy results: ${err.message}`, { phase: "syntropy_results", error: err.message });
+  }
+
   cycleCount++;
   console.log(`[inner-life] Cycle ${cycleCount} — checking phases...`);
 
@@ -1403,6 +1837,25 @@ export async function runInnerLifeCycle(): Promise<void> {
   }
 }
 
+export function startInnerLife(): void {
+  if (innerLifeRunning) {
+    console.log("[inner-life] Already running");
+    return;
+  }
+
+  innerLifeRunning = true;
+  console.log(`[inner-life] Starting (first cycle in ~${Math.round(INNER_LIFE_STARTUP_DELAY_MS / 60_000)} minutes)`);
+  scheduleNextInnerLife(INNER_LIFE_STARTUP_DELAY_MS);
+}
+
+export function stopInnerLife(): void {
+  innerLifeRunning = false;
+  if (innerLifeTimer) {
+    clearTimeout(innerLifeTimer);
+    innerLifeTimer = null;
+  }
+}
+
 /**
  * Get the current inner life context for injection into system prompts
  * and post generation. Returns a compact summary of living documents.
@@ -1443,15 +1896,25 @@ export function getInnerLifeContext(): string {
  * Get inner life status for health endpoint
  */
 export function getInnerLifeStatus() {
+  const projects = loadProjectState();
   return {
+    running: innerLifeRunning,
     cycleCount,
     hasReflections: readLivingDoc("reflections.md").length > 0,
     hasLearnings: readLivingDoc("learnings.md").length > 0,
     hasIdeas: readLivingDoc("ideas.md").length > 0,
     hasEvolution: readLivingDoc("evolution.md").length > 0,
+    projectCount: projects.length,
+    activeProjects: projects.filter((project) => ["planned", "active", "blocked"].includes(project.status)).length,
     nextReflect: REFLECT_EVERY - (cycleCount % REFLECT_EVERY),
     nextLearn: LEARN_EVERY - (cycleCount % LEARN_EVERY),
     nextIdeate: IDEATE_EVERY - (cycleCount % IDEATE_EVERY),
     nextEvolve: EVOLVE_EVERY - (cycleCount % EVOLVE_EVERY),
   };
+}
+
+export function getProjectState(): ProjectRecord[] {
+  const existing = readLivingDoc(PROJECTS_PATH);
+  if (existing.trim()) return ensureProjectMarkdownConsistency();
+  return loadProjectState();
 }

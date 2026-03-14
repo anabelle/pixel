@@ -10,7 +10,12 @@ export function initIdentity(database: PostgresJsDatabase<typeof schema>, sqlIns
 }
 
 function normalizeSubjectId(subjectId: string): string {
-  return subjectId.trim();
+  const normalized = subjectId.trim();
+  const nostrDmMatch = normalized.match(/^nostr-dm-(.+)$/);
+  if (nostrDmMatch) {
+    return `nostr-${nostrDmMatch[1]}`;
+  }
+  return normalized;
 }
 
 function deriveDefaultSubjectType(subjectId: string): "person" | "group" | "self" {

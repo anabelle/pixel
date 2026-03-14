@@ -26,7 +26,7 @@ import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
 import { getRevenueStats, getRevenueSince, recordRevenue } from "./revenue.js";
-import { runInnerLifeCycle, getInnerLifeContext } from "./inner-life.js";
+import { getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
@@ -1082,20 +1082,9 @@ async function beat(): Promise<void> {
     audit("heartbeat_twitter_error", `Twitter post failed: ${err.message}`, { error: err.message });
   }
 
-  // Schedule next beat FIRST — inner life must never block the next heartbeat
+  // Schedule next beat FIRST — posting work must never block the next heartbeat
   scheduleNext();
   saveHeartbeatState();
-
-  // Run inner life cycle (reflection, learning, ideation, evolution)
-  // Master timeout ensures this never hangs, even if NDK or LLM calls stall
-  try {
-    const innerLifeTimeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Inner life cycle timed out after 120s")), 120_000)
-    );
-    await Promise.race([runInnerLifeCycle(), innerLifeTimeout]);
-  } catch (err: any) {
-    console.error("[heartbeat] Inner life cycle failed:", err.message);
-  }
 }
 
 /** Schedule the next heartbeat */
