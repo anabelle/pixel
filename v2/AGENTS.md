@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-03-14 | Session: 61
+> Last updated: 2026-03-14 | Session: 62
 
 ---
 
@@ -582,3 +582,35 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **Result:** Pixel now has a real user-facing cross-platform identity bridge. People can prove account ownership across connectors without blind merges or admin babysitting.
 
 **Lesson:** The right identity-linking primitive is not guesswork, it’s possession. If you can generate a code on one account and redeem it on another, that is strong enough proof for safe linking without introducing centralized approval for every case.
+
+### Session 62: Per-Member Group Memory + Better Nostr Display Signals
+
+**Problem:** Group chats had lore summaries, but individual members inside groups were still mostly invisible to long-term memory unless the model explicitly saved facts manually. Also, Nostr user tracking still relied on weak synthetic display labels (`nostr:<pubkey prefix>`) rather than attempting real profile names.
+
+**Solution:**
+1. **Per-member group memory extractor** (`captureGroupMemberMemory()` in `agent.ts`)
+   - New side-channel extraction path for group messages only
+   - Takes stable member subject id, member name, group id/name, and raw message text
+   - Heuristic gate first: only runs on self-revealing / durable-signal messages (`I`, `my`, `working on`, `me gusta`, `prefiero`, etc.) to avoid burning tokens on every trivial group line
+   - Background LLM extracts 0-2 durable facts
+   - Facts are saved via `memorySave()` under the **member’s own canonical subject**, not the group
+   - Metadata includes originating group id/name and member name
+
+2. **Connector wiring for stable member ids**
+   - **Telegram groups:** group messages now call `captureGroupMemberMemory()` with member subject `tg-<from.id>` and sender name
+   - **WhatsApp groups:** group messages now call `captureGroupMemberMemory()` with member subject `wa-<participant>` when participant id is available
+   - This preserves the existing group lore summary path while adding member-specific memory in parallel
+
+3. **Better Nostr display signals**
+   - Added `getNostrDisplayName()` helper with 6h cache
+   - Attempts `fetchProfile()` on the NDK user and uses `displayName`, then `name`, then `nip05`, then pubkey fallback
+   - Nostr mentions and DMs now pass this real display signal into `promptWithHistory()` / `trackUser()` instead of only `nostr:<pubkey prefix>` placeholders
+
+**Verification:**
+- Container rebuilt and healthy
+- No boot/runtime errors after connector changes
+- Identity graph sanity check still passed (`claim-b` resolved to canonical `claim-a` with aliases intact)
+
+**Important limitation still remaining:** group member extraction is message-level and heuristic-gated. It is intentionally conservative. It does not yet build a full role graph of group participants over time, but it stops losing obvious per-person facts that appear inside groups.
+
+**Lesson:** group memory needs two layers: shared lore for the room, and personal memory for the people inside it. If you only summarize the room, everyone dissolves into background noise.

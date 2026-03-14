@@ -922,6 +922,63 @@ function extractAtomicFacts(memoryMarkdown: string): string[] {
   return facts;
 }
 
+function shouldAttemptGroupMemberExtraction(text: string): boolean {
+  return /\b(i\b|i'm|im\b|my\b|me\b|prefiero|me gusta|trabajo|working on|building|voy a|quiero|need|necesito|project|proyecto|mi\b)/i.test(text);
+}
+
+/**
+ * Extract lightweight per-member memory from group messages without treating the whole group as one person.
+ * Uses stable member ids from connectors when available.
+ */
+export async function captureGroupMemberMemory(
+  memberUserId: string,
+  platform: string,
+  memberName: string,
+  groupId: string,
+  groupName: string | undefined,
+  messageText: string,
+): Promise<void> {
+  if (!memberUserId || !messageText?.trim() || !shouldAttemptGroupMemberExtraction(messageText)) return;
+
+  try {
+    const extracted = await backgroundLlmCall({
+      systemPrompt: `Extract 0-2 durable facts about a specific group member from a single group-chat message.
+Only extract if the message reveals something worth remembering later about that person: preferences, project, identity, role, plan, relationship, constraint, or recurring topic.
+Output ONLY bullet points. If nothing durable is present, output exactly: none`,
+      userPrompt: `Group: ${groupName || groupId}
+Member: ${memberName}
+Platform: ${platform}
+Message: ${messageText}`,
+      label: "group_member_memory",
+      timeoutMs: 20_000,
+    });
+
+    if (!extracted || extracted.trim().toLowerCase() === "none") return;
+
+    const facts = extractAtomicFacts(extracted);
+    for (const fact of facts.slice(0, 2)) {
+      await memorySave({
+        content: `${memberName}: ${fact}`,
+        type: "fact",
+        userId: memberUserId,
+        platform,
+        source: "group_member_extraction",
+        metadata: {
+          group_id: groupId,
+          group_name: groupName || null,
+          member_name: memberName,
+        },
+      });
+    }
+
+    if (facts.length > 0) {
+      console.log(`[agent] Group member memory saved for ${memberUserId} from ${groupId} (${facts.length} facts)`);
+    }
+  } catch (err: any) {
+    console.warn(`[agent] Group member extraction failed for ${memberUserId}: ${err.message}`);
+  }
+}
+
 /**
  * Update group summary for Telegram group chats.
  * Creates a short, rolling summary of group lore and recent context.

@@ -22,7 +22,7 @@ import makeWASocket, {
   downloadMediaMessage,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
-import { promptWithHistory } from "../agent.js";
+import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
 import { appendToLog } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
@@ -1071,6 +1071,17 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
         // If directly addressed, flush immediately after queuing
         queueGroupMessage(jid, conversationId, line);
+        const memberRawId = (msg.key.participant ?? "").replace("@s.whatsapp.net", "").replace("@g.us", "").replace("@lid", "");
+        if (memberRawId) {
+          captureGroupMemberMemory(
+            `wa-${memberRawId}`,
+            "whatsapp",
+            senderName,
+            conversationId,
+            undefined,
+            text,
+          ).catch(() => {});
+        }
         if (addressed) {
           // Clear the timer and flush now so the user gets a fast reply
           const entry = waGroupBuffers.get(jid);

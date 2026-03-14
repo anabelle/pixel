@@ -9,7 +9,7 @@
  */
 
 import { Bot, InputFile } from "grammy";
-import { promptWithHistory } from "../agent.js";
+import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
@@ -254,6 +254,16 @@ export async function startTelegram(): Promise<void> {
       : senderName;
 
     queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
+    if (isGroupChat) {
+      captureGroupMemberMemory(
+        `tg-${ctx.from.id}`,
+        "telegram",
+        senderName,
+        conversationId,
+        chatTitle,
+        text,
+      ).catch(() => {});
+    }
   });
 
   // Handle photo messages (image vision)

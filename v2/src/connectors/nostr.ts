@@ -27,6 +27,7 @@ const THROTTLE_MS = 60_000; // 1 minute
 // Shared NDK instance — used by heartbeat and other services
 let sharedNdk: NDK | null = null;
 let sharedPubkey: string | null = null;
+const profileNameCache = new Map<string, { value: string; expiresAt: number }>();
 
 // Shared set of event IDs we've already replied to — prevents double-replies
 // between the real-time mention subscription and the heartbeat engagement loop
@@ -38,6 +39,25 @@ const REPLIED_IDS_PATH = "/app/data/nostr-replied.json";
 const handledThreads = new Map<string, number>(); // threadRootId -> timestamp
 const HANDLED_THREADS_PATH = "/app/data/nostr-handled-threads.json";
 const THREAD_HANDLED_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function getNostrDisplayName(ndk: NDK, pubkey: string): Promise<string> {
+  const cached = profileNameCache.get(pubkey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const fallback = `nostr:${pubkey.slice(0, 12)}`;
+  try {
+    const user: any = await ndk.getUser({ pubkey });
+    if (user?.fetchProfile) {
+      await user.fetchProfile();
+    }
+    const profile = user?.profile || {};
+    const name = profile.displayName || profile.name || profile.nip05 || fallback;
+    profileNameCache.set(pubkey, { value: name, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
+    return name;
+  } catch {
+    return fallback;
+  }
+}
 
 /** Load replied event IDs from disk (survives container restarts) */
 function loadRepliedIds(): void {
@@ -417,9 +437,10 @@ export async function startNostr(): Promise<void> {
     console.log(`[nostr] Mention from ${event.pubkey.slice(0, 8)}...: ${content.slice(0, 80)}`);
 
     try {
+      const displayName = await getNostrDisplayName(ndk, event.pubkey);
       const images = await fetchImages(extractImageUrls(content));
       const response = await promptWithHistory(
-        { userId: `nostr-${event.pubkey}`, platform: "nostr", chatId: event.pubkey, displayName: `nostr:${event.pubkey.slice(0, 12)}` },
+        { userId: `nostr-${event.pubkey}`, platform: "nostr", chatId: event.pubkey, displayName },
         content,
         images.length > 0 ? images : undefined
       );
@@ -485,9 +506,10 @@ export async function startNostr(): Promise<void> {
 
         console.log(`[nostr] DM from ${event.pubkey.slice(0, 8)}...: ${decrypted.slice(0, 80)}`);
 
+        const displayName = await getNostrDisplayName(ndk, event.pubkey);
         const images = await fetchImages(extractImageUrls(decrypted));
         const response = await promptWithHistory(
-          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm", chatId: event.pubkey, displayName: `nostr-dm:${event.pubkey.slice(0, 12)}` },
+          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm", chatId: event.pubkey, displayName },
           decrypted,
           images.length > 0 ? images : undefined
         );
