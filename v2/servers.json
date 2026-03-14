@@ -18,6 +18,8 @@
       "generate_image",
       "send_voice",
       "research_task",
+      "begin_identity_claim",
+      "redeem_identity_claim",
       "introspect",
       "clawstr_feed",
       "clawstr_post",

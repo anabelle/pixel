@@ -162,3 +162,17 @@ export const userLinks = pgTable("user_links", {
   linkedPlatform: text("linked_platform"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** User-driven identity claims for cross-platform linking */
+export const identityClaims = pgTable("identity_claims", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  claimantUserId: text("claimant_user_id").notNull(),
+  claimantPlatform: text("claimant_platform").notNull(),
+  targetUserId: text("target_user_id"),
+  targetPlatform: text("target_platform"),
+  status: text("status").notNull().default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

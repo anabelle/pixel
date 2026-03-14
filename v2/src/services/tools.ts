@@ -20,6 +20,7 @@ import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
 import { linkSubjects, resolveCanonicalSubject, suggestIdentityLinks } from "./identity.js";
+import { createIdentityClaim, redeemIdentityClaim, listIdentityClaims } from "./identity-claims.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
@@ -2963,6 +2964,99 @@ const suggestIdentityLinksTool: AgentTool<typeof suggestIdentityLinksSchema> = {
   },
 };
 
+const beginIdentityClaimSchema = Type.Object({});
+
+const beginIdentityClaimTool: AgentTool<typeof beginIdentityClaimSchema> = {
+  name: "begin_identity_claim",
+  label: "Begin Identity Claim",
+  description: "Generate a short-lived code to link this account to another one you control. Share the code with yourself on the other account, then redeem it there.",
+  parameters: beginIdentityClaimSchema,
+  execute: async () => {
+    try {
+      const ctx = getToolContext();
+      const userId = ctx.userId;
+      const platform = ctx.platform || "unknown";
+      if (!userId) {
+        return { content: [{ type: "text" as const, text: "No active user identity in context." }], details: undefined };
+      }
+      if (userId.startsWith("tg-group-") || userId.startsWith("wa-group-")) {
+        return { content: [{ type: "text" as const, text: "Identity claims are for personal accounts, not groups." }], details: undefined };
+      }
+      const result = await createIdentityClaim(userId, platform);
+      auditToolUse("begin_identity_claim", { user_id: userId, platform }, { expiresAt: result.expiresAt });
+      return {
+        content: [{ type: "text" as const, text: `Claim code: ${result.code}\nExpires: ${result.expiresAt}\nUse redeem_identity_claim from your other account with this code.` }],
+        details: result,
+      };
+    } catch (err: any) {
+      auditToolUse("begin_identity_claim", {}, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to create identity claim: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const redeemIdentityClaimSchema = Type.Object({
+  code: Type.String({ description: "Claim code generated from your other account" }),
+});
+
+const redeemIdentityClaimTool: AgentTool<typeof redeemIdentityClaimSchema> = {
+  name: "redeem_identity_claim",
+  label: "Redeem Identity Claim",
+  description: "Redeem a claim code from another account you control to securely link the two accounts.",
+  parameters: redeemIdentityClaimSchema,
+  execute: async (_id, { code }) => {
+    try {
+      const ctx = getToolContext();
+      const userId = ctx.userId;
+      const platform = ctx.platform || "unknown";
+      if (!userId) {
+        return { content: [{ type: "text" as const, text: "No active user identity in context." }], details: undefined };
+      }
+      if (userId.startsWith("tg-group-") || userId.startsWith("wa-group-")) {
+        return { content: [{ type: "text" as const, text: "Identity claims are for personal accounts, not groups." }], details: undefined };
+      }
+      const result = await redeemIdentityClaim(code, userId, platform);
+      auditToolUse("redeem_identity_claim", { user_id: userId, platform }, result);
+      return {
+        content: [{ type: "text" as const, text: `Identity linked. Canonical subject: ${result.canonicalId}\nAliases: ${result.aliases.join(", ")}` }],
+        details: result,
+      };
+    } catch (err: any) {
+      auditToolUse("redeem_identity_claim", { code }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to redeem identity claim: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const listIdentityClaimsSchema = Type.Object({
+  limit: Type.Optional(Type.Number({ description: "Maximum claims to return (default 20)" })),
+});
+
+const listIdentityClaimsTool: AgentTool<typeof listIdentityClaimsSchema> = {
+  name: "list_identity_claims",
+  label: "List Identity Claims",
+  description: "List recent identity claim codes and their status. Admin-only.",
+  parameters: listIdentityClaimsSchema,
+  execute: async (_id, { limit }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: list_identity_claims is admin-only." }], details: undefined };
+      }
+      const claims = await listIdentityClaims(limit || 20);
+      auditToolUse("list_identity_claims", { limit: limit || 20 }, { count: claims.length });
+      if (claims.length === 0) {
+        return { content: [{ type: "text" as const, text: "No identity claims found." }], details: { count: 0 } };
+      }
+      const lines = claims.map((c: any, i: number) => `${i + 1}. ${c.code} | ${c.claimant_user_id} -> ${c.target_user_id ?? "(pending)"} | ${c.status} | expires ${new Date(c.expires_at).toISOString()}`);
+      return { content: [{ type: "text" as const, text: `Identity claims:\n${lines.join("\n")}` }], details: { claims } };
+    } catch (err: any) {
+      auditToolUse("list_identity_claims", { limit }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to list identity claims: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
 const memorySaveSchema = Type.Object({
   content: Type.String({ description: "The fact, knowledge, or observation to remember. Be specific and concise." }),
   type: Type.Optional(Type.String({ description: "Memory type: 'fact' (concrete knowledge), 'episode' (interaction summary), 'identity' (self-knowledge), 'procedural' (skill/pattern). Default: 'fact'" })),
@@ -3763,9 +3857,12 @@ export const pixelTools = [
   webFetchTool,
   webSearchTool,
   researchTaskTool,
+  beginIdentityClaimTool,
+  redeemIdentityClaimTool,
   linkIdentityTool,
   resolveIdentityTool,
   suggestIdentityLinksTool,
+  listIdentityClaimsTool,
   memorySaveTool,
   memorySearchTool,
   memoryUpdateTool,

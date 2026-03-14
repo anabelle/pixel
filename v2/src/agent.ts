@@ -164,6 +164,9 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
   - You learn a new procedure or pattern (procedural-type memory)
 - **Do NOT call memcommit manually** — it runs automatically during memory extraction.`;
 
+  prompt += `
+- If a user wants to link two accounts they control, use begin_identity_claim on one account and redeem_identity_claim on the other. Never assume two accounts are the same person without an explicit claim, admin link, or strong proof.`;
+
   if (userId === "syntropy" || userId === "syntropy-admin") {
     prompt += `\n\n## Syntropy context
 - The user is Syntropy, the oversoul and infrastructure orchestrator for Pixel.

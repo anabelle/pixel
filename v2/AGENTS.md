@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-03-14 | Session: 60
+> Last updated: 2026-03-14 | Session: 61
 
 ---
 
@@ -539,3 +539,46 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **Important interpretation:** “no suggestions found” is not failure. It means the heuristic is conservative enough to avoid hallucinated merges. This is preferable to corrupting the social graph with bad links.
 
 **Lesson:** For identity linking, false positives are more dangerous than false negatives. Start with conservative suggestions, stable ids, and reviewable links. Only after that should we consider semi-automatic linking or user-claimed identity proofs.
+
+### Session 61: User-Facing Claim-and-Confirm Identity Linking
+
+**Problem:** Session 60 added suggestion tooling, but users still had no self-service way to prove that two accounts belonged to the same person. Manual/admin linking was too centralized.
+
+**Solution:** implemented a public claim-and-confirm workflow:
+
+1. **New persistence layer**
+   - Added `identity_claims` table with: `code`, claimant subject/platform, target subject/platform, status, expiry, redemption timestamp
+   - Boot now ensures `identity_claims_code_idx` unique index
+
+2. **New identity claims service** (`src/services/identity-claims.ts`)
+   - `createIdentityClaim(claimantUserId, claimantPlatform)` generates an 8-char hex claim code valid for 24h
+   - `redeemIdentityClaim(code, targetUserId, targetPlatform)` redeems the code from another account, then links the two subjects via the canonical identity graph
+   - `listIdentityClaims()` supports admin inspection/audit
+
+3. **Public tools added**
+   - `begin_identity_claim` — generate a code from the first account
+   - `redeem_identity_claim` — redeem the code from the second account
+   - Both reject group identities; they are for personal account linking only
+
+4. **Admin audit tool added**
+   - `list_identity_claims` — inspect recent claims and statuses
+
+5. **Public tool tier updated** (`servers.json`)
+   - `begin_identity_claim` and `redeem_identity_claim` added to `tool_tiers.public`
+   - This means ordinary users can now link their own identities without admin intervention
+
+6. **Prompt guidance added**
+   - System prompt now explicitly tells Pixel to use claim flow when a user wants to link two accounts they control
+   - Guardrail: never assume two accounts are the same person without explicit claim, admin link, or strong proof
+
+**Verification:**
+- Container rebuilt and healthy
+- End-to-end test via HTTP chat API succeeded:
+  1. `claim-a` generated a code via `begin_identity_claim`
+  2. `claim-b` redeemed the code via `redeem_identity_claim`
+  3. `resolve_identity` confirmed aliases `{claim-a, claim-b}` under the same canonical subject
+  4. `list_identity_claims` showed the claim as `redeemed`
+
+**Result:** Pixel now has a real user-facing cross-platform identity bridge. People can prove account ownership across connectors without blind merges or admin babysitting.
+
+**Lesson:** The right identity-linking primitive is not guesswork, it’s possession. If you can generate a code on one account and redeem it on another, that is strong enough proof for safe linking without introducing centralized approval for every case.

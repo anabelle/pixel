@@ -36,6 +36,7 @@ import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./se
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { initUsers, getUserStats } from "./services/users.js";
 import { initIdentity } from "./services/identity.js";
+import { initIdentityClaims } from "./services/identity-claims.js";
 import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
 import { getSkillGraph, getSkillGraphStats } from "./services/skill-graph.js";
 import { l402 } from "./services/l402.js";
@@ -1603,6 +1604,21 @@ async function boot() {
       )
     `;
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS user_links_pair_idx ON user_links (user_id, linked_user_id)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS identity_claims (
+        id SERIAL PRIMARY KEY,
+        code TEXT NOT NULL,
+        claimant_user_id TEXT NOT NULL,
+        claimant_platform TEXT NOT NULL,
+        target_user_id TEXT,
+        target_platform TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        expires_at TIMESTAMPTZ NOT NULL,
+        redeemed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+      )
+    `;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS identity_claims_code_idx ON identity_claims (code)`;
     console.log("[db] Tables verified");
 
     // Initialize revenue tracking
@@ -1613,6 +1629,9 @@ async function boot() {
 
     // Initialize identity graph service
     initIdentity(db, sql);
+
+    // Initialize identity claims service
+    initIdentityClaims(db, sql);
 
     // Initialize reminder service
     initReminders(db);
