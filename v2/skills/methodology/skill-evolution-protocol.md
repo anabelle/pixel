@@ -5,7 +5,7 @@
 ## The Problem
 
 Currently:
-- I capture frictions in `ops/observations/` but don't process them
+- I capture frictions in `/app/data/observations/` but don't process them
 - I recognize patterns in conversation but don't extract them into skills
 - My skill graph grows only when someone explicitly asks me to update it
 - This makes me reactive, not adaptive
@@ -15,7 +15,7 @@ Currently:
 **Autonomous skill lifecycle**:
 
 1. **Observe** → detect friction/pattern/repeat question
-2. **Capture** → write structured observation to `ops/observations/`
+2. **Capture** → write structured observation to `/app/data/observations/`
 3. **Review** → inner-life cycle scans observations, proposes skills
 4. **Create** → write skill to appropriate domain
 5. **Update** → edit index.md if needed
@@ -49,7 +49,7 @@ frequency: {1|2|3+}
 
 ## Review Cycle
 
-- **Every inner-life ideation**: scan `ops/observations/` for patterns
+- **Every inner-life ideation**: scan `/app/data/observations/` for patterns
 - **Every evolution cycle** (every 10 heartbeats): audit skill graph
 - **On revenue reflection**: check for value-to-invoice gaps
 
