@@ -21,7 +21,7 @@ import { getPermittedTools, isPriorityUser } from "./services/server-registry.js
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
-import { getSkillGraph, discoverRelevantSkills, formatSkillsForInjection, getSkillGraphStats } from "./services/skill-graph.js";
+import { getSkillGraph, discoverRelevantSkills, formatSkillsForInjection, getSkillGraphStats, searchSkillGraph } from "./services/skill-graph.js";
 import { scanMessage } from "./services/security-scanner.js";
 import { buildSelfLearningReflectionPrompt, getSelfLearningConfig, getSelfLearningPromptContext, parseSelfLearningReflection, recordSelfLearningReflection } from "./services/self-learning.js";
 
@@ -78,10 +78,12 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
   let skills = "";
   try {
     const graph = await getSkillGraph();
-    const relevantSkills = discoverRelevantSkills(graph, conversationHint || "");
+    const semanticSkills = searchSkillGraph(graph, conversationHint || "", 5);
+    const fallbackSkills = semanticSkills.length > 0 ? [] : discoverRelevantSkills(graph, conversationHint || "");
+    const relevantSkills = (semanticSkills.length > 0 ? semanticSkills.map((entry) => entry.node) : fallbackSkills).slice(0, 5);
     if (relevantSkills.length > 0) {
       skills = formatSkillsForInjection(relevantSkills);
-      console.log(`[agent] Injected ${relevantSkills.length} relevant skills for hint: "${(conversationHint || "").slice(0, 50)}..."`);
+      console.log(`[agent] Pre-injected ${relevantSkills.length} semantic skills for hint: "${(conversationHint || "").slice(0, 80)}"`);
     }
   } catch (err: any) {
     console.error("[agent] Skill graph discovery failed:", err.message);

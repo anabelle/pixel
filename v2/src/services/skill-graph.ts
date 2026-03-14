@@ -32,6 +32,12 @@ export interface SkillGraphDuplicateSignals {
   nearTitlePairs: Array<{ score: number; a: string; b: string }>;
 }
 
+export interface SkillSearchResult {
+  node: SkillNode;
+  score: number;
+  preview: string;
+}
+
 // ─── Configuration ──────────────────────────────────────────────
 
 const SKILLS_DIR = process.env.SKILLS_DIR || "/app/external/pixel/skills/arscontexta";
@@ -450,6 +456,57 @@ export function discoverRelevantSkills(graph: SkillGraph, hint: string): SkillNo
   });
 
   return nodes.slice(0, 8); // Limit to 8 relevant skills
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+export function searchSkillGraph(graph: SkillGraph, query: string, limit: number = 5, prefix?: string): SkillSearchResult[] {
+  const normalizedQuery = normalizeSearchText(query).trim();
+  if (normalizedQuery.length < 3) return [];
+
+  const words = normalizedQuery.split(/\s+/).filter((word) => word.length > 2);
+  const normalizedPrefix = prefix?.replace(/^\/+/, "").replace(/\/+$/, "");
+
+  return Array.from(graph.nodes.values())
+    .filter((node) => node.kind !== "observation" && node.kind !== "tension")
+    .filter((node) => !normalizedPrefix || node.path === normalizedPrefix || node.path.startsWith(`${normalizedPrefix}/`))
+    .map((node) => {
+      const title = normalizeSearchText(node.title || "");
+      const description = normalizeSearchText(node.description || "");
+      const content = normalizeSearchText(node.content || "");
+      const topics = (node.topics || []).map((topic) => normalizeSearchText(topic.replace(/\[\[|\]\]/g, "")));
+      const links = (node.links || []).map((link) => normalizeSearchText(link));
+
+      let score = 0;
+      if (title.includes(normalizedQuery)) score += 10;
+      if (description.includes(normalizedQuery)) score += 8;
+      if (topics.some((topic) => topic.includes(normalizedQuery))) score += 7;
+      if (links.some((link) => link.includes(normalizedQuery))) score += 6;
+      if (content.includes(normalizedQuery)) score += 4;
+
+      for (const word of words) {
+        if (title.includes(word)) score += 4;
+        if (description.includes(word)) score += 3;
+        if (topics.some((topic) => topic.includes(word))) score += 3;
+        if (links.some((link) => link.includes(word))) score += 2;
+        if (content.includes(word)) score += 1;
+      }
+
+      const preview = node.description
+        || node.content.split("\n").find((line) => line.trim() && !line.trim().startsWith("#"))
+        || node.content.split("\n").find((line) => line.trim())
+        || "(match found)";
+
+      return { node, score, preview };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.node.path.localeCompare(b.node.path))
+    .slice(0, Math.min(Math.max(limit, 1), 10));
 }
 
 /**

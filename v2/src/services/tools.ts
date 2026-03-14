@@ -33,7 +33,7 @@ import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendW
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
 import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
-import { getSkillGraph, resolveWikiLink } from "./skill-graph.js";
+import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.js";
 
 const OPENVIKING_ROOT = "/app/data/openviking";
 const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
@@ -188,39 +188,18 @@ async function readAgentSkillUri(uri: string, level: "abstract" | "overview" | "
 async function searchAgentSkills(query: string, targetUri: string, limit: number): Promise<{ text: string; resultCount: number }> {
   const graph = await getSkillGraph();
   const targetRelative = getAgentSkillsRelativePath(targetUri);
-  const targetPrefix = targetRelative ? `${targetRelative.replace(/\/+$/, "")}/` : "";
-  const q = query.toLowerCase();
-  const scored = Array.from(graph.nodes.values())
-    .filter((node) => {
-      if (!targetRelative) return true;
-      if (targetRelative === "self-learning-memory") return false;
-      return node.path === targetRelative || node.path.startsWith(targetPrefix);
-    })
-    .map((node) => {
-      let score = 0;
-      const haystacks = [node.title, node.description, node.content, ...(node.topics || []), ...(node.links || [])]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase());
-      for (const haystack of haystacks) {
-        if (haystack.includes(q)) score += 3;
-      }
-      for (const word of q.split(/\s+/).filter((word) => word.length > 2)) {
-        for (const haystack of haystacks) {
-          if (haystack.includes(word)) score += 1;
-        }
-      }
-      return { node, score };
-    })
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || a.node.path.localeCompare(b.node.path))
-    .slice(0, limit);
+  const scored = searchSkillGraph(
+    graph,
+    query,
+    limit,
+    targetRelative && targetRelative !== "self-learning-memory" ? targetRelative : undefined,
+  );
 
   if (scored.length === 0) {
     return { text: `No matches for "${query}" under ${targetUri}`, resultCount: 0 };
   }
 
-  const text = scored.map(({ node, score }) => {
-    const preview = node.description || node.content.split("\n").find((line) => line.trim()) || "(match found)";
+  const text = scored.map(({ node, score, preview }) => {
     return [`viking://agent/skills/${node.path}`, `score=${score}`, preview].join("\n");
   }).join("\n\n");
 
