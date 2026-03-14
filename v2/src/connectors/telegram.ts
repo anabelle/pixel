@@ -819,7 +819,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
   try {
     await botInstance?.api.sendChatAction(chatId, "typing");
     const response = await promptWithHistory(
-      { userId: entry.conversationId, platform: "telegram", chatId, chatTitle },
+      { userId: entry.conversationId, platform: "telegram", chatId, chatTitle, displayName: isDm ? chatTitle : undefined },
       prompt
     );
 

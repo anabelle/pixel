@@ -250,13 +250,15 @@ interface WaDmBatchEntry {
   timer: ReturnType<typeof setTimeout> | null;
   jid: string;
   conversationId: string;
+  displayName?: string;
 }
 const waDmBuffers = new Map<string, WaDmBatchEntry>();
 
 /** Queue a DM message for batched processing */
-function queueDmMessage(jid: string, conversationId: string, line: string): void {
-  const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId };
+function queueDmMessage(jid: string, conversationId: string, line: string, displayName?: string): void {
+  const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId, displayName };
   entry.items.push(line);
+  if (displayName) entry.displayName = displayName;
 
   if (entry.items.length > WA_BATCH_MAX) {
     entry.items = entry.items.slice(-WA_BATCH_MAX);
@@ -292,7 +294,7 @@ async function flushDmMessages(jid: string): Promise<void> {
     await sock?.sendPresenceUpdate("composing", jid);
 
     const response = await promptWithHistory(
-      { userId: entry.conversationId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+      { userId: entry.conversationId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", ""), displayName: entry.displayName },
       trimmed
     );
 
@@ -770,7 +772,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             // DMs: direct prompt + optional voice reply
             const formatted = `[voice message, ${duration}s]: ${transcription}`;
             const response = await promptWithHistory(
-              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", ""), displayName: msg.pushName ?? undefined },
               formatted
             );
 
@@ -900,7 +902,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             }
           } else {
             const response = await promptWithHistory(
-              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", ""), displayName: msg.pushName ?? undefined },
               formatted
             );
 
@@ -992,7 +994,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             await sock!.sendPresenceUpdate("composing", jid);
 
             const response = await promptWithHistory(
-              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", "") },
+              { userId, platform: "whatsapp", chatId: jid.replace("@s.whatsapp.net", ""), displayName: msg.pushName ?? undefined },
               baseText,
               [{ type: "image", data: base64, mimeType }]
             );
@@ -1085,7 +1087,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // ─── DM MESSAGES: batch with 20s window ───────────────────
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
-      queueDmMessage(jid, userId, text);
+      queueDmMessage(jid, userId, text, msg.pushName ?? undefined);
     }
   });
 

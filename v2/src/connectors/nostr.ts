@@ -419,7 +419,7 @@ export async function startNostr(): Promise<void> {
     try {
       const images = await fetchImages(extractImageUrls(content));
       const response = await promptWithHistory(
-        { userId: `nostr-${event.pubkey}`, platform: "nostr", chatId: event.pubkey },
+        { userId: `nostr-${event.pubkey}`, platform: "nostr", chatId: event.pubkey, displayName: `nostr:${event.pubkey.slice(0, 12)}` },
         content,
         images.length > 0 ? images : undefined
       );
@@ -487,7 +487,7 @@ export async function startNostr(): Promise<void> {
 
         const images = await fetchImages(extractImageUrls(decrypted));
         const response = await promptWithHistory(
-          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm", chatId: event.pubkey },
+          { userId: `nostr-dm-${event.pubkey}`, platform: "nostr-dm", chatId: event.pubkey, displayName: `nostr-dm:${event.pubkey.slice(0, 12)}` },
           decrypted,
           images.length > 0 ? images : undefined
         );

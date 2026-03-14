@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-03-14 | Session: 59
+> Last updated: 2026-03-14 | Session: 60
 
 ---
 
@@ -492,3 +492,50 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **Important limitation still remaining:** this is only the **seed** of the identity graph. Nothing auto-links users yet. Cross-connector continuity now has a substrate, but it still requires explicit linking (manual/admin/tool-driven) until we add stronger entity extraction and alias-claim workflows.
 
 **Lesson:** The threshold from “many memory tools” to “coherent memory” is a canonical subject layer. Without it, every connector creates a new fake person. With it, reads/writes can converge even before the higher-level social graph is fully built.
+
+### Session 60: Conservative Identity Link Suggestions + Stable Twitter IDs
+
+**Problem:** Session 59 created the canonical subject substrate, but linking was still completely manual. Also, Twitter mentions were using `twitter-${username}` as conversation id, which is mutable and therefore a bad long-term identity anchor.
+
+**Solution:**
+1. **Stable Twitter subject ids**
+   - Twitter mention handling now uses `twitter-${authorId}` for conversation identity, not username
+   - Display name still includes `@username` for readability, but identity now hangs off the immutable author id
+
+2. **Richer display-name capture for identity heuristics**
+   - `promptWithHistory()` now accepts `displayName`
+   - `trackUser()` gets that display name at the point of interaction
+   - Telegram DM batch flush passes DM contact name
+   - WhatsApp DM flows pass `pushName`
+   - Nostr mention/DM flows pass short pubkey-based labels (weak but better than blank)
+
+3. **Conservative suggestion engine** (`suggestIdentityLinks()` in `identity.ts`)
+   - scans active `users` rows with non-null display names
+   - excludes group ids
+   - compares normalized display names across different platforms only
+   - rejects weak/generic names (`someone`, `user-123`, long hex/pubkey-ish strings, long digit strings)
+   - skips subjects already in the same canonical set
+   - returns suggestions with confidence + reason, but does **not** auto-link
+
+4. **Admin-only suggestion tool**
+   - `suggest_identity_links` lists conservative candidates
+   - reviewed suggestions can then be applied with `link_identity`
+   - still admin-only, not exposed to public tier
+
+5. **Identity graph closure fix**
+   - `resolveCanonicalSubject()` now walks transitive links, not just one hop
+   - Example: if A↔B and B↔C, resolving C now returns aliases `{A,B,C}` instead of just `{B,C}`
+
+6. **Duplicate-link safety**
+   - boot now ensures `user_links_pair_idx`
+   - `linkSubjects()` uses `ON CONFLICT DO NOTHING`
+
+**Verification:**
+- Container rebuilt and healthy
+- `suggest_identity_links` executed successfully via chat API
+- Current result: no conservative suggestions found yet, which is correct given current weak/fragmented display-name signals
+- Logs show the tool executed normally and the system remained healthy
+
+**Important interpretation:** “no suggestions found” is not failure. It means the heuristic is conservative enough to avoid hallucinated merges. This is preferable to corrupting the social graph with bad links.
+
+**Lesson:** For identity linking, false positives are more dangerous than false negatives. Start with conservative suggestions, stable ids, and reviewable links. Only after that should we consider semi-automatic linking or user-claimed identity proofs.

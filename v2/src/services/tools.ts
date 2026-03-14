@@ -19,7 +19,7 @@ import { getNostrInstance, sendNostrDm } from "../connectors/nostr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
-import { linkSubjects, resolveCanonicalSubject } from "./identity.js";
+import { linkSubjects, resolveCanonicalSubject, suggestIdentityLinks } from "./identity.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
@@ -2934,6 +2934,35 @@ const resolveIdentityTool: AgentTool<typeof resolveIdentitySchema> = {
   },
 };
 
+const suggestIdentityLinksSchema = Type.Object({
+  limit: Type.Optional(Type.Number({ description: "Maximum suggestions to return (default 20)" })),
+});
+
+const suggestIdentityLinksTool: AgentTool<typeof suggestIdentityLinksSchema> = {
+  name: "suggest_identity_links",
+  label: "Suggest Identity Links",
+  description: "Suggest conservative cross-platform identity links based on matching display names. Admin-only. Review suggestions before linking.",
+  parameters: suggestIdentityLinksSchema,
+  execute: async (_id, { limit }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: suggest_identity_links is admin-only." }], details: undefined };
+      }
+      const suggestions = await suggestIdentityLinks(limit || 20);
+      auditToolUse("suggest_identity_links", { limit: limit || 20 }, { count: suggestions.length });
+      if (suggestions.length === 0) {
+        return { content: [{ type: "text" as const, text: "No conservative identity-link suggestions found." }], details: { count: 0 } };
+      }
+      const lines = suggestions.map((s, i) => `${i + 1}. ${s.subjectA} (${s.platformA}, ${s.displayA}) ↔ ${s.subjectB} (${s.platformB}, ${s.displayB}) [${s.confidence}] — ${s.reason}`);
+      return { content: [{ type: "text" as const, text: `Found ${suggestions.length} identity link suggestions:\n${lines.join("\n")}` }], details: { suggestions } };
+    } catch (err: any) {
+      auditToolUse("suggest_identity_links", { limit }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to suggest identity links: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
 const memorySaveSchema = Type.Object({
   content: Type.String({ description: "The fact, knowledge, or observation to remember. Be specific and concise." }),
   type: Type.Optional(Type.String({ description: "Memory type: 'fact' (concrete knowledge), 'episode' (interaction summary), 'identity' (self-knowledge), 'procedural' (skill/pattern). Default: 'fact'" })),
@@ -3736,6 +3765,7 @@ export const pixelTools = [
   researchTaskTool,
   linkIdentityTool,
   resolveIdentityTool,
+  suggestIdentityLinksTool,
   memorySaveTool,
   memorySearchTool,
   memoryUpdateTool,

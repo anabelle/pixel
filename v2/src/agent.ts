@@ -480,6 +480,8 @@ export interface PixelAgentOptions {
   chatId?: string | number;
   /** Human-readable chat name (group title or DM contact name) */
   chatTitle?: string;
+  /** Human-readable subject display name for user tracking / identity heuristics */
+  displayName?: string;
   /** Override model selection: "background" uses getSimpleModel() */
   modelOverride?: "background" | undefined;
 }
@@ -500,7 +502,7 @@ export async function promptWithHistory(
   message: string,
   images?: ImageContent[]
 ): Promise<string> {
-  const { userId, platform } = options;
+  const { userId, platform, displayName } = options;
   
   // Extract chat ID for platforms that have it (for delivering reminders)
   let chatId: string | undefined;
@@ -775,7 +777,7 @@ export async function promptWithHistory(
   }
 
   // Track user in PostgreSQL (non-blocking)
-  trackUser(userId, platform).catch(() => {});
+  trackUser(userId, platform, displayName).catch(() => {});
 
   // Check if context needs compaction (async, non-blocking for the response)
   if (needsCompaction(userId)) {

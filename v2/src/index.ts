@@ -1602,6 +1602,7 @@ async function boot() {
         created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
       )
     `;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS user_links_pair_idx ON user_links (user_id, linked_user_id)`;
     console.log("[db] Tables verified");
 
     // Initialize revenue tracking

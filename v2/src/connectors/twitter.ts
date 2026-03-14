@@ -484,11 +484,11 @@ async function pollMentions(): Promise<void> {
 
     for (const tweet of toProcess) {
       try {
-        const userId = `twitter-${tweet.username}`;
+        const userId = `twitter-${tweet.authorId}`;
         const mentionText = `[Twitter mention from @${tweet.username}]: ${tweet.text}`;
 
         const response = await promptWithHistory(
-          { userId, platform: "twitter" },
+          { userId, platform: "twitter", displayName: `@${tweet.username}` },
           mentionText,
         );
 
