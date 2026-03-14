@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.pi/
 data/postgres/
 data/caddy_data/
 data/caddy_config/
