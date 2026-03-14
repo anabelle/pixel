@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-02-26 | Session: 55b
+> Last updated: 2026-03-14 | Session: 59
 
 ---
 
@@ -416,3 +416,79 @@ Added runtime helpers for:
 - `viking_search` on `viking://user/syntropy-admin` found the runtime-created memory and related abstracts with semantic scores
 
 **Result:** Pixel can now both write to and search/read the real OpenViking user-memory namespace. The compatibility layer remains intact for `viking://agent/...` while the real runtime is accessible for `viking://user/...`.
+
+### Session 58: Memory Doctrine — Active Use of All Memory Layers
+
+**Problem:** Pixel had three distinct memory systems wired up but wasn't using them cohesively:
+1. **pgvector** (memory_save/search) — auto-extracted every 5 messages, auto-retrieved into system prompt. Working well.
+2. **OpenViking runtime** (memcommit, viking://user/...) — only triggered manually via `memcommit` tool. Nothing auto-committed conversation traces.
+3. **Per-user markdown notes** (memory.md) — simple summaries injected into prompt. Working.
+
+The LLM had a single-line mention of memory tools in the system prompt and no guidance on when to proactively search, when to save, or which layer to use for what purpose.
+
+**Analysis (prompting vs architectural vs hybrid):**
+- **Prompting alone** insufficient: `memcommit` tool only sent a generic "memcommit triggered" message, not actual conversation content. Even if prompted to use it, the runtime would get nothing useful for extraction.
+- **Full architectural overhaul** unnecessary: pgvector already handles the primary memory loop well. OpenViking is a secondary semantic enrichment layer.
+- **Hybrid** chosen: architectural integration for auto-commit + prompting for proactive search/save behavior.
+
+**Solution:**
+1. **Auto-commit pipeline** (`commitToOpenViking()` in tools.ts): New standalone function that creates/reuses OpenViking sessions and commits conversation text directly, without depending on tool context. Called from `extractAndSaveMemory()` after pgvector save. Every 5th message per user, recent conversation exchanges are committed to OpenViking for semantic extraction (events, entities, preferences). Non-blocking, non-fatal — failures are warned, not thrown.
+
+2. **Memory doctrine in system prompt** (agent.ts `buildSystemPrompt()`): Replaced single-line memory mention with comprehensive doctrine covering:
+   - Three memory layers and their purposes
+   - When to proactively search memory (before asking users to repeat info, when they reference past conversations, when drafting content)
+   - When to explicitly save memory (new facts, commitments, self-insights, procedures)
+   - Instruction not to call memcommit manually (now auto-committed)
+
+3. **Updated character.md** Memory & Continuity section: Added operational guidance — "search before asking", "save what matters", "your memory is layered".
+
+**Verification:**
+- Container rebuilt and healthy
+- OpenViking runtime and AGFS both healthy inside container
+- Chat test: Pixel proactively called `memory_search` (twice) before answering "what do you remember about me?" — demonstrated the doctrine is working
+- Auto-commit will fire on next extraction interval (5th message from any user)
+
+**Lesson:** The best approach to multi-layer memory is not "prompt the LLM to choose the right tool" — it's "automate the pipeline for writes, prompt for proactive reads." Writes should be deterministic (every Nth message → pgvector + OpenViking). Reads should be guided by doctrine (search before asking, search when referencing past). The LLM's job is to decide *when to recall*, not *when to store*.
+
+### Session 59: Subject-Based Memory + Identity Graph Seed
+
+**Problem:** Even after Session 58, memory continuity was still fragmented by platform-specific ids. The same human on Telegram, WhatsApp, Nostr, and Twitter would be remembered as separate subjects. Group chats were improved, but there was still no canonical person/group/self subject model underneath the memory systems.
+
+**Constraint:** Needed a pragmatic first step, not a giant schema rewrite. Repo already had an unused `user_links` table stub in `db.ts` and boot SQL, so the minimal viable identity graph could be built on top of that.
+
+**Solution:**
+1. **New identity service** (`src/services/identity.ts`)
+   - `resolveCanonicalSubject(subjectId)` resolves any subject id to a canonical subject id plus aliases using `user_links`
+   - `linkSubjects(a, b)` links two subject ids into one canonical subject
+   - Subject types are inferred minimally: `person`, `group`, `self`
+
+2. **Memory read/write path now canonicalizes subjects**
+   - `memorySave()` resolves `userId` to canonical subject before saving
+   - alias list is stored in memory metadata (`aliases`, `subject_type`)
+   - consolidation checks now match across aliases, not just the raw connector id
+   - `memorySearch()` searches across all aliases for the canonical subject
+   - `getRelevantMemories()` prompt injection now pulls latest memories across aliases too
+
+3. **OpenViking runtime now follows canonical subject ids**
+   - `commitToOpenViking()` resolves to canonical subject before choosing session/user namespace
+   - `recallFromOpenViking()` also resolves canonical subject before searching `viking://user/...`
+   - Result: once identities are linked, OpenViking traces and pgvector facts converge on the same subject namespace instead of forking forever
+
+4. **Admin-only identity tools** (`src/services/tools.ts`)
+   - `resolve_identity` — inspect canonical subject + aliases
+   - `link_identity` — link two subject ids into one canonical subject
+   - These are admin-only by runtime check (`isGlobalAdmin`) and not listed in public tool tier, so public users cannot mutate identity graph
+
+5. **Group memory hygiene from earlier patch retained**
+   - group chats do not write `memory.md` as if they were a person
+   - Telegram + WhatsApp groups both get lore summary injection and summary updates
+
+**Verification:**
+- Container rebuilt and healthy
+- `resolve_identity` chat test returned `syntropy-admin` as its own canonical subject with no aliases
+- No boot/runtime errors from new identity service
+- Memory system still initialized cleanly with existing 357 active memories
+
+**Important limitation still remaining:** this is only the **seed** of the identity graph. Nothing auto-links users yet. Cross-connector continuity now has a substrate, but it still requires explicit linking (manual/admin/tool-driven) until we add stronger entity extraction and alias-claim workflows.
+
+**Lesson:** The threshold from “many memory tools” to “coherent memory” is a canonical subject layer. Without it, every connector creates a new fake person. With it, reads/writes can converge even before the higher-level social graph is fully built.

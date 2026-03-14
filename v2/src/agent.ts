@@ -16,7 +16,7 @@ import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
 import { memorySave } from "./services/memory.js";
 import { getRelevantMemories } from "./services/memory.js";
-import { pixelTools, setToolContext, clearToolContext } from "./services/tools.js";
+import { pixelTools, setToolContext, clearToolContext, commitToOpenViking, recallFromOpenViking } from "./services/tools.js";
 import { getPermittedTools, isPriorityUser } from "./services/server-registry.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
@@ -71,6 +71,7 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
   const character = loadCharacter();
   const userMemory = loadMemory(userId);
   const innerLife = getInnerLifeContext();
+  const isGroup = userId.startsWith("tg-group-") || userId.startsWith("wa-group-");
 
   // Use skill graph for context-aware skill loading
   let skills = "";
@@ -93,6 +94,16 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
     console.error("[agent] Long-term memory retrieval failed:", err.message);
   }
 
+  let runtimeMemory = "";
+  try {
+    const recallQuery = isGroup
+      ? (conversationHint || "recent group dynamics, recurring topics, key people, plans, tensions, in-jokes")
+      : (conversationHint || "relationship context, preferences, ongoing projects, emotional state, recent themes, open loops");
+    runtimeMemory = await recallFromOpenViking(userId, recallQuery, isGroup ? 6 : 4);
+  } catch (err: any) {
+    console.error("[agent] OpenViking runtime recall failed:", err.message);
+  }
+
   let prompt = character;
 
   if (innerLife) {
@@ -107,7 +118,11 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
     prompt += `\n\n## Long-term memory\n${longTermMemory}`;
   }
 
-  if (userMemory) {
+  if (runtimeMemory) {
+    prompt += `\n\n## Deep semantic memory\n${runtimeMemory}`;
+  }
+
+  if (userMemory && !isGroup) {
     prompt += `\n\n## Memory about this user (from conversations)\n${userMemory}`;
   }
 
@@ -116,7 +131,7 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
     prompt += `\n\n${selfLearningContext}`;
   }
 
-  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+  if ((platform === "telegram" && userId.startsWith("tg-group-")) || (platform === "whatsapp" && userId.startsWith("wa-group-"))) {
     const groupSummary = loadGroupSummary(userId);
     if (groupSummary) {
       prompt += `\n\n## Group lore summary\n${groupSummary}`;
@@ -128,11 +143,26 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
   prompt += `\n\n## Current context
 - Platform: ${platform}
-- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}${chatTitle ? `\n- Chat: ${userId.startsWith("tg-group-") ? `${chatTitle} (group)` : `DM with ${chatTitle}`}` : ""}
+- User ID: ${userId}${chatId ? `\n- Chat ID: ${chatId} (auto-injected into alarm tools, no need to pass it)` : ""}${chatTitle ? `\n- Chat: ${(userId.startsWith("tg-group-") || userId.startsWith("wa-group-")) ? `${chatTitle} (group)` : `DM with ${chatTitle}`}` : ""}
 - Current time (UTC): ${new Date().toISOString()}
 - User timezone: UTC-5 (Colombia)
 - When scheduling alarms for relative times ("in 10 seconds", "en 5 minutos"), use the relative_time parameter instead of computing due_at. The server calculates the exact time.
-- You have long-term memory tools (memory_save, memory_search, memory_update, memory_delete). Use memory_save when you learn important facts worth remembering across sessions. Your memories above were auto-retrieved — use memory_search for deeper recall.`;
+- **Memory doctrine — you have three memory layers, use them actively:**
+  1. **pgvector memory** (memory_save, memory_search, memory_update, memory_delete): Your primary factual memory. Stores atomic facts about users, preferences, commitments, self-insights. Auto-extracted every ~5 messages. Memories above were auto-retrieved; use memory_search for deeper recall.
+  2. **OpenViking runtime** (memcommit, viking_browse, viking_read, viking_search on viking://user/...): Richer semantic memory — conversation traces, events, entities. Auto-committed during extraction. Use viking_search for semantic recall across all users.
+  3. **Per-user notes** (auto-managed): Simple markdown summaries updated every ~5 messages. Shown above as "Memory about this user."
+- **When to search memory PROACTIVELY:**
+  - To personalize your tone and follow-through based on relationship history
+  - To remember ongoing projects, promises, preferences, moods, and recurring themes
+  - To continue conversations with continuity instead of generic replies
+  - To connect today's message with older patterns, ideas, tensions, and in-jokes
+  - When drafting posts or content, search for recent learnings, obsessions, and unfinished threads
+- **When to save memory EXPLICITLY via memory_save:**
+  - User shares a new important fact (name, location, project, preference)
+  - You make a commitment or promise to a user
+  - You discover something about yourself (identity-type memory)
+  - You learn a new procedure or pattern (procedural-type memory)
+- **Do NOT call memcommit manually** — it runs automatically during memory extraction.`;
 
   if (userId === "syntropy" || userId === "syntropy-admin") {
     prompt += `\n\n## Syntropy context
@@ -142,7 +172,7 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 - Syntropy may use tools to inspect or repair the system; cooperate and be precise.`;
   }
 
-  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+  if ((platform === "telegram" && userId.startsWith("tg-group-")) || (platform === "whatsapp" && userId.startsWith("wa-group-"))) {
     prompt += `\n\n## Group chat behavior
 - This is a group chat. You should listen, learn, and track the lore.
 - Use the conversation history already in context; do not say you can't access it.
@@ -763,7 +793,7 @@ export async function promptWithHistory(
     });
   }
 
-  if (platform === "telegram" && userId.startsWith("tg-group-")) {
+  if ((platform === "telegram" && userId.startsWith("tg-group-")) || (platform === "whatsapp" && userId.startsWith("wa-group-"))) {
     const groupCount = (groupMessageCounts.get(userId) ?? 0) + 1;
     groupMessageCounts.set(userId, groupCount);
     if (groupCount % GROUP_SUMMARY_INTERVAL === 0) {
@@ -795,6 +825,9 @@ export async function promptWithHistory(
  */
 async function extractAndSaveMemory(userId: string, messages: any[]): Promise<void> {
   if (!messages || messages.length < 4) return; // Need some conversation to extract from
+
+  const isGroup = userId.startsWith("tg-group-") || userId.startsWith("wa-group-");
+  if (isGroup) return; // Group chats use group lore summaries, not per-user memory.md
 
   const existingMemory = loadMemory(userId);
   const recentExchanges = messages.slice(-10)
@@ -841,6 +874,11 @@ Keep it under 500 characters. Be concise. Only include facts actually stated or 
       } catch (err: any) {
         console.error(`[agent] Memory pgvector save failed:`, err.message);
       }
+
+      // Also commit conversation trace to OpenViking runtime for deeper semantic extraction
+      commitToOpenViking(userId, recentExchanges).catch((err) => {
+        console.warn(`[agent] OpenViking auto-commit failed for ${userId}:`, err.message);
+      });
       
       // Track cost for background task (free tier)
       const inputTokens = estimateTokens(promptText) + 500; // System prompt estimate

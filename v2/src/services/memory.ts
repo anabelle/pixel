@@ -19,6 +19,7 @@ import type * as schema from "../db.js";
 import { audit } from "./audit.js";
 import { costMonitor } from "./cost-monitor.js";
 import { resolveGoogleApiKey } from "./google-key.js";
+import { resolveCanonicalSubject } from "./identity.js";
 
 // ─── Configuration ───────────────────────────────────────────
 
@@ -349,6 +350,12 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
   if (!db || !rawSql) throw new Error("Memory service not initialized");
 
   const { content, type = "fact", userId, platform, source = "conversation", metadata } = input;
+  const subject = await resolveCanonicalSubject(userId);
+  const effectiveUserId = subject?.canonicalId ?? userId;
+  const aliasIds = subject?.aliases ?? [];
+  const enrichedMetadata = subject
+    ? { ...(metadata || {}), subject_type: subject.canonicalType, aliases: subject.aliases }
+    : metadata;
 
   // Generate embedding for the new content
   const embedding = await generateEmbedding(content, "RETRIEVAL_DOCUMENT");
@@ -361,7 +368,7 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
     FROM memories
     WHERE valid_until IS NULL
       AND embedding IS NOT NULL
-      ${userId ? rawSql`AND (user_id = ${userId} OR user_id IS NULL)` : rawSql`AND user_id IS NULL`}
+      ${aliasIds.length > 0 ? rawSql`AND (user_id = ANY(${aliasIds}) OR user_id IS NULL)` : userId ? rawSql`AND (user_id = ${userId} OR user_id IS NULL)` : rawSql`AND user_id IS NULL`}
     ORDER BY embedding <=> ${embeddingStr}::vector
     LIMIT 5
   `;
@@ -389,7 +396,7 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
       SET content = ${mergedContent},
           embedding = ${mergedEmbStr}::vector,
           updated_at = NOW(),
-          metadata = ${JSON.stringify({ ...((closestMatch.metadata as any) || {}), ...(metadata || {}), merged_from: content.slice(0, 100) })}::jsonb
+          metadata = ${JSON.stringify({ ...((closestMatch.metadata as any) || {}), ...(enrichedMetadata || {}), merged_from: content.slice(0, 100) })}::jsonb
       WHERE id = ${closestMatch.id}
     `;
 
@@ -401,14 +408,14 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
   }
 
   // ADD: insert new memory
-  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+  const metadataJson = enrichedMetadata ? JSON.stringify(enrichedMetadata) : null;
   const [created] = await rawSql`
     INSERT INTO memories (content, embedding, type, user_id, platform, source, metadata)
     VALUES (
       ${content},
       ${embeddingStr}::vector,
       ${type},
-      ${userId ?? null},
+      ${effectiveUserId ?? null},
       ${platform ?? null},
       ${source},
       ${metadataJson}::jsonb
@@ -416,7 +423,7 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
     RETURNING *
   `;
 
-  audit("memory", `ADDED memory ${created.id}: "${content.slice(0, 80)}..." (type=${type}, user=${userId ?? "global"})`);
+  audit("memory", `ADDED memory ${created.id}: "${content.slice(0, 80)}..." (type=${type}, user=${effectiveUserId ?? "global"})`);
   const createdRecord = rowToRecord(created);
   syncOpenVikingMemoryFile(createdRecord);
   return createdRecord;
@@ -438,6 +445,8 @@ export async function memorySearch(
   if (!db || !rawSql) throw new Error("Memory service not initialized");
 
   const { userId, platform, type, topK = DEFAULT_TOP_K, includeExpired = false } = options;
+  const subject = await resolveCanonicalSubject(userId);
+  const aliasIds = subject?.aliases ?? [];
   const safeTopK = Math.max(1, Math.min(topK, 200));
 
   // Generate query embedding (RETRIEVAL_QUERY taskType for search)
@@ -481,7 +490,7 @@ export async function memorySearch(
       WHERE TRUE
         AND embedding IS NOT NULL
         ${!includeExpired ? rawSql`AND valid_until IS NULL` : rawSql``}
-        ${userId ? rawSql`AND (user_id = ${userId} OR user_id IS NULL)` : rawSql``}
+        ${aliasIds.length > 0 ? rawSql`AND (user_id = ANY(${aliasIds}) OR user_id IS NULL)` : userId ? rawSql`AND (user_id = ${userId} OR user_id IS NULL)` : rawSql``}
         ${platform ? rawSql`AND (platform = ${platform} OR platform IS NULL)` : rawSql``}
         ${type ? rawSql`AND type = ${type}` : rawSql``}
     )
@@ -582,12 +591,14 @@ export async function getRelevantMemories(
 
   try {
     const parts: string[] = [];
+    const subject = await resolveCanonicalSubject(userId);
+    const aliasIds = subject?.aliases ?? [];
 
     // 1. User-specific memories (if we have a user)
     if (userId) {
       const userMemories = await rawSql`
         SELECT content, type, access_count FROM memories
-        WHERE user_id = ${userId}
+        WHERE ${aliasIds.length > 0 ? rawSql`user_id = ANY(${aliasIds})` : rawSql`user_id = ${userId}`}
           AND valid_until IS NULL
         ORDER BY updated_at DESC
         LIMIT ${Math.floor(MAX_PROMPT_MEMORIES / 2)}

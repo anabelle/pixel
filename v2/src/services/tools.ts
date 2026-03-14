@@ -19,6 +19,7 @@ import { getNostrInstance, sendNostrDm } from "../connectors/nostr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
+import { linkSubjects, resolveCanonicalSubject } from "./identity.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
@@ -183,6 +184,105 @@ function getOpenVikingHeaders() {
       "X-OpenViking-Agent": identity.agent,
     },
   };
+}
+
+function getStandaloneOpenVikingIdentity(userId: string) {
+  const safeUserId = userId.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return {
+    sessionId: `pixel-${safeUserId}`,
+    account: "pixel",
+    user: safeUserId,
+    agent: "pixel",
+    headers: {
+      "X-OpenViking-Account": "pixel",
+      "X-OpenViking-User": safeUserId,
+      "X-OpenViking-Agent": "pixel",
+    },
+  };
+}
+
+/**
+ * Standalone OpenViking commit — called from extractAndSaveMemory() pipeline.
+ * Does NOT depend on tool context. Accepts userId and conversation text directly.
+ * Creates/reuses a session, appends conversation as a message, and commits for extraction.
+ */
+export async function commitToOpenViking(userId: string, conversationText: string): Promise<void> {
+  if (!OPENVIKING_ENDPOINT || !conversationText.trim()) return;
+
+  const subject = await resolveCanonicalSubject(userId);
+  const effectiveUserId = subject?.canonicalId ?? userId;
+  const { sessionId, headers } = getStandaloneOpenVikingIdentity(effectiveUserId);
+
+  try {
+    // Ensure session exists
+    await fetchOpenViking(`/api/v1/sessions`, {
+      method: "POST",
+      headers,
+    });
+
+    // Append conversation content as a user message
+    await fetchOpenViking(`/api/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        role: "user",
+        content: conversationText.slice(0, 16000), // Cap to avoid oversized payloads
+      }),
+    });
+
+    // Commit asynchronously (wait=false so it doesn't block)
+    await fetchOpenViking(`/api/v1/sessions/${encodeURIComponent(sessionId)}/commit?wait=false`, {
+      method: "POST",
+      headers,
+    });
+
+    console.log(`[openviking] Auto-committed conversation for ${userId} -> ${effectiveUserId} (${conversationText.length} chars)`);
+  } catch (err: any) {
+    // Non-fatal — OpenViking is optional enrichment, pgvector is primary
+    console.warn(`[openviking] Auto-commit failed for ${userId}: ${err.message}`);
+  }
+}
+
+/**
+ * Standalone OpenViking recall for system-prompt injection.
+ * Used to make Pixel remember for personalization, continuity, follow-through,
+ * project tracking, and group lore, not merely for “did the user already say this?” cases.
+ */
+export async function recallFromOpenViking(userId: string, query: string, limit: number = 4): Promise<string> {
+  if (!OPENVIKING_ENDPOINT || !query.trim()) return "";
+
+  const subject = await resolveCanonicalSubject(userId);
+  const effectiveUserId = subject?.canonicalId ?? userId;
+  const { user, headers } = getStandaloneOpenVikingIdentity(effectiveUserId);
+  const targetUri = `viking://user/${user}`;
+
+  try {
+    const result = await fetchOpenViking<any>("/api/v1/search/find", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        query,
+        target_uri: targetUri,
+        limit,
+      }),
+    });
+
+    const memories = result?.result?.memories ?? [];
+    if (!Array.isArray(memories) || memories.length === 0) return "";
+
+    return memories
+      .slice(0, limit)
+      .map((memory: any) => {
+        const score = memory.score != null ? ` (${Number(memory.score).toFixed(2)})` : "";
+        const text = memory.abstract || memory.content || memory.uri || "";
+        return text ? `- ${text}${score}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  } catch (err: any) {
+    console.warn(`[openviking] Recall failed for ${userId}: ${err.message}`);
+    return "";
+  }
 }
 
 async function runtimeVikingBrowse(uri: string, view: "list" | "tree" | "stat", recursive?: boolean): Promise<string> {
@@ -2773,6 +2873,67 @@ const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
 
 // ─── LONG-TERM MEMORY TOOLS ──────────────────────────────────
 
+const linkIdentitySchema = Type.Object({
+  subject_a: Type.String({ description: "First subject id to link, e.g. tg-123 or nostr-<pubkey>" }),
+  subject_b: Type.String({ description: "Second subject id to link to the same person/subject" }),
+});
+
+const linkIdentityTool: AgentTool<typeof linkIdentitySchema> = {
+  name: "link_identity",
+  label: "Link Subject Identities",
+  description: "Link two subject ids so Pixel remembers them as the same canonical person/subject across connectors. Admin-only.",
+  parameters: linkIdentitySchema,
+  execute: async (_id, { subject_a, subject_b }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: link_identity is admin-only." }], details: undefined };
+      }
+
+      const result = await linkSubjects(subject_a, subject_b);
+      auditToolUse("link_identity", { subject_a, subject_b }, result);
+      return {
+        content: [{ type: "text" as const, text: `Linked. Canonical subject: ${result.canonicalId}\nAliases: ${result.aliases.join(", ")}` }],
+        details: result,
+      };
+    } catch (err: any) {
+      auditToolUse("link_identity", { subject_a, subject_b }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to link identities: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
+const resolveIdentitySchema = Type.Object({
+  subject_id: Type.String({ description: "Subject id to resolve" }),
+});
+
+const resolveIdentityTool: AgentTool<typeof resolveIdentitySchema> = {
+  name: "resolve_identity",
+  label: "Resolve Subject Identity",
+  description: "Resolve a subject id to its canonical memory subject and list aliases. Admin-only.",
+  parameters: resolveIdentitySchema,
+  execute: async (_id, { subject_id }) => {
+    try {
+      const ctx = getToolContext();
+      if (!isGlobalAdmin(ctx.userId)) {
+        return { content: [{ type: "text" as const, text: "Unauthorized: resolve_identity is admin-only." }], details: undefined };
+      }
+      const result = await resolveCanonicalSubject(subject_id);
+      auditToolUse("resolve_identity", { subject_id }, result || { result: null });
+      if (!result) {
+        return { content: [{ type: "text" as const, text: `No identity resolution found for ${subject_id}.` }], details: undefined };
+      }
+      return {
+        content: [{ type: "text" as const, text: `Canonical: ${result.canonicalId} (${result.canonicalType})\nAliases: ${result.aliases.join(", ")}` }],
+        details: result,
+      };
+    } catch (err: any) {
+      auditToolUse("resolve_identity", { subject_id }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `Failed to resolve identity: ${err.message}` }], details: undefined };
+    }
+  },
+};
+
 const memorySaveSchema = Type.Object({
   content: Type.String({ description: "The fact, knowledge, or observation to remember. Be specific and concise." }),
   type: Type.Optional(Type.String({ description: "Memory type: 'fact' (concrete knowledge), 'episode' (interaction summary), 'identity' (self-knowledge), 'procedural' (skill/pattern). Default: 'fact'" })),
@@ -3573,6 +3734,8 @@ export const pixelTools = [
   webFetchTool,
   webSearchTool,
   researchTaskTool,
+  linkIdentityTool,
+  resolveIdentityTool,
   memorySaveTool,
   memorySearchTool,
   memoryUpdateTool,

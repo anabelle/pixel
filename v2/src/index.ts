@@ -35,6 +35,7 @@ import { getConversationStats, appendToLog } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
 import { initUsers, getUserStats } from "./services/users.js";
+import { initIdentity } from "./services/identity.js";
 import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
 import { getSkillGraph, getSkillGraphStats } from "./services/skill-graph.js";
 import { l402 } from "./services/l402.js";
@@ -1608,6 +1609,9 @@ async function boot() {
 
     // Initialize user tracking
     initUsers(db);
+
+    // Initialize identity graph service
+    initIdentity(db, sql);
 
     // Initialize reminder service
     initReminders(db);
