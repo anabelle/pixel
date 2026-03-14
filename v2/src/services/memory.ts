@@ -349,7 +349,8 @@ export interface MemoryFact {
 export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> {
   if (!db || !rawSql) throw new Error("Memory service not initialized");
 
-  const { content, type = "fact", userId, platform, source = "conversation", metadata } = input;
+  const { content, type: requestedType, userId, platform, source = "conversation", metadata } = input;
+  const type = requestedType ?? "fact";
   const subject = await resolveCanonicalSubject(userId);
   const effectiveUserId = subject?.canonicalId ?? userId;
   const aliasIds = subject?.aliases ?? [];
@@ -394,6 +395,7 @@ export async function memorySave(input: MemorySaveInput): Promise<MemoryRecord> 
     await rawSql`
       UPDATE memories
       SET content = ${mergedContent},
+          type = ${requestedType ?? closestMatch.type},
           embedding = ${mergedEmbStr}::vector,
           updated_at = NOW(),
           metadata = ${JSON.stringify({ ...((closestMatch.metadata as any) || {}), ...(enrichedMetadata || {}), merged_from: content.slice(0, 100) })}::jsonb

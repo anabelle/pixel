@@ -27,6 +27,7 @@ const THROTTLE_MS = 60_000; // 1 minute
 // Shared NDK instance — used by heartbeat and other services
 let sharedNdk: NDK | null = null;
 let sharedPubkey: string | null = null;
+let sharedSigner: NDKPrivateKeySigner | null = null;
 const profileNameCache = new Map<string, { value: string; expiresAt: number }>();
 
 // Shared set of event IDs we've already replied to — prevents double-replies
@@ -290,24 +291,84 @@ export async function sendNostrDm(
   pubkey: string,
   content: string
 ): Promise<boolean> {
-  if (!sharedNdk) {
+  if (!sharedNdk || !sharedSigner) {
     console.log("[nostr] No NDK instance available for sending DM");
     return false;
   }
 
   try {
-    const event = new NDKEvent(sharedNdk, {
-      kind: 4, // NIP-04 encrypted DM
-      content,
-      tags: [["p", pubkey]],
-    });
+    const recipientPubkey = normalizeNostrPubkey(pubkey);
+    const recipient = await sharedNdk.getUser({ pubkey: recipientPubkey });
+    const encrypted = await sharedSigner.encrypt(recipient, content);
 
-    await event.publish();
-    return true;
+    let lastError: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt > 0) {
+          await reconnectNostrRelays();
+        }
+
+        const event = new NDKEvent(sharedNdk, {
+          kind: 4,
+          content: encrypted,
+          tags: [["p", recipientPubkey]],
+        });
+
+        await event.publish();
+        return true;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[nostr] DM publish attempt ${attempt + 1} failed: ${err.message}`);
+      }
+    }
+
+    throw lastError;
   } catch (err: any) {
     console.error(`[nostr] Failed to send DM to ${pubkey.slice(0, 8)}...:`, err.message);
     return false;
   }
+}
+
+async function reconnectNostrRelays(timeoutMs: number = 10_000): Promise<void> {
+  if (!sharedNdk) return;
+  const connectPromise = sharedNdk.connect();
+  const timeoutPromise = new Promise<void>((_, reject) => setTimeout(() => reject(new Error(`Reconnect timeout (${timeoutMs}ms)`)), timeoutMs));
+  await Promise.race([connectPromise, timeoutPromise]);
+}
+
+function decodeNostrBech32(value: string, prefix: string): string {
+  if (!value.startsWith(`${prefix}1`)) {
+    throw new Error(`Invalid ${prefix} key`);
+  }
+
+  const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+  const data = value.slice(prefix.length + 1);
+  const values: number[] = [];
+  for (const c of data) {
+    const v = CHARSET.indexOf(c);
+    if (v === -1) throw new Error("Invalid bech32 character");
+    values.push(v);
+  }
+  const payload = values.slice(0, -6);
+  let acc = 0;
+  let bits = 0;
+  const bytes: number[] = [];
+  for (const v of payload) {
+    acc = (acc << 5) | v;
+    bits += 5;
+    while (bits >= 8) {
+      bits -= 8;
+      bytes.push((acc >> bits) & 0xff);
+    }
+  }
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function normalizeNostrPubkey(value: string): string {
+  const trimmed = value.trim();
+  if (/^[0-9a-f]{64}$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (trimmed.startsWith("npub1")) return decodeNostrBech32(trimmed, "npub");
+  throw new Error("Recipient pubkey must be hex or npub");
 }
 
 /** Convert nsec to hex private key */
@@ -317,27 +378,7 @@ function nsecToHex(nsec: string): string {
 
   // bech32 decode for nsec1...
   if (nsec.startsWith("nsec1")) {
-    const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-    const data = nsec.slice(5);
-    const values: number[] = [];
-    for (const c of data) {
-      const v = CHARSET.indexOf(c);
-      if (v === -1) throw new Error("Invalid bech32 character");
-      values.push(v);
-    }
-    const payload = values.slice(0, -6);
-    let acc = 0;
-    let bits = 0;
-    const bytes: number[] = [];
-    for (const v of payload) {
-      acc = (acc << 5) | v;
-      bits += 5;
-      while (bits >= 8) {
-        bits -= 8;
-        bytes.push((acc >> bits) & 0xff);
-      }
-    }
-    return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+    return decodeNostrBech32(nsec, "nsec");
   }
 
   throw new Error("Invalid private key format");
@@ -402,6 +443,7 @@ export async function startNostr(): Promise<void> {
   // Store for use by heartbeat and other services
   sharedNdk = ndk;
   sharedPubkey = pubkey;
+  sharedSigner = signer;
 
   console.log(`[nostr] Connected as ${pubkey.slice(0, 8)}...`);
   console.log(`[nostr] Relays: ${relayUrls.join(", ")}`);

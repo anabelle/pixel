@@ -49,6 +49,7 @@ const LEARN_EVERY = 2;
 const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 const DERIVE_EVERY = 6;
+const MIRROR_EVERY = 3;
 const OBSERVATION_KEEP_COUNT = 50;
 const INNER_LIFE_INTERVAL_MS = parseInt(process.env.INNER_LIFE_INTERVAL_MS ?? String(3 * 60 * 60 * 1000), 10);
 const INNER_LIFE_STARTUP_DELAY_MS = parseInt(process.env.INNER_LIFE_STARTUP_DELAY_MS ?? String(3 * 60 * 1000), 10);
@@ -60,6 +61,7 @@ const MAX_LEARNINGS_SIZE = 6000;
 const MAX_IDEAS_SIZE = 4000;
 const MAX_EVOLUTION_SIZE = 3000;
 const MAX_PROJECTS_SIZE = 4000;
+const MAX_MIRROR_ALERTS_SIZE = 4000;
 const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IDEA_GARDEN_PATH = "idea-garden.md";
 const PROJECTS_PATH = "projects.md";
@@ -69,6 +71,7 @@ const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 const SYNTROPY_DISPATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const SYNTROPY_RESULTS_PATH = "/app/data/syntropy-results.jsonl";
 const SYNTROPY_RESULTS_STATE_PATH = "syntropy-results-state.json";
+const RECENT_POSTS_PATH = "/app/data/nostr-posts.jsonl";
 
 // Deduplication thresholds
 const INNER_SIMILARITY_THRESHOLD = 0.65;
@@ -1050,6 +1053,223 @@ function gatherUserMemories(): string {
   return memories.join("\n\n");
 }
 
+type MirrorSample = {
+  ts: number;
+  source: string;
+  platform: string;
+  kind: "post" | "conversation";
+  input: string;
+  output: string;
+};
+
+function normalizeMirrorText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .trim();
+}
+
+function readRecentMirrorPosts(limit: number = 8): MirrorSample[] {
+  if (!existsSync(RECENT_POSTS_PATH)) return [];
+
+  try {
+    const lines = readFileSync(RECENT_POSTS_PATH, "utf-8").split("\n").filter(Boolean);
+    return lines
+      .map((line) => {
+        try {
+          const entry = JSON.parse(line) as { ts?: number; content?: string; type?: string };
+          if (!entry.content) return null;
+          return {
+            ts: Number(entry.ts || Date.now()),
+            source: entry.type || "post",
+            platform: "nostr",
+            kind: "post" as const,
+            input: `[${entry.type || "post"}]`,
+            output: entry.content,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .slice(-limit) as MirrorSample[];
+  } catch {
+    return [];
+  }
+}
+
+function gatherRecentOutputsForMirror(limit: number = 20): MirrorSample[] {
+  const samples: MirrorSample[] = [...readRecentMirrorPosts(8)];
+  const cutoff = Date.now() - 72 * 60 * 60 * 1000;
+
+  try {
+    if (existsSync(CONVERSATIONS_DIR)) {
+      const userDirs = readdirSync(CONVERSATIONS_DIR);
+      for (const userDir of userDirs) {
+        const logPath = join(CONVERSATIONS_DIR, userDir, "log.jsonl");
+        if (!existsSync(logPath)) continue;
+        try {
+          const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
+          for (const line of lines) {
+            try {
+              const entry = JSON.parse(line) as { ts?: string; platform?: string; user?: string; assistant?: string };
+              if (!entry.assistant || !entry.assistant.trim()) continue;
+              const ts = entry.ts ? new Date(entry.ts).getTime() : 0;
+              if (!ts || ts < cutoff) continue;
+              samples.push({
+                ts,
+                source: userDir,
+                platform: entry.platform || "unknown",
+                kind: "conversation",
+                input: entry.user || "",
+                output: entry.assistant,
+              });
+            } catch {}
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return samples
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, limit)
+    .sort((a, b) => a.ts - b.ts);
+}
+
+function buildMirrorHeuristics(samples: MirrorSample[]): string {
+  if (samples.length === 0) return "- No recent outputs available.";
+
+  const duplicateBuckets = new Map<string, MirrorSample[]>();
+  for (const sample of samples) {
+    const normalized = normalizeMirrorText(sample.output);
+    if (normalized.length < 20) continue;
+    const bucket = duplicateBuckets.get(normalized) ?? [];
+    bucket.push(sample);
+    duplicateBuckets.set(normalized, bucket);
+  }
+
+  const repeated = Array.from(duplicateBuckets.values())
+    .filter((bucket) => bucket.length >= 2)
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 3)
+    .map((bucket) => `- Repeated ${bucket.length}x: ${bucket[0].output.slice(0, 120)}`);
+
+  const nearDuplicates: string[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    for (let j = i + 1; j < samples.length; j++) {
+      const a = samples[i];
+      const b = samples[j];
+      if (normalizeMirrorText(a.output) === normalizeMirrorText(b.output)) continue;
+      const similarity = innerJaccardSimilarity(innerTokenize(a.output), innerTokenize(b.output));
+      if (similarity >= 0.72) {
+        nearDuplicates.push(`- Near-duplicate outputs (${similarity.toFixed(2)}): ${a.output.slice(0, 80)} || ${b.output.slice(0, 80)}`);
+      }
+      if (nearDuplicates.length >= 3) break;
+    }
+    if (nearDuplicates.length >= 3) break;
+  }
+
+  const broadcastMap = new Map<string, Set<string>>();
+  for (const sample of samples.filter((sample) => sample.kind === "conversation")) {
+    const normalized = normalizeMirrorText(sample.output);
+    if (normalized.length < 20) continue;
+    const targets = broadcastMap.get(normalized) ?? new Set<string>();
+    targets.add(sample.source);
+    broadcastMap.set(normalized, targets);
+  }
+  const broadcast = Array.from(broadcastMap.entries())
+    .filter(([, targets]) => targets.size >= 2)
+    .slice(0, 3)
+    .map(([text, targets]) => `- Same reply sent to ${targets.size} conversation targets: ${text.slice(0, 120)}`);
+
+  const orphanRisk = samples
+    .filter((sample) => sample.kind === "conversation")
+    .slice(-10)
+    .filter((sample) => !sample.input.trim())
+    .length;
+
+  const heuristics: string[] = [];
+  if (repeated.length > 0) heuristics.push(...repeated);
+  if (nearDuplicates.length > 0) heuristics.push(...nearDuplicates);
+  if (broadcast.length > 0) heuristics.push(...broadcast);
+  if (orphanRisk > 0) heuristics.push(`- ${orphanRisk} recent replies had empty logged user/input context.`);
+  if (heuristics.length === 0) heuristics.push("- No obvious duplicate-output anomaly from heuristics.");
+  return heuristics.join("\n");
+}
+
+async function phaseMirror(): Promise<void> {
+  console.log("[inner-life] Phase: MIRROR — reviewing consequences...");
+
+  const samples = gatherRecentOutputsForMirror(20);
+  if (samples.length === 0) return;
+
+  const existingMirror = readLivingDoc("mirror-alerts.md");
+  const heuristics = buildMirrorHeuristics(samples);
+  const renderedSamples = samples
+    .map((sample, idx) => {
+      const stamp = new Date(sample.ts).toISOString();
+      return `${idx + 1}. [${stamp}] ${sample.platform}/${sample.source}/${sample.kind}\ninput: ${sample.input.slice(0, 180) || "(none)"}\noutput: ${sample.output.slice(0, 220)}`;
+    })
+    .join("\n\n");
+
+  const response = await llmCall(
+    `You are Pixel's internal consequence mirror.
+Review recent outputs and detect anomalies in behavior over time.
+Look for:
+- repeating the same or near-identical message
+- replying without enough contextual anchoring
+- orphaned or disconnected replies
+- posting content that ignores surrounding context
+- spammy broadcast behavior
+
+Write for Pixel only. This is a private alert, not a public-facing answer.
+Be concrete, cite evidence, and end with guardrails.
+Format EXACTLY as:
+Severity: ok|watch|warning|critical
+Findings:
+- ...
+Evidence:
+- ...
+Next guardrails:
+- ...`,
+    `Review the last ${samples.length} outputs.
+
+Heuristic signals:
+${heuristics}
+
+Recent outputs:
+${renderedSamples}
+
+Existing mirror history:
+${existingMirror.slice(0, 1200) || "(none)"}
+
+If there is a structural connector issue causing orphaned replies, say so plainly.
+If no major anomaly exists, output Severity: ok and still give one guardrail.`
+  );
+
+  if (!response || response.length < 40) return;
+
+  const dated = `### ${new Date().toISOString().split("T")[0]} — cycle ${cycleCount}\n${response.trim()}\n\n`;
+  let updated = dated + existingMirror;
+  if (updated.length > MAX_MIRROR_ALERTS_SIZE) {
+    const sections = updated.split("### ").filter(Boolean);
+    let trimmed = "";
+    for (const section of sections) {
+      if (trimmed.length + section.length + 4 > MAX_MIRROR_ALERTS_SIZE) break;
+      trimmed += `### ${section}`;
+    }
+    updated = trimmed;
+  }
+
+  writeLivingDoc("mirror-alerts.md", updated);
+}
+
+export async function runConsequenceMirrorOnce(): Promise<void> {
+  await phaseMirror();
+}
+
 // ============================================================
 // Phase: REFLECT — Self-examination
 // ============================================================
@@ -1897,6 +2117,17 @@ export async function runInnerLifeCycle(): Promise<void> {
       audit("inner_life_error", `DERIVE failed: ${err.message}`, { phase: "derive", error: err.message });
     }
   }
+
+  if (cycleCount % MIRROR_EVERY === 0) {
+    try {
+      await phaseMirror();
+      console.log("[inner-life] MIRROR phase completed");
+      audit("inner_life_mirror", `MIRROR completed (cycle ${cycleCount})`);
+    } catch (err: any) {
+      console.error("[inner-life] MIRROR phase failed:", err.message);
+      audit("inner_life_error", `MIRROR failed: ${err.message}`, { phase: "mirror", error: err.message });
+    }
+  }
 }
 
 export function startInnerLife(): void {
@@ -1959,6 +2190,14 @@ export function getInnerLifeContext(): string {
     parts.push(`## Ideas I'm incubating\n${ideas.slice(0, 800)}`);
   }
 
+  const mirrorAlerts = readLivingDoc("mirror-alerts.md");
+  if (mirrorAlerts) {
+    const firstAlert = mirrorAlerts.split("### ").filter(Boolean)[0];
+    if (firstAlert) {
+      parts.push(`## Consequence mirror\n${firstAlert.slice(0, 1000)}`);
+    }
+  }
+
   if (parts.length === 0) return "";
   return parts.join("\n\n");
 }
@@ -1968,6 +2207,7 @@ export function getInnerLifeContext(): string {
  */
 export function getInnerLifeStatus() {
   const projects = loadProjectState();
+  const mirrorAlerts = readLivingDoc("mirror-alerts.md");
   return {
     running: innerLifeRunning,
     cycleCount,
@@ -1975,8 +2215,10 @@ export function getInnerLifeStatus() {
     hasLearnings: readLivingDoc("learnings.md").length > 0,
     hasIdeas: readLivingDoc("ideas.md").length > 0,
     hasEvolution: readLivingDoc("evolution.md").length > 0,
+    hasMirrorAlerts: mirrorAlerts.length > 0,
     projectCount: projects.length,
     activeProjects: projects.filter((project) => ["planned", "active", "blocked"].includes(project.status)).length,
+    nextMirror: MIRROR_EVERY - (cycleCount % MIRROR_EVERY),
     nextReflect: REFLECT_EVERY - (cycleCount % REFLECT_EVERY),
     nextLearn: LEARN_EVERY - (cycleCount % LEARN_EVERY),
     nextIdeate: IDEATE_EVERY - (cycleCount % IDEATE_EVERY),

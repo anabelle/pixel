@@ -24,7 +24,7 @@ let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
 const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
-const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string; chatTitle?: string }>();
+const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string; chatTitle?: string; replyToMessageId?: number }>();
 const GROUP_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const GROUP_PING_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 const GROUP_PING_CHECK_MS = 10 * 60 * 1000; // 10 minutes
@@ -141,6 +141,27 @@ async function sendWithRetry(chatId: string | number, text: string, parseMode?: 
   throw lastError;
 }
 
+async function sendReplyWithRetry(chatId: string | number, text: string, replyToMessageId?: number, parseMode?: "Markdown" | "HTML") {
+  const attempts = [0, 500, 2000];
+  let lastError: any;
+  for (const delay of attempts) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try {
+      await botInstance?.api.sendMessage(chatId, text, {
+        parse_mode: parseMode,
+        reply_parameters: replyToMessageId ? { message_id: replyToMessageId } : undefined,
+      } as any);
+      return;
+    } catch (err: any) {
+      lastError = err;
+      const code = err?.response?.error_code ?? err?.status ?? "?";
+      if (code === 429 || (typeof code === "number" && code >= 500)) continue;
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Send a proactive message to the owner (human operator).
  * Convenience wrapper — uses OWNER_TELEGRAM_ID from env.
@@ -241,7 +262,14 @@ export async function startTelegram(): Promise<void> {
     const senderName = ctx.from.username
       ? `@${ctx.from.username}`
       : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
-    const formatted = isGroupChat ? `${senderName}: ${text}` : text;
+    const replyContext = (ctx.message as any).reply_to_message?.text
+      ?? (ctx.message as any).reply_to_message?.caption
+      ?? "";
+    const formatted = isGroupChat
+      ? `${senderName}${replyContext ? ` (replying to: ${replyContext.slice(0, 140)})` : ""}: ${text}`
+      : replyContext
+        ? `[replying to: ${replyContext.slice(0, 140)}]\n${text}`
+        : text;
     if (isGroupChat) {
       groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     }
@@ -253,7 +281,7 @@ export async function startTelegram(): Promise<void> {
       ? (ctx.chat as any).title ?? undefined
       : senderName;
 
-    queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle);
+    queueChatMessage(ctx.chat.id, conversationId, formatted, chatTitle, ctx.message.message_id);
     if (isGroupChat) {
       captureGroupMemberMemory(
         `tg-${ctx.from.id}`,
@@ -781,11 +809,12 @@ If not worth responding, output [SILENT].`;
   }, GROUP_PING_CHECK_MS);
 }
 
-function queueChatMessage(chatId: number, conversationId: string, line: string, chatTitle?: string): void {
-  const entry = chatBuffers.get(chatId) ?? { items: [], timer: null, conversationId, chatTitle };
+function queueChatMessage(chatId: number, conversationId: string, line: string, chatTitle?: string, replyToMessageId?: number): void {
+  const entry = chatBuffers.get(chatId) ?? { items: [], timer: null, conversationId, chatTitle, replyToMessageId };
   entry.items.push(line);
   // Update chatTitle if we got a newer one (in case first message didn't have it)
   if (chatTitle) entry.chatTitle = chatTitle;
+  if (replyToMessageId) entry.replyToMessageId = replyToMessageId;
 
   if (entry.items.length > CHAT_BATCH_MAX) {
     entry.items = entry.items.slice(-CHAT_BATCH_MAX);
@@ -815,6 +844,7 @@ async function flushChatMessages(chatId: number): Promise<void> {
 
   const isDm = !entry.conversationId.startsWith("tg-group-");
   const chatTitle = entry.chatTitle;
+  const replyToMessageId = entry.replyToMessageId;
   const joined = items.join("\n");
   const trimmed = joined.length > CHAT_BATCH_MAX_CHARS
     ? joined.slice(-CHAT_BATCH_MAX_CHARS)
@@ -855,11 +885,11 @@ async function flushChatMessages(chatId: number): Promise<void> {
       }
 
       if (response.length <= 4096) {
-        await sendWithRetry(chatId, response);
+        await sendReplyWithRetry(chatId, response, replyToMessageId);
       } else {
         const chunks = splitMessage(response, 4096);
         for (const chunk of chunks) {
-          await sendWithRetry(chatId, chunk);
+          await sendReplyWithRetry(chatId, chunk, replyToMessageId);
         }
       }
     } else if (isDm) {

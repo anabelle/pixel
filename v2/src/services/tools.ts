@@ -1453,7 +1453,7 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
 };
 
 const nostrDmSchema = Type.Object({
-  pubkey: Type.String({ description: "Recipient's Nostr pubkey (hex)" }),
+  pubkey: Type.String({ description: "Recipient's Nostr pubkey (hex or npub)" }),
   content: Type.String({ description: "Direct message content (will be encrypted)" }),
 });
 

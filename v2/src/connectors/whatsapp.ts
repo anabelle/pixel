@@ -241,6 +241,7 @@ interface WaBatchEntry {
   timer: ReturnType<typeof setTimeout> | null;
   groupJid: string;
   conversationId: string;
+  quotedMessage?: any;
 }
 const waGroupBuffers = new Map<string, WaBatchEntry>();
 
@@ -251,14 +252,21 @@ interface WaDmBatchEntry {
   jid: string;
   conversationId: string;
   displayName?: string;
+  quotedMessage?: any;
 }
 const waDmBuffers = new Map<string, WaDmBatchEntry>();
 
+function buildQuotedMessageOptions(quotedMessage?: any) {
+  if (!quotedMessage) return undefined;
+  return { quoted: quotedMessage };
+}
+
 /** Queue a DM message for batched processing */
-function queueDmMessage(jid: string, conversationId: string, line: string, displayName?: string): void {
-  const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId, displayName };
+function queueDmMessage(jid: string, conversationId: string, line: string, displayName?: string, quotedMessage?: any): void {
+  const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId, displayName, quotedMessage };
   entry.items.push(line);
   if (displayName) entry.displayName = displayName;
+  if (quotedMessage) entry.quotedMessage = quotedMessage;
 
   if (entry.items.length > WA_BATCH_MAX) {
     entry.items = entry.items.slice(-WA_BATCH_MAX);
@@ -313,8 +321,9 @@ async function flushDmMessages(jid: string): Promise<void> {
       try {
         const voiceBuffer = await textToSpeech(response);
         if (voiceBuffer) {
-          await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
-          await sock!.sendMessage(jid, { text: response }).catch(() => {});
+          const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+          await sock!.sendMessage(jid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true }, quotedOptions);
+          await sock!.sendMessage(jid, { text: response }, quotedOptions).catch(() => {});
           appendToLog(entry.conversationId, trimmed, response, "whatsapp");
           console.log(`[whatsapp] DM voice reply to ${jid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
           return;
@@ -325,12 +334,14 @@ async function flushDmMessages(jid: string): Promise<void> {
     }
 
     try {
-      await sock!.sendMessage(jid, { text: response });
+      const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+      await sock!.sendMessage(jid, { text: response }, quotedOptions);
     } catch (sendErr: any) {
       if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
         console.log(`[whatsapp] DM send failed (${sendErr.message}) — retrying...`);
         await new Promise(r => setTimeout(r, 2000));
-        await sock!.sendMessage(jid, { text: response });
+        const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+        await sock!.sendMessage(jid, { text: response }, quotedOptions);
       } else {
         throw sendErr;
       }
@@ -347,9 +358,10 @@ async function flushDmMessages(jid: string): Promise<void> {
 }
 
 /** Queue a group message for batched processing */
-function queueGroupMessage(groupJid: string, conversationId: string, line: string): void {
-  const entry = waGroupBuffers.get(groupJid) ?? { items: [], timer: null, groupJid, conversationId };
+function queueGroupMessage(groupJid: string, conversationId: string, line: string, quotedMessage?: any): void {
+  const entry = waGroupBuffers.get(groupJid) ?? { items: [], timer: null, groupJid, conversationId, quotedMessage };
   entry.items.push(line);
+  if (quotedMessage) entry.quotedMessage = quotedMessage;
 
   if (entry.items.length > WA_BATCH_MAX) {
     entry.items = entry.items.slice(-WA_BATCH_MAX);
@@ -406,8 +418,9 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
         try {
           const voiceBuffer = await textToSpeech(response);
           if (voiceBuffer) {
-            await sock!.sendMessage(groupJid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
-            await sock!.sendMessage(groupJid, { text: response }).catch(() => {});
+            const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+            await sock!.sendMessage(groupJid, { audio: voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true }, quotedOptions);
+            await sock!.sendMessage(groupJid, { text: response }, quotedOptions).catch(() => {});
             appendToLog(entry.conversationId, trimmed, response, "whatsapp");
             console.log(`[whatsapp] Group voice reply to ${groupJid} (${voiceBuffer.byteLength} bytes, ${items.length} msgs batched)`);
             return;
@@ -418,13 +431,15 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
       }
 
       try {
-        await sock!.sendMessage(groupJid, { text: response });
+        const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+        await sock!.sendMessage(groupJid, { text: response }, quotedOptions);
       } catch (sendErr: any) {
         if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
           console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
           groupMetadataCache.delete(groupJid);
           await new Promise(r => setTimeout(r, 2000));
-          await sock!.sendMessage(groupJid, { text: response });
+          const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
+          await sock!.sendMessage(groupJid, { text: response }, quotedOptions);
         } else {
           throw sendErr;
         }
@@ -1057,20 +1072,23 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
         });
 
         const textMention = (text?.includes(`@${myPhone}`) || (myLidBase && text?.includes(`@${myLidBase}`))) ?? false;
+        const quotedText = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+          ? JSON.stringify(msg.message.extendedTextMessage.contextInfo.quotedMessage).slice(0, 180)
+          : "";
         const addressed = isReplyToBot || isMentioned || textMention;
 
         // Format line with sender context — indicate when Pixel is being addressed
         let line: string;
         if (addressed) {
-          line = `${senderName} (addressing you): ${text}`;
+          line = `${senderName} (addressing you${quotedText ? `, replying to: ${quotedText}` : ""}): ${text}`;
         } else {
-          line = `${senderName}: ${text}`;
+          line = `${senderName}${quotedText ? ` (replying to: ${quotedText})` : ""}: ${text}`;
         }
 
         console.log(`[whatsapp] GROUP queue — ${jid} — ${line.slice(0, 80)} (addressed=${addressed})`);
 
         // If directly addressed, flush immediately after queuing
-        queueGroupMessage(jid, conversationId, line);
+        queueGroupMessage(jid, conversationId, line, msg as any);
         const memberRawId = (msg.key.participant ?? "").replace("@s.whatsapp.net", "").replace("@g.us", "").replace("@lid", "");
         if (memberRawId) {
           captureGroupMemberMemory(
@@ -1098,7 +1116,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
 
       // ─── DM MESSAGES: batch with 20s window ───────────────────
       console.log(`[whatsapp] Message from ${userId}: ${text.slice(0, 80)}`);
-      queueDmMessage(jid, userId, text, msg.pushName ?? undefined);
+      queueDmMessage(jid, userId, text, msg.pushName ?? undefined, msg as any);
     }
   });
 
