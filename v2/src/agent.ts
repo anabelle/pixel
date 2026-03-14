@@ -26,6 +26,7 @@ import { scanMessage } from "./services/security-scanner.js";
 import { buildSelfLearningReflectionPrompt, getSelfLearningConfig, getSelfLearningPromptContext, parseSelfLearningReflection, recordSelfLearningReflection } from "./services/self-learning.js";
 
 const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
+const OBSERVATIONS_DIR = join(process.env.INNER_LIFE_DIR ?? "./data", "observations");
 
 // Track message count per user for periodic memory extraction
 const userMessageCounts = new Map<string, number>();
@@ -1132,15 +1133,14 @@ Assistant: ${assistantText.substring(0, 500)}`;
     if (!observation || observation.toLowerCase().includes("no friction")) return;
     
     // Ensure observations directory exists
-    const observationsDir = join(process.cwd(), "external/pixel/skills/arscontexta/ops/observations");
-    if (!existsSync(observationsDir)) {
-      mkdirSync(observationsDir, { recursive: true });
+    if (!existsSync(OBSERVATIONS_DIR)) {
+      mkdirSync(OBSERVATIONS_DIR, { recursive: true });
     }
     
     // Write observation
     const timestamp = Date.now();
     const filename = `${timestamp}.md`;
-    const filepath = join(observationsDir, filename);
+    const filepath = join(OBSERVATIONS_DIR, filename);
     
     const content = `---
 captured: ${new Date().toISOString()}

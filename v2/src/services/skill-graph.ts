@@ -5,7 +5,7 @@
  * progressive disclosure loads relevant skills based on context hint.
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync } from "fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname, basename } from "path";
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -27,6 +27,11 @@ export interface SkillGraph {
   mtime: number;                     // graph build time
 }
 
+export interface SkillGraphDuplicateSignals {
+  exactTitleDuplicates: Array<{ title: string; paths: string[] }>;
+  nearTitlePairs: Array<{ score: number; a: string; b: string }>;
+}
+
 // ─── Configuration ──────────────────────────────────────────────
 
 const SKILLS_DIR = process.env.SKILLS_DIR || "/app/external/pixel/skills/arscontexta";
@@ -43,6 +48,15 @@ const SKILL_SOURCES: SkillSource[] = [
   { path: SKILLS_DIR, type: "arscontexta" },
   { path: MARKETPLACE_DIR, type: "marketplace" },
 ];
+
+function resolveNodeSourcePath(nodePath: string): string | null {
+  if (nodePath.startsWith("marketplace/")) {
+    const skillName = nodePath.replace(/^marketplace\//, "").split("/")[0];
+    return join(MARKETPLACE_DIR, skillName, "SKILL.md");
+  }
+
+  return join(SKILLS_DIR, nodePath);
+}
 
 // ─── Global Cache ───────────────────────────────────────────────
 
@@ -75,6 +89,18 @@ export async function rebuildSkillGraph(): Promise<SkillGraph> {
   return getSkillGraph();
 }
 
+export function invalidateSkillGraphCache(): void {
+  _graph = null;
+  _graphPromise = null;
+  try {
+    if (existsSync(CACHE_PATH)) {
+      unlinkSync(CACHE_PATH);
+    }
+  } catch (err: any) {
+    console.error(`[skill-graph] Failed to invalidate cache file: ${err.message}`);
+  }
+}
+
 /**
  * Build skill graph from filesystem.
  */
@@ -91,6 +117,16 @@ async function buildSkillGraph(): Promise<SkillGraph> {
         // Check if cache is still fresh (any file newer than cache?)
         const cacheTime = cached.mtime;
         let needsRebuild = false;
+
+        if (Array.isArray(cached.nodes)) {
+          for (const node of cached.nodes) {
+            const sourcePath = typeof node?.path === "string" ? resolveNodeSourcePath(node.path) : null;
+            if (sourcePath && !existsSync(sourcePath)) {
+              needsRebuild = true;
+              break;
+            }
+          }
+        }
 
         const checkDir = (dir: string) => {
           if (!existsSync(dir)) return;
@@ -519,5 +555,57 @@ export function getSkillGraphStats(): {
     nodeCount: _graph.nodes.size,
     indexSize: _graph.index.size,
     byKind,
+  };
+}
+
+function normalizeDuplicateKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+export function getSkillGraphDuplicateSignals(): SkillGraphDuplicateSignals {
+  if (!_graph) {
+    return { exactTitleDuplicates: [], nearTitlePairs: [] };
+  }
+
+  const byTitle = new Map<string, string[]>();
+  for (const node of _graph.nodes.values()) {
+    const key = normalizeDuplicateKey(node.title || "");
+    if (!key) continue;
+    const existing = byTitle.get(key) ?? [];
+    existing.push(node.path);
+    byTitle.set(key, existing);
+  }
+
+  const exactTitleDuplicates = Array.from(byTitle.entries())
+    .filter(([, paths]) => paths.length > 1)
+    .map(([title, paths]) => ({ title, paths: paths.slice().sort() }))
+    .sort((a, b) => b.paths.length - a.paths.length || a.title.localeCompare(b.title));
+
+  const titleTokens = Array.from(_graph.nodes.values())
+    .map((node) => ({
+      path: node.path,
+      tokens: new Set(normalizeDuplicateKey(node.title).split(" ").filter((token) => token.length >= 3)),
+    }))
+    .filter((entry) => entry.tokens.size >= 3);
+
+  const nearTitlePairs: Array<{ score: number; a: string; b: string }> = [];
+  for (let i = 0; i < titleTokens.length; i++) {
+    for (let j = i + 1; j < titleTokens.length; j++) {
+      const a = titleTokens[i];
+      const b = titleTokens[j];
+      const intersection = Array.from(a.tokens).filter((token) => b.tokens.has(token)).length;
+      const union = new Set([...a.tokens, ...b.tokens]).size || 1;
+      const score = intersection / union;
+      if (score >= 0.6) {
+        nearTitlePairs.push({ score: Number(score.toFixed(2)), a: a.path, b: b.path });
+      }
+    }
+  }
+
+  nearTitlePairs.sort((left, right) => right.score - left.score || left.a.localeCompare(right.a) || left.b.localeCompare(right.b));
+
+  return {
+    exactTitleDuplicates,
+    nearTitlePairs: nearTitlePairs.slice(0, 25),
   };
 }

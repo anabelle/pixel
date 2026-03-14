@@ -38,10 +38,10 @@ import { initUsers, getUserStats } from "./services/users.js";
 import { initIdentity } from "./services/identity.js";
 import { initIdentityClaims } from "./services/identity-claims.js";
 import { startHeartbeat, getHeartbeatStatus, stopHeartbeat } from "./services/heartbeat.js";
-import { getSkillGraph, getSkillGraphStats } from "./services/skill-graph.js";
+import { getSkillGraph, getSkillGraphStats, getSkillGraphDuplicateSignals, invalidateSkillGraphCache } from "./services/skill-graph.js";
 import { l402 } from "./services/l402.js";
 import { x402 } from "./services/x402.js";
-import { startInnerLife, stopInnerLife, getInnerLifeStatus, getProjectState, updateProjectState } from "./services/inner-life.js";
+import { startInnerLife, stopInnerLife, getInnerLifeStatus, getProjectState, updateProjectState, migrateLegacyObservationStorage } from "./services/inner-life.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
 import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
@@ -1033,6 +1033,42 @@ app.get("/api/skills", (c) => {
     skills,
     count: skills.length,
   });
+});
+
+app.get("/api/skill-graph", async (c) => {
+  const graph = await getSkillGraph();
+  const stats = getSkillGraphStats();
+  const duplicates = getSkillGraphDuplicateSignals();
+
+  const topPaths = Array.from(graph.nodes.values())
+    .reduce((acc, node) => {
+      const prefix = node.path.includes("/") ? node.path.split("/").slice(0, 2).join("/") : "(root)";
+      acc[prefix] = (acc[prefix] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+  return c.json({
+    stats,
+    duplicates,
+    topPaths: Object.entries(topPaths)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 20)
+      .map(([path, count]) => ({ path, count })),
+    sampleClaims: Array.from(graph.nodes.values())
+      .filter((node) => node.kind === "claim")
+      .slice(0, 20)
+      .map((node) => ({ path: node.path, title: node.title, description: node.description })),
+    generatedAt: new Date().toISOString(),
+  });
+});
+
+app.post("/api/skill-graph/migrate-observations", requireInternalAdmin, async (c) => {
+  const migration = migrateLegacyObservationStorage();
+  invalidateSkillGraphCache();
+  await getSkillGraph();
+  const stats = getSkillGraphStats();
+  const duplicates = getSkillGraphDuplicateSignals();
+  return c.json({ migration, stats, duplicates, migratedAt: new Date().toISOString() });
 });
 
 /** Pixel's recent Nostr posts (public) */

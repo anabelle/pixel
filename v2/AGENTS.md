@@ -735,3 +735,71 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **Important note:** host-side reads of `v2/data/projects.md` lagged behind the in-container normalized file during verification, but the live container state, project JSON, and tool behavior were correct. Runtime truth is the container.
 
 **Lesson:** Once structured state exists, the next bottleneck is control. A loop is only operable when the organism can not just infer project state, but inspect and mutate it through stable interfaces.
+
+### Session 66: Observation Persistence Moved Out of Skills Tree
+
+**Problem:** Raw friction observations were being written under `external/pixel/skills/arscontexta/ops/observations`, and inner-life derivation read from the same skills tree. That made the observations look like durable skill content when they were really runtime telemetry. It also meant the persistence model was muddled: observations survived only because `external/` was bind-mounted, not because they lived in the declared runtime state area.
+
+**Solution:**
+1. **Observation capture moved to persistent runtime storage**
+   - `captureObservation()` in `src/agent.ts` now writes to `${INNER_LIFE_DIR}/observations` (container path `/app/data/observations`)
+   - This matches the persistence doctrine: live mutable state belongs in `/app/data` or `/app/.pi`
+
+2. **Inner-life derivation now reads/prunes the same persistent directory**
+   - `deriveClaims()` in `src/services/inner-life.ts` now scans `/app/data/observations`
+   - pruning continues there, so the write/read loop is aligned on one durable runtime path
+
+3. **Documentation corrected**
+   - `skills/index.md` and `skills/methodology/skill-evolution-protocol.md` now distinguish runtime observations from curated skills/claims
+
+**Verification / important finding:**
+- Before the patch, observations were **not** using the primary runtime persistence area; they were using the bind-mounted skills tree instead
+- Before the patch, those observations were still actively read by inner-life derivation, so the path was **used**, not dead
+- After the patch, observation write/read flow is unified under `/app/data/observations`, which is bind-mounted via `v2/docker-compose.yml`
+
+**Lesson:** Runtime exhaust is not knowledge. If a file is generated continuously and mutated by the organism, store it in `/app/data`; only promote distilled claims into the skill graph.
+
+### Session 67: Skill Graph Visibility + Duplicate Signals
+
+**Problem:** The live skill graph was active, but external visibility was misleading. `/api/skills` only listed the shallow marketplace-style `/app/skills` directory, not the full arscontexta graph that Pixel actually uses. There was also no quick way to inspect duplicate or overlapping skill nodes.
+
+**Solution:**
+1. **Added real graph visibility**
+   - New `GET /api/skill-graph` endpoint returns full graph stats from the live in-memory graph
+   - Includes node count, index size, by-kind counts, top path prefixes, and sample claims
+
+2. **Added duplicate signals**
+   - `getSkillGraphDuplicateSignals()` in `src/services/skill-graph.ts`
+   - Reports exact normalized title duplicates and high-overlap title pairs
+   - Purpose is diagnostic visibility, not auto-pruning
+
+**Verification / findings:**
+- Live graph currently sits around `95 nodes / 184 index entries`
+- Composition is observation-heavy (`51 observations`, `23 claims`, `15 notes`, `6 mocs`)
+- Exact duplicate signal found for the expected `index` titles across MOCs
+- No strong content-level duplicate pairs were detected among note/claim bodies in the cache sample
+
+**Lesson:** A knowledge substrate needs observability. If the real graph is hidden behind a shallow endpoint, the operator will optimize the wrong layer.
+
+### Session 68: Legacy Observation Tree Cleanup
+
+**Problem:** Even after new observations moved to `/app/data/observations`, the historical `arscontexta/ops/observations` tree still sat inside the live skill graph. Result: the graph remained inflated by 51 raw observation nodes, making the substrate look larger than its curated claim density justified.
+
+**Solution:**
+1. **Legacy migration on inner-life startup**
+   - `migrateLegacyObservations()` now moves old markdown files from `SKILLS_DIR/ops/observations` into `/app/data/observations`
+   - exact duplicates already present in runtime storage are deleted from the legacy location instead of copied forever
+
+2. **Manual admin migration endpoint**
+   - Added `POST /api/skill-graph/migrate-observations` (admin/local only)
+   - Runs migration, invalidates the in-memory skill graph cache, rebuilds, and returns updated stats/duplicate signals
+
+3. **Skill graph cache invalidation exposed**
+   - Added `invalidateSkillGraphCache()` so filesystem cleanup can force a fresh graph instead of serving stale cached counts
+
+4. **Docs corrected**
+   - `skills/index.md` now points runtime friction capture to `/app/data/observations/`
+
+**Intent:** runtime exhaust leaves the skill graph; only curated claims/notes/MOCs should remain there.
+
+**Lesson:** Moving future writes is not enough. If legacy exhaust remains in the indexed tree, the graph still lies about what the organism actually knows.

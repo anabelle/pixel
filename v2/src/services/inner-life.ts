@@ -21,7 +21,7 @@
  * The output feeds into heartbeat post generation and agent system prompts.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync } from "fs";
 import { join } from "path";
 import { loadCharacter } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -32,7 +32,7 @@ import { audit } from "./audit.js";
 import { enqueueJob } from "./jobs.js";
 import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } from "./memory.js";
 import { pixelTools } from "./tools.js";
-import { rebuildSkillGraph } from "./skill-graph.js";
+import { rebuildSkillGraph, invalidateSkillGraphCache } from "./skill-graph.js";
 
 
 // ============================================================
@@ -64,6 +64,7 @@ const SKILL_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IDEA_GARDEN_PATH = "idea-garden.md";
 const PROJECTS_PATH = "projects.md";
 const PROJECTS_STATE_PATH = "projects.json";
+const OBSERVATIONS_SUBDIR = "observations";
 const IDEA_JOB_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 const SYNTROPY_DISPATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const SYNTROPY_RESULTS_PATH = "/app/data/syntropy-results.jsonl";
@@ -95,6 +96,67 @@ function ensureSkillsDir(): void {
   if (!existsSync(SKILLS_DIR)) {
     mkdirSync(SKILLS_DIR, { recursive: true });
   }
+}
+
+function getObservationsDir(): string {
+  ensureDataDir();
+  const dir = join(DATA_DIR, OBSERVATIONS_SUBDIR);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function migrateLegacyObservations(): { moved: number; skipped: number } {
+  const legacyDir = join(SKILLS_DIR, "ops/observations");
+  const observationsDir = getObservationsDir();
+
+  if (!existsSync(legacyDir)) {
+    return { moved: 0, skipped: 0 };
+  }
+
+  const files = readdirSync(legacyDir).filter((name) => name.endsWith(".md"));
+  let moved = 0;
+  let skipped = 0;
+
+  for (const name of files) {
+    const sourcePath = join(legacyDir, name);
+    const targetPath = join(observationsDir, name);
+
+    try {
+      if (existsSync(targetPath)) {
+        const sourceContent = readFileSync(sourcePath, "utf-8");
+        const targetContent = readFileSync(targetPath, "utf-8");
+        if (sourceContent === targetContent) {
+          unlinkSync(sourcePath);
+          skipped++;
+          continue;
+        }
+
+        let migratedName = `${name.replace(/\.md$/, "")}-legacy.md`;
+        let migratedPath = join(observationsDir, migratedName);
+        let counter = 2;
+        while (existsSync(migratedPath)) {
+          migratedName = `${name.replace(/\.md$/, "")}-legacy-${counter}.md`;
+          migratedPath = join(observationsDir, migratedName);
+          counter++;
+        }
+
+        copyFileSync(sourcePath, migratedPath);
+        unlinkSync(sourcePath);
+        moved++;
+        continue;
+      }
+
+      copyFileSync(sourcePath, targetPath);
+      unlinkSync(sourcePath);
+      moved++;
+    } catch (err: any) {
+      console.error(`[inner-life] Failed to migrate legacy observation ${name}:`, err.message);
+    }
+  }
+
+  return { moved, skipped };
 }
 
 function readJson<T>(path: string, fallback: T): T {
@@ -1570,7 +1632,7 @@ async function maybeDispatchToSyntropy(): Promise<void> {
  */
 async function deriveClaims(): Promise<void> {
   try {
-    const observationsDir = join(SKILLS_DIR, "ops/observations");
+    const observationsDir = getObservationsDir();
     const tensionsDir = join(SKILLS_DIR, "ops/tensions");
     const domainsDir = join(SKILLS_DIR, "domains");
     
@@ -1844,8 +1906,17 @@ export function startInnerLife(): void {
   }
 
   innerLifeRunning = true;
+  const migration = migrateLegacyObservations();
+  if (migration.moved > 0 || migration.skipped > 0) {
+    invalidateSkillGraphCache();
+    console.log(`[inner-life] Legacy observations migrated: moved=${migration.moved} skipped=${migration.skipped}`);
+  }
   console.log(`[inner-life] Starting (first cycle in ~${Math.round(INNER_LIFE_STARTUP_DELAY_MS / 60_000)} minutes)`);
   scheduleNextInnerLife(INNER_LIFE_STARTUP_DELAY_MS);
+}
+
+export function migrateLegacyObservationStorage(): { moved: number; skipped: number } {
+  return migrateLegacyObservations();
 }
 
 export function stopInnerLife(): void {
