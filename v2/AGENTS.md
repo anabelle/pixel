@@ -395,3 +395,24 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 **Important architecture note:** current `viking_search` still searches the compatibility filesystem rooted at `viking://agent/...`, not the OpenViking runtime's `viking://user/...` namespace. So real runtime-extracted user memories do not appear in `viking_search` yet. A future improvement is either (a) extend `viking_search` to query both namespaces, or (b) add a dedicated runtime-backed query tool.
 
 **Lesson:** OpenViking can run fine on Alpine if you avoid the native AGFS binding path and treat Google's Gemini endpoints as OpenAI-compatible for both embeddings and chat. The runtime itself was not the blocker — the provider wiring and AGFS mode were.
+
+### Session 57b: Runtime-Backed `viking://user/...` Search/Read/Browse
+
+**Problem:** After booting the real OpenViking runtime, Pixel could successfully `memcommit` into `viking://user/...`, but the existing `viking_browse`, `viking_read`, and `viking_search` tools still only operated on the compatibility filesystem rooted at `viking://agent/...`. Result: runtime-extracted user memories existed, but Pixel could not see them through his own Viking tools.
+
+**Solution:** Extended the existing Viking tools in `src/services/tools.ts` to route by namespace:
+1. `viking://agent/...` → existing compatibility filesystem behavior on `/app/data/openviking`
+2. `viking://user/...` → real OpenViking HTTP runtime on `127.0.0.1:1933`
+
+Added runtime helpers for:
+- authenticated request headers using the current tool user as OpenViking identity
+- runtime-backed browse via `/api/v1/fs/ls`, `/api/v1/fs/tree`, `/api/v1/fs/stat`
+- runtime-backed read via `/api/v1/content/{abstract,overview,read}`
+- runtime-backed semantic search via `/api/v1/search/find`
+
+**Verification:** via Pixel chat API with userId `syntropy-admin`:
+- `viking_browse` on `viking://user/syntropy-admin` returned the real runtime tree including `memories/events/...`
+- `viking_read` on the extracted event memory returned the exact committed text
+- `viking_search` on `viking://user/syntropy-admin` found the runtime-created memory and related abstracts with semantic scores
+
+**Result:** Pixel can now both write to and search/read the real OpenViking user-memory namespace. The compatibility layer remains intact for `viking://agent/...` while the real runtime is accessible for `viking://user/...`.

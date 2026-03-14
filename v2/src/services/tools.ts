@@ -173,6 +173,78 @@ async function ensureOpenVikingSession(sessionId: string) {
   }
 }
 
+function getOpenVikingHeaders() {
+  const identity = getOpenVikingIdentity();
+  return {
+    identity,
+    headers: {
+      "X-OpenViking-Account": identity.account,
+      "X-OpenViking-User": identity.user,
+      "X-OpenViking-Agent": identity.agent,
+    },
+  };
+}
+
+async function runtimeVikingBrowse(uri: string, view: "list" | "tree" | "stat", recursive?: boolean): Promise<string> {
+  const { headers } = getOpenVikingHeaders();
+
+  if (view === "stat") {
+    const result = await fetchOpenViking<any>(`/api/v1/fs/stat?uri=${encodeURIComponent(uri)}`, { headers });
+    return JSON.stringify(result?.result ?? result, null, 2);
+  }
+
+  if (view === "tree") {
+    const result = await fetchOpenViking<any>(`/api/v1/fs/tree?uri=${encodeURIComponent(uri)}&output=agent&level_limit=4`, { headers });
+    const nodes = result?.result ?? [];
+    if (!Array.isArray(nodes) || nodes.length === 0) return `${uri} is empty.`;
+    return nodes.map((node: any) => `${node.uri}${node.abstract ? `\n${node.abstract}` : ""}`).join("\n\n");
+  }
+
+  const result = await fetchOpenViking<any>(`/api/v1/fs/ls?uri=${encodeURIComponent(uri)}&output=agent&recursive=${recursive ? "true" : "false"}`, { headers });
+  const nodes = result?.result ?? [];
+  if (!Array.isArray(nodes) || nodes.length === 0) return `${uri} is empty.`;
+  return nodes.map((node: any) => node.uri || JSON.stringify(node)).join("\n");
+}
+
+async function runtimeVikingRead(uri: string, level: "auto" | "abstract" | "overview" | "read"): Promise<string> {
+  const { headers } = getOpenVikingHeaders();
+  const endpoint = level === "abstract"
+    ? "/api/v1/content/abstract"
+    : level === "overview"
+      ? "/api/v1/content/overview"
+      : "/api/v1/content/read";
+  const result = await fetchOpenViking<any>(`${endpoint}?uri=${encodeURIComponent(uri)}`, { headers });
+  const payload = result?.result;
+  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+}
+
+async function runtimeVikingSearch(query: string, targetUri: string, limit: number): Promise<{ text: string; resultCount: number }> {
+  const { headers } = getOpenVikingHeaders();
+  const result = await fetchOpenViking<any>("/api/v1/search/find", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query,
+      target_uri: targetUri,
+      limit,
+    }),
+  });
+
+  const memories = result?.result?.memories ?? [];
+  if (!Array.isArray(memories) || memories.length === 0) {
+    return { text: `No matches for "${query}" under ${targetUri}`, resultCount: 0 };
+  }
+
+  const text = memories.map((memory: any) => {
+    const parts = [memory.uri || "(unknown uri)"];
+    if (memory.score != null) parts.push(`score=${Number(memory.score).toFixed(3)}`);
+    if (memory.abstract) parts.push(memory.abstract);
+    return parts.join("\n");
+  }).join("\n\n");
+
+  return { text, resultCount: memories.length };
+}
+
 // ─── READ FILE ────────────────────────────────────────────────
 
 const readSchema = Type.Object({
@@ -2848,6 +2920,14 @@ const vikingBrowseTool: AgentTool<typeof vikingBrowseSchema> = {
   description: "Browse Pixel's OpenViking-compatible filesystem workspace using viking:// URIs. Useful for exploring memories, skills, tasks, and instructions in compatibility mode.",
   parameters: vikingBrowseSchema,
   execute: async (_id, { uri, view, recursive }) => {
+    const requestedUri = normalizeVikingUri(uri || "viking://agent/");
+    if (requestedUri.startsWith("viking://user/")) {
+      const mode = view || "list";
+      const text = await runtimeVikingBrowse(requestedUri, mode, recursive);
+      auditToolUse("viking_browse", { uri: requestedUri, view: mode, recursive: !!recursive, runtime: true }, { namespace: "user-runtime" });
+      return { content: [{ type: "text" as const, text }], details: { uri: requestedUri, runtime: true } };
+    }
+
     const target = resolveVikingUri(uri || "viking://agent/");
     if (!existsSync(target.path)) {
       throw new Error(`Viking URI not found: ${target.uri}`);
@@ -2894,6 +2974,14 @@ const vikingReadTool: AgentTool<typeof vikingReadSchema> = {
   description: "Read content from Pixel's OpenViking-compatible workspace using viking:// URIs. Supports abstract, overview, and full read levels.",
   parameters: vikingReadSchema,
   execute: async (_id, { uri, level }) => {
+    const requestedUri = normalizeVikingUri(uri);
+    if (requestedUri.startsWith("viking://user/")) {
+      const selectedLevel = level || "auto";
+      const text = await runtimeVikingRead(requestedUri, selectedLevel);
+      auditToolUse("viking_read", { uri: requestedUri, level: selectedLevel, runtime: true }, { namespace: "user-runtime" });
+      return { content: [{ type: "text" as const, text }], details: { uri: requestedUri, runtime: true } };
+    }
+
     const target = resolveVikingUri(uri);
     if (!existsSync(target.path)) {
       throw new Error(`Viking URI not found: ${target.uri}`);
@@ -2916,12 +3004,19 @@ const vikingSearchTool: AgentTool<typeof vikingSearchSchema> = {
   description: "Search Pixel's OpenViking-compatible workspace by text. Useful for finding matching memories, skills, tasks, or instructions before reading specific URIs.",
   parameters: vikingSearchSchema,
   execute: async (_id, { query, target_uri, limit }) => {
+    const requestedUri = normalizeVikingUri(target_uri || "viking://agent/");
+    const max = Math.min(Math.max(limit || 10, 1), 50);
+    if (requestedUri.startsWith("viking://user/")) {
+      const result = await runtimeVikingSearch(query, requestedUri, max);
+      auditToolUse("viking_search", { query, target_uri: requestedUri, limit: max, runtime: true }, { resultCount: result.resultCount, namespace: "user-runtime" });
+      return { content: [{ type: "text" as const, text: result.text }], details: { resultCount: result.resultCount, runtime: true } };
+    }
+
     const target = resolveVikingUri(target_uri || "viking://agent/");
     if (!existsSync(target.path)) {
       throw new Error(`Viking URI not found: ${target.uri}`);
     }
 
-    const max = Math.min(Math.max(limit || 10, 1), 50);
     const q = query.toLowerCase();
     const matches: string[] = [];
     for (const file of collectVikingFiles(target.path, true)) {
