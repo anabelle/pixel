@@ -16,8 +16,9 @@ chown -R bun:bun /app/data 2>/dev/null || true
 mkdir -p /app/data/openviking /app/data/log 2>/dev/null || true
 chown -R bun:bun /app/data/openviking /app/data/log 2>/dev/null || true
 
-# Generate OpenViking runtime config at boot so provider keys do not persist to disk
-cat > /tmp/openviking-ov.conf <<EOF
+# Generate OpenViking runtime config at boot in writable data dir
+OPENVIKING_BOOT_CONFIG=/app/data/openviking/openviking-ov.conf
+cat > "$OPENVIKING_BOOT_CONFIG" <<EOF
 {
   "server": {
     "host": "127.0.0.1",
@@ -62,9 +63,9 @@ cat > /tmp/openviking-ov.conf <<EOF
 }
 EOF
 
-chown bun:bun /tmp/openviking-ov.conf 2>/dev/null || true
+chown bun:bun "$OPENVIKING_BOOT_CONFIG" 2>/dev/null || true
 
-export OPENVIKING_CONFIG_FILE=/tmp/openviking-ov.conf
+export OPENVIKING_CONFIG_FILE="$OPENVIKING_BOOT_CONFIG"
 
 # Start OpenViking server in background if runtime is available
 if [ -x /opt/openviking-venv/bin/openviking-server ]; then

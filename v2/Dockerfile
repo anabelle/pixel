@@ -28,7 +28,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN python3 -m venv /opt/openviking-venv && \
     . /opt/openviking-venv/bin/activate && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir openviking
+    pip install --no-cache-dir openviking==0.2.6
 
 # ---- Runtime ----
 FROM oven/bun:1-alpine
