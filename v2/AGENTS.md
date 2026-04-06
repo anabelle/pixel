@@ -803,3 +803,35 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **Intent:** runtime exhaust leaves the skill graph; only curated claims/notes/MOCs should remain there.
 
 **Lesson:** Moving future writes is not enough. If legacy exhaust remains in the indexed tree, the graph still lies about what the organism actually knows.
+
+### Session 69: WhatsApp Re-Pair Runbook After 401 Logout
+
+**Problem:** WhatsApp fell into a degraded state after a logout/conflict cycle. Health showed `connected: true` but `registered: false`, which means the socket existed but the account was no longer actually paired. The QR/status endpoints were correctly locked behind internal/admin auth after the HTTP hardening work, so normal external browsing to the QR page returned `Unauthorized`.
+
+**Operational fix / runbook:**
+1. **Confirm degraded state first**
+   - `curl http://127.0.0.1:4000/health`
+   - If WhatsApp shows `registered: false`, do not trust `connected: true` alone.
+
+2. **Trigger explicit re-pair**
+   - Pairing code mode:
+     - `curl -s -X POST http://127.0.0.1:4000/api/whatsapp/repair -H 'Content-Type: application/json' -d '{"mode":"pairing"}'`
+   - QR mode:
+     - `curl -s -X POST http://127.0.0.1:4000/api/whatsapp/repair -H 'Content-Type: application/json' -d '{"mode":"qr"}'`
+
+3. **If external browser access to `/api/whatsapp/qr` says `Unauthorized`, that is expected**
+   - The endpoint is admin/internal-only by design.
+   - Generate the live QR locally from the running container instead of weakening auth:
+     - `docker exec -u bun v2-pixel-1 bun -e 'const res = await fetch("http://127.0.0.1:4000/api/whatsapp/qr/data"); const data = await res.json(); const mod = await import("qrcode-terminal"); const qr = mod.default || mod; if (!data.qr || data.expired) { console.log("NO_QR"); process.exit(0); } qr.generate(data.qr, { small: true }, (out) => console.log(out));'`
+   - Then have the operator scan that terminal QR from WhatsApp → Settings → Linked Devices → Link a Device.
+
+4. **Verification**
+   - `curl -s http://127.0.0.1:4000/api/whatsapp/status`
+   - Success condition is:
+     - `connected: true`
+     - `registered: true`
+     - `reconnectAttempts: 0`
+
+**What worked in practice:** pairing-code mode produced a valid code but failed for the user; switching to QR mode succeeded immediately. The secure path is: keep the admin lock in place, render the QR locally, scan it, then verify `registered: true`.
+
+**Lesson:** for WhatsApp, `connected` is transport-level only. The real truth is `registered`. Also: never loosen the QR endpoint auth just for convenience — deliver the QR through a trusted local/admin path instead.
