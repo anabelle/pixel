@@ -96,10 +96,27 @@ let rateLimitLockoutUntil = 0; // timestamp — posting blocked until this time 
 let consecutiveFailures = 0; // track consecutive post failures for backoff
 let twitterUserId = ""; // numeric ID, resolved at boot via API v2
 let mentionSinceId: string | null = null; // pagination cursor for mention polling
+let apiV2DegradedReason: string | null = null;
 const repliedTweetIds = new Set<string>();
 const readOnlySeenTweetIds = new Set<string>();
 const REPLIED_IDS_PATH = "/app/data/twitter-replied.json";
 const RATELIMIT_PATH = "/app/data/twitter-ratelimit.json";
+
+function isTwitterProjectConfigError(data: any): boolean {
+  const raw = typeof data === "string" ? data : JSON.stringify(data);
+  return raw.includes("attached to a Project");
+}
+
+function disableApiV2(reason: string, data?: any): void {
+  if (apiV2DegradedReason === reason) return;
+  apiV2DegradedReason = reason;
+  if (mentionTimer) {
+    clearTimeout(mentionTimer);
+    mentionTimer = null;
+  }
+  console.error(`[twitter] API v2 disabled: ${reason}`);
+  audit("twitter_error", `API v2 disabled: ${reason}`, data ? { detail: typeof data === "string" ? data : JSON.stringify(data).slice(0, 500) } : undefined);
+}
 
 // ============================================================
 // Cookie persistence
@@ -245,6 +262,7 @@ function resetDailyCounterIfNeeded(): void {
 
 function canPost(): { ok: boolean; reason?: string } {
   if (!POST_ENABLED) return { ok: false, reason: "TWITTER_POST_ENABLE=false" };
+  if (apiV2DegradedReason) return { ok: false, reason: `Twitter API v2 degraded: ${apiV2DegradedReason}` };
   resetDailyCounterIfNeeded();
   if (postsToday >= MAX_POSTS_PER_DAY) return { ok: false, reason: `Daily limit (${MAX_POSTS_PER_DAY}) reached` };
   if (Date.now() - lastPostTime < MIN_POST_GAP_MS) return { ok: false, reason: "Min 4h gap between posts" };
@@ -293,6 +311,12 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
     }
     if (!resp.ok) {
       const errMsg = json?.detail || json?.title || JSON.stringify(json).slice(0, 200);
+
+      if (resp.status === 403 && isTwitterProjectConfigError(json)) {
+        disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", json);
+        return { success: false, error: "TWITTER_API_PROJECT_MISCONFIG: keys and tokens are not attached to a Twitter Project. Manual fix required in Twitter developer portal." };
+      }
+
       consecutiveFailures++;
 
       if (resp.status === 429) {
@@ -334,6 +358,7 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
 
 /** Search tweets via API v2 (falls back to scraper if no API creds). */
 export async function searchTwitter(query: string, limit = 10): Promise<any[]> {
+  if (apiV2DegradedReason) return [];
   if (!hasApiV2Creds) return [];
   try {
     const params: Record<string, string> = {
@@ -348,6 +373,8 @@ export async function searchTwitter(query: string, limit = 10): Promise<any[]> {
       if (status === 429 && rateLimitReset) {
         const waitSec = Math.max(0, rateLimitReset - Math.floor(Date.now() / 1000));
         console.error(`[twitter] Search rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
+      } else if (status === 403 && isTwitterProjectConfigError(data)) {
+        disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
       } else {
         console.error(`[twitter] API v2 search failed (${status}):`, JSON.stringify(data).slice(0, 200));
       }
@@ -402,10 +429,14 @@ export async function getTweet(id: string): Promise<any | null> {
 export function getTwitterStatus(): {
   connected: boolean;
   postEnabled: boolean;
+  postAvailable: boolean;
   postsToday: number;
   maxPostsPerDay: number;
   username: string;
   apiV2: boolean;
+  apiV2Configured: boolean;
+  apiV2DegradedReason: string | null;
+  mentionPollingActive: boolean;
   userId: string;
   mentionSinceId: string | null;
   rateLimitLockoutUntil: number;
@@ -414,10 +445,14 @@ export function getTwitterStatus(): {
   return {
     connected: running,
     postEnabled: POST_ENABLED,
+    postAvailable: POST_ENABLED && !apiV2DegradedReason,
     postsToday,
     maxPostsPerDay: MAX_POSTS_PER_DAY,
     username: TWITTER_USERNAME,
-    apiV2: hasApiV2Creds,
+    apiV2: hasApiV2Creds && !apiV2DegradedReason,
+    apiV2Configured: hasApiV2Creds,
+    apiV2DegradedReason,
+    mentionPollingActive: !!mentionTimer && !apiV2DegradedReason,
     userId: twitterUserId,
     mentionSinceId,
     rateLimitLockoutUntil,
@@ -430,6 +465,7 @@ export function getTwitterStatus(): {
 // ============================================================
 
 async function pollMentions(): Promise<void> {
+  if (apiV2DegradedReason) return;
   if (!hasApiV2Creds || !twitterUserId) return;
 
   try {
@@ -446,6 +482,8 @@ async function pollMentions(): Promise<void> {
       if (status === 429 && rateLimitReset) {
         const waitSec = Math.max(0, rateLimitReset - Math.floor(Date.now() / 1000));
         console.log(`[twitter] Mention poll rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
+      } else if (status === 403 && isTwitterProjectConfigError(data)) {
+        disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
       } else {
         console.error(`[twitter] Mention poll API error (${status}):`, JSON.stringify(data).slice(0, 200));
       }
@@ -533,6 +571,7 @@ async function mentionLoop(): Promise<void> {
     console.error("[twitter] mentionLoop error:", err.message);
   }
   if (running) {
+    if (apiV2DegradedReason) return;
     // Add small jitter (±2 min) to avoid predictable polling
     const jitter = Math.floor((Math.random() * 2 - 1) * 2 * 60 * 1000);
     const delay = Math.max(60_000, MENTION_POLL_MS + jitter);
@@ -578,11 +617,13 @@ export async function startTwitter(): Promise<void> {
     // If not cached, resolve via API
     if (!twitterUserId) {
       try {
-        const { ok, data } = await twitterApiV2("GET", `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`);
+        const { ok, status, data } = await twitterApiV2("GET", `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`);
         if (ok && data?.data?.id) {
           twitterUserId = data.data.id;
           writeFileSync(USER_ID_PATH, JSON.stringify({ username: TWITTER_USERNAME, id: twitterUserId }));
           console.log(`[twitter] Resolved user ID: ${twitterUserId}`);
+        } else if (status === 403 && isTwitterProjectConfigError(data)) {
+          disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
         } else {
           console.error("[twitter] Failed to resolve user ID:", JSON.stringify(data).slice(0, 200));
         }
@@ -601,15 +642,17 @@ export async function startTwitter(): Promise<void> {
 
   console.log(`[twitter] Connected as @${TWITTER_USERNAME}`);
   console.log(`[twitter] Posting: ${POST_ENABLED ? "ENABLED" : "READ-ONLY"}`);
-  console.log(`[twitter] API v2: ${hasApiV2Creds ? "available" : "not configured"} | User ID: ${twitterUserId || "unknown"}`);
-  console.log(`[twitter] Mention poll every ${MENTION_POLL_MS / 60_000} min${mentionSinceId ? ` (since_id: ${mentionSinceId})` : ""}`);
+  console.log(`[twitter] API v2: ${apiV2DegradedReason ? `degraded (${apiV2DegradedReason})` : hasApiV2Creds ? "available" : "not configured"} | User ID: ${twitterUserId || "unknown"}`);
+  if (!apiV2DegradedReason) {
+    console.log(`[twitter] Mention poll every ${MENTION_POLL_MS / 60_000} min${mentionSinceId ? ` (since_id: ${mentionSinceId})` : ""}`);
+  }
 
   // Start mention polling with startup delay
-  if (twitterUserId) {
+  if (twitterUserId && !apiV2DegradedReason) {
     mentionTimer = setTimeout(mentionLoop, MENTION_POLL_STARTUP_MS);
   }
 
-  audit("twitter_boot", `Twitter connected as @${TWITTER_USERNAME} (posting: ${POST_ENABLED}, api_v2: ${hasApiV2Creds})`);
+  audit("twitter_boot", `Twitter connected as @${TWITTER_USERNAME} (posting: ${POST_ENABLED}, api_v2: ${hasApiV2Creds && !apiV2DegradedReason})`);
 }
 
 export function stopTwitter(): void {
