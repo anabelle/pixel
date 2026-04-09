@@ -51,6 +51,7 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   'glm-4.6': { input: 0, output: 0, free: true },
   'glm-4.7': { input: 0, output: 0, free: true },
   'glm-5': { input: 0, output: 0, free: true },
+  'glm-5.1': { input: 0, output: 0, free: true },
   // OpenRouter Z.AI free models
   'z-ai/glm-4.5-air:free': { input: 0, output: 0, free: true },
 };

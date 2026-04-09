@@ -212,6 +212,7 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
 /** Construct a Z.AI model object (not in pi-ai's registry) */
 function makeZaiModel(modelId: string, reasoning: boolean = false) {
+  const isGlm51 = modelId === "glm-5.1";
   return {
     id: modelId,
     name: modelId.toUpperCase(),
@@ -221,8 +222,8 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
     reasoning,
     input: ["text"] as const,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // flat rate plan
-    contextWindow: 128000,
-    maxTokens: 16384,
+    contextWindow: isGlm51 ? 204800 : 128000,
+    maxTokens: isGlm51 ? 131072 : 16384,
   } as any;
 }
 
@@ -241,8 +242,8 @@ function makeOpenRouterModel(modelId: string) {
   } as any;
 }
 
-/** Primary conversation model — Z.AI GLM-5 (744B params, reasoning).
- * Fallback cascade handles 429: GLM-5 → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
+/** Primary conversation model — Z.AI primary when configured.
+ * Fallback cascade handles 429: Z.AI primary → Gemini 2.5 Pro → 3 Flash → 2.5 Flash → 2.0 Flash */
 function getPixelModel() {
   const provider = process.env.AI_PROVIDER ?? "google";
   const modelId = process.env.AI_MODEL ?? "gemini-2.5-flash";
@@ -300,7 +301,7 @@ export function resolveApiKey(provider?: string): string {
 
 /** Strip thinking/reasoning preambles that some models emit as regular text.
  * Handles: (1) <think>/<thinking> XML tags (DeepSeek R1, QwQ, etc.)
- * (2) GLM-5/Gemini bold-header pattern: **Title Case Header**\n\n<reasoning>\n\n\n<response>
+ * (2) GLM/Gemini bold-header pattern: **Title Case Header**\n\n<reasoning>\n\n\n<response>
  * Only apply to user-facing text — NOT memory extraction, compaction, or summaries. */
 export function stripThinkingFromResponse(text: string): string {
   if (!text) return text;
@@ -337,7 +338,7 @@ export function stripThinkingFromResponse(text: string): string {
   }
   text = removeLeakage(text);
 
-  // Pattern 2: GLM-5 bold-header self-narrating pattern
+  // Pattern 2: GLM/Gemini bold-header self-narrating pattern
   // Must start with **Header** and contain \n\n\n separator before actual response
   if (!text.startsWith("**")) return text;
   const lastSep = text.lastIndexOf("\n\n\n");
@@ -599,7 +600,7 @@ export async function promptWithHistory(
   const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
 
   // Select model: vision-capable model when images present, DM override, background, or default
-  // GLM-5 for ALL conversations now (was previously priority-only)
+  // Configured primary model for all conversations now (was previously priority-only)
   const hasImages = images && images.length > 0;
   const selectedModel = hasImages ? getVisionModel()
     : options.modelOverride === "background" ? getSimpleModel()
@@ -612,7 +613,7 @@ export async function promptWithHistory(
   // Filter tools based on user authorization level
   const permittedTools = getPermittedTools(userId, pixelTools);
   const toolsForModel = permittedTools;
-  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model: GLM-5`);
+  console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model: ${selectedModel?.id ?? "unknown"}`);
 
   const agent = new Agent({
     initialState: {

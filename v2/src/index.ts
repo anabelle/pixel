@@ -42,6 +42,7 @@ import { getSkillGraph, getSkillGraphStats, getSkillGraphDuplicateSignals, inval
 import { l402 } from "./services/l402.js";
 import { x402 } from "./services/x402.js";
 import { startInnerLife, stopInnerLife, getInnerLifeStatus, getProjectState, updateProjectState, migrateLegacyObservationStorage } from "./services/inner-life.js";
+import { startDreamCycle, stopDreamCycle, getDreamCycleStatus, triggerDreamCycle } from "./services/dream-cycle.js";
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
 import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
@@ -352,6 +353,7 @@ app.get("/health", (c) => {
     memory: process.memoryUsage(),
     heartbeat: getHeartbeatStatus(),
     inner_life: getInnerLifeStatus(),
+    dream_cycle: getDreamCycleStatus(),
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
     canvas_listener: getCanvasListenerStatus(),
@@ -876,7 +878,21 @@ app.get("/api/inner-life", requireOwnerNostrAuth, (c) => {
     activeMissions,
     innerMonologueFile,
     status: getInnerLifeStatus(),
+    dreamCycle: getDreamCycleStatus(),
   });
+});
+
+app.post("/api/dream-cycle/trigger", async (c) => {
+  const isLocal = getRequestHost(c) === "127.0.0.1" || getRequestHost(c) === "localhost";
+  const adminToken = process.env.PIXEL_ADMIN_TOKEN;
+  const authHeader = c.req.header("authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!isLocal && (!adminToken || bearer !== adminToken)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const response = await triggerDreamCycle();
+  return c.json({ ok: true, response });
 });
 
 app.get("/api/projects", requireOwnerNostrAuth, (c) => {
@@ -1775,6 +1791,9 @@ async function boot() {
   // Start inner life independently of Nostr heartbeat
   startInnerLife();
 
+  // Start periodic blank internal wake-up for autonomous reflection/curiosity
+  startDreamCycle();
+
   // Start digest/notification service
   startDigest();
 
@@ -1856,6 +1875,7 @@ function gracefulShutdown(signal: string): void {
   stopJobs();
   stopHeartbeat();
   stopInnerLife();
+  stopDreamCycle();
   stopDigest();
   stopOutreach();
   stopTwitter();
