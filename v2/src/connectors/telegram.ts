@@ -23,6 +23,8 @@ import { join } from "path";
 let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
+const TELEGRAM_TEXT_DEDUP_WINDOW_MS = 2_000;
+const recentTelegramTextSends = new Map<string, number>();
 const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
 const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string; chatTitle?: string; replyToMessageId?: number }>();
 const GROUP_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -127,7 +129,10 @@ async function sendWithRetry(chatId: string | number, text: string, parseMode?: 
   for (const delay of attempts) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     try {
+      const dedupeKey = getDuplicateTelegramTextSendKey(chatId, text);
+      if (shouldSkipDuplicateTelegramTextSend(dedupeKey)) return;
       await botInstance?.api.sendMessage(chatId, text, { parse_mode: parseMode });
+      recentTelegramTextSends.set(dedupeKey, Date.now());
       return;
     } catch (err: any) {
       lastError = err;
@@ -147,10 +152,13 @@ async function sendReplyWithRetry(chatId: string | number, text: string, replyTo
   for (const delay of attempts) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     try {
+      const dedupeKey = getDuplicateTelegramTextSendKey(chatId, text, replyToMessageId);
+      if (shouldSkipDuplicateTelegramTextSend(dedupeKey)) return;
       await botInstance?.api.sendMessage(chatId, text, {
         parse_mode: parseMode,
         reply_parameters: replyToMessageId ? { message_id: replyToMessageId } : undefined,
       } as any);
+      recentTelegramTextSends.set(dedupeKey, Date.now());
       return;
     } catch (err: any) {
       lastError = err;
@@ -160,6 +168,25 @@ async function sendReplyWithRetry(chatId: string | number, text: string, replyTo
     }
   }
   throw lastError;
+}
+
+function getDuplicateTelegramTextSendKey(chatId: string | number, text: string, replyToMessageId?: number): string {
+  return `${chatId}|${replyToMessageId ?? ""}|${text}`;
+}
+
+function shouldSkipDuplicateTelegramTextSend(dedupeKey: string): boolean {
+  const now = Date.now();
+  for (const [key, timestamp] of recentTelegramTextSends.entries()) {
+    if (now - timestamp > TELEGRAM_TEXT_DEDUP_WINDOW_MS) {
+      recentTelegramTextSends.delete(key);
+    }
+  }
+  const lastSentAt = recentTelegramTextSends.get(dedupeKey);
+  if (lastSentAt && now - lastSentAt < TELEGRAM_TEXT_DEDUP_WINDOW_MS) {
+    console.log(`[telegram] Skipping duplicate outbound text`);
+    return true;
+  }
+  return false;
 }
 
 /**

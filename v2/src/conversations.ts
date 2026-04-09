@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } fr
 import { join } from "path";
 
 const DATA_DIR = process.env.DATA_DIR ?? "./conversations";
+const LOG_DEDUP_WINDOW_MS = 2_000;
+const recentAssistantLogEntries = new Map<string, number>();
 
 // Maximum messages to keep in context (prevents unbounded growth)
 const MAX_CONTEXT_MESSAGES = 100;
@@ -112,6 +114,21 @@ export function appendToLog(
     user: userMessage,
     assistant: assistantResponse,
   };
+
+  if (assistantResponse) {
+    const now = Date.now();
+    const dedupeKey = `${platform}\n${userId}\n${userMessage}\n${assistantResponse}`;
+    const lastLoggedAt = recentAssistantLogEntries.get(dedupeKey);
+    for (const [key, timestamp] of recentAssistantLogEntries.entries()) {
+      if (now - timestamp > LOG_DEDUP_WINDOW_MS) {
+        recentAssistantLogEntries.delete(key);
+      }
+    }
+    if (lastLoggedAt && now - lastLoggedAt < LOG_DEDUP_WINDOW_MS) {
+      return;
+    }
+    recentAssistantLogEntries.set(dedupeKey, now);
+  }
 
   try {
     appendFileSync(logPath, JSON.stringify(entry) + "\n", "utf-8");

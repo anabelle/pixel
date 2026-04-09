@@ -34,6 +34,8 @@ let sock: WASocket | null = null;
 let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
+const WHATSAPP_TEXT_DEDUP_WINDOW_MS = 2_000;
+const recentWhatsAppTextSends = new Map<string, number>();
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
 const MEDIA_DIR = process.env.WHATSAPP_MEDIA_DIR ?? "/app/data/whatsapp-media";
 const MAX_VIDEO_TRANSCRIBE_BYTES = 10 * 1024 * 1024;
@@ -261,6 +263,25 @@ function buildQuotedMessageOptions(quotedMessage?: any) {
   return { quoted: quotedMessage };
 }
 
+async function sendWhatsAppTextOnce(jid: string, text: string, options?: any): Promise<void> {
+  if (!sock) throw new Error("WhatsApp socket not initialized");
+  const quotedId = options?.quoted?.key?.id ?? "";
+  const now = Date.now();
+  for (const [key, timestamp] of recentWhatsAppTextSends.entries()) {
+    if (now - timestamp > WHATSAPP_TEXT_DEDUP_WINDOW_MS) {
+      recentWhatsAppTextSends.delete(key);
+    }
+  }
+  const dedupeKey = `${jid}|${quotedId}|${text}`;
+  const lastSentAt = recentWhatsAppTextSends.get(dedupeKey);
+  if (lastSentAt && now - lastSentAt < WHATSAPP_TEXT_DEDUP_WINDOW_MS) {
+    console.log(`[whatsapp] Skipping duplicate outbound text to ${jid}`);
+    return;
+  }
+  await sock.sendMessage(jid, { text }, options);
+  recentWhatsAppTextSends.set(dedupeKey, Date.now());
+}
+
 /** Queue a DM message for batched processing */
 function queueDmMessage(jid: string, conversationId: string, line: string, displayName?: string, quotedMessage?: any): void {
   const entry = waDmBuffers.get(jid) ?? { items: [], timer: null, jid, conversationId, displayName, quotedMessage };
@@ -310,7 +331,7 @@ async function flushDmMessages(jid: string): Promise<void> {
 
     if (!response) {
       const errMsg = "Brain glitch. Try again in a moment.";
-      await sock!.sendMessage(jid, { text: errMsg });
+      await sendWhatsAppTextOnce(jid, errMsg);
       appendToLog(entry.conversationId, trimmed, errMsg, "whatsapp");
       return;
     }
@@ -335,19 +356,18 @@ async function flushDmMessages(jid: string): Promise<void> {
 
     try {
       const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
-      await sock!.sendMessage(jid, { text: response }, quotedOptions);
+      await sendWhatsAppTextOnce(jid, response, quotedOptions);
     } catch (sendErr: any) {
       if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
         console.log(`[whatsapp] DM send failed (${sendErr.message}) — retrying...`);
         await new Promise(r => setTimeout(r, 2000));
         const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
-        await sock!.sendMessage(jid, { text: response }, quotedOptions);
+        await sendWhatsAppTextOnce(jid, response, quotedOptions);
       } else {
         throw sendErr;
       }
     }
 
-    appendToLog(entry.conversationId, trimmed, response, "whatsapp");
     console.log(`[whatsapp] DM reply to ${jid} (${response.length} chars, ${items.length} msgs batched)`);
   } catch (err: any) {
     console.error(`[whatsapp] DM flush error for ${jid}:`, err.message);
@@ -432,19 +452,18 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
 
       try {
         const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
-        await sock!.sendMessage(groupJid, { text: response }, quotedOptions);
+        await sendWhatsAppTextOnce(groupJid, response, quotedOptions);
       } catch (sendErr: any) {
         if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
           console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
           groupMetadataCache.delete(groupJid);
           await new Promise(r => setTimeout(r, 2000));
           const quotedOptions = buildQuotedMessageOptions(entry.quotedMessage);
-          await sock!.sendMessage(groupJid, { text: response }, quotedOptions);
+          await sendWhatsAppTextOnce(groupJid, response, quotedOptions);
         } else {
           throw sendErr;
         }
       }
-      appendToLog(entry.conversationId, trimmed, response, "whatsapp");
       console.log(`[whatsapp] Group reply to ${groupJid} (${response.length} chars, ${items.length} msgs batched)`);
     }
   } catch (err: any) {
@@ -1154,6 +1173,7 @@ export async function sendWhatsAppMessage(
     if (!ok) {
       const altJid = getAlternateJid(normalized.jid);
       if (altJid && altJid !== normalized.jid) {
+        if (altJid === normalized.jid) return ok;
         console.warn(`[whatsapp] No ACK from ${normalized.jid}; retrying via ${altJid}`);
         ok = await sendWithAck(altJid, { text });
       }
@@ -1259,13 +1279,13 @@ export async function sendWhatsAppGroupMessage(
     }
     const jid = normalized.jid;
     try {
-      await sock.sendMessage(jid, { text });
+      await sendWhatsAppTextOnce(jid, text);
     } catch (sendErr: any) {
       if (sendErr?.message?.includes("No sessions") || sendErr?.message?.includes("not-acceptable")) {
         console.log(`[whatsapp] Group send failed (${sendErr.message}) — clearing cache and retrying...`);
         groupMetadataCache.delete(jid);
         await new Promise(r => setTimeout(r, 2000));
-        await sock.sendMessage(jid, { text });
+        await sendWhatsAppTextOnce(jid, text);
       } else {
         throw sendErr;
       }
