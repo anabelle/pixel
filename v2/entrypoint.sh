@@ -16,6 +16,10 @@ chown -R bun:bun /app/data 2>/dev/null || true
 mkdir -p /app/data/openviking /app/data/log 2>/dev/null || true
 chown -R bun:bun /app/data/openviking /app/data/log 2>/dev/null || true
 
+# Prefer the primary Gemini project for OpenViking's OpenAI-compatible calls.
+# The fallback/billed Google key may be denied for this project even when present.
+OPENVIKING_GOOGLE_KEY="${GEMINI_API_KEY_PRIMARY:-${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-${GEMINI_API_KEY_FALLBACK:-}}}}"
+
 # Generate OpenViking runtime config at boot in writable data dir
 OPENVIKING_BOOT_CONFIG=/app/data/openviking/openviking-ov.conf
 cat > "$OPENVIKING_BOOT_CONFIG" <<EOF
@@ -46,7 +50,7 @@ cat > "$OPENVIKING_BOOT_CONFIG" <<EOF
   "embedding": {
     "dense": {
       "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-      "api_key": "${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-}}",
+      "api_key": "${OPENVIKING_GOOGLE_KEY}",
       "provider": "openai",
       "dimension": 3072,
       "model": "gemini-embedding-001"
@@ -55,7 +59,7 @@ cat > "$OPENVIKING_BOOT_CONFIG" <<EOF
   },
   "vlm": {
     "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "api_key": "${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-}}",
+    "api_key": "${OPENVIKING_GOOGLE_KEY}",
     "provider": "openai",
     "model": "gemini-2.5-flash",
     "max_concurrent": 8

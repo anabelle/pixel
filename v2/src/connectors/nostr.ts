@@ -314,7 +314,7 @@ export async function sendNostrDm(
           tags: [["p", recipientPubkey]],
         });
 
-        await event.publish();
+        await publishNostrEvent(event);
         return true;
       } catch (err: any) {
         lastError = err;
@@ -327,6 +327,25 @@ export async function sendNostrDm(
     console.error(`[nostr] Failed to send DM to ${pubkey.slice(0, 8)}...:`, err.message);
     return false;
   }
+}
+
+/** Publish a Nostr event with one reconnect retry for transient relay failures. */
+export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTimeoutMs?: number }): Promise<void> {
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) {
+        await reconnectNostrRelays(options?.reconnectTimeoutMs ?? 10_000);
+      }
+      await event.publish();
+      return;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[nostr] Event publish attempt ${attempt + 1} failed: ${err.message}`);
+    }
+  }
+
+  throw lastError;
 }
 
 async function reconnectNostrRelays(timeoutMs: number = 10_000): Promise<void> {
@@ -511,7 +530,7 @@ export async function startNostr(): Promise<void> {
         reply.tags.push(["e", event.id, "", "root"]);
       }
 
-      await reply.publish();
+      await publishNostrEvent(reply);
       markReplied(event.id); // Mark as replied in shared set
       appendToLog(`nostr-${event.pubkey}`, content, response, "nostr");
       console.log(`[nostr] Replied to ${event.pubkey.slice(0, 8)}...`);
@@ -567,7 +586,7 @@ export async function startNostr(): Promise<void> {
         reply.content = encrypted;
         reply.tags = [["p", event.pubkey]];
 
-        await reply.publish();
+        await publishNostrEvent(reply);
         appendToLog(`nostr-dm-${event.pubkey}`, decrypted, response, "nostr-dm");
         console.log(`[nostr] DM replied to ${event.pubkey.slice(0, 8)}...`);
       } catch (err: any) {

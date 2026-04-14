@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled, publishNostrEvent } from "../connectors/nostr.js";
 import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -80,6 +80,7 @@ const QUOTE_REPOST_CHANCE = 0.25;
 const REVENUE_CHECK_MS = 6 * 60 * 60 * 1000; // 6 hours
 const REVENUE_GOAL_WEEKLY_SATS = 5000;
 const REVENUE_WINDOW_DAYS = 7;
+const MAX_GENERATION_ATTEMPTS = 3;
 
 // Canvas API URL — V1 canvas at pixel-api-1:3000
 const CANVAS_API_URL = process.env.CANVAS_API_URL ?? "http://pixel-api-1:3000/api/stats";
@@ -360,7 +361,14 @@ function readRecentPosts(limit = 8): RecentPost[] {
         return null;
       }
     }).filter(Boolean) as RecentPost[];
-    return parsed.slice(-limit);
+
+    const cleaned = parsed.map((post) => {
+      const content = cleanPostContent(post.content);
+      if (!content) return null;
+      if (getPostContentRejectReason(content)) return null;
+      return { ...post, content } as RecentPost;
+    }).filter(Boolean) as RecentPost[];
+    return cleaned.slice(-limit);
   } catch {
     return [];
   }
@@ -368,7 +376,9 @@ function readRecentPosts(limit = 8): RecentPost[] {
 
 function appendRecentPost(content: string, type: RecentPost["type"]): void {
   try {
-    const entry: RecentPost = { ts: Date.now(), content, type };
+    const cleaned = cleanPostContent(content);
+    if (!cleaned || getPostContentRejectReason(cleaned)) return;
+    const entry: RecentPost = { ts: Date.now(), content: cleaned, type };
     writeFileSync(RECENT_POSTS_PATH, JSON.stringify(entry) + "\n", { flag: "a" });
   } catch (err: any) {
     console.error("[heartbeat] Failed to write recent post:", err.message);
@@ -467,8 +477,48 @@ function isTooSimilarToRecentPosts(newContent: string): { similar: boolean; reas
  * Strip markdown artifacts and LLM formatting from post content.
  * Nostr and Twitter posts should be plain text — no headers, bold, italics, or code blocks.
  */
+function stripLeadingGenerationMetadata(text: string): string {
+  const lines = text.split("\n");
+  let start = 0;
+
+  const metadataPatterns = [
+    /^here(?:'|’)s my next (?:nostr|twitter) post\b/i,
+    /^\[\s*creative mode:/i,
+    /^\[\s*queued/i,
+    /^\[\s*scheduled/i,
+    /^\[\s*silent\s*\]$/i,
+    /^\[\s*done\s*\]$/i,
+    /^\[\s*\d{4}-\d{2}-\d{2}/i,
+    /^topic for this post\s*:/i,
+    /^topic\s*:/i,
+    /^##\s*topic\b/i,
+    /^mood\s*:/i,
+    /^##\s*mood\b/i,
+    /^angle\s*:/i,
+    /^current state\s*:/i,
+    /^---+$/,
+  ];
+
+  while (start < lines.length) {
+    const trimmed = lines[start].trim();
+    if (!trimmed) {
+      start++;
+      continue;
+    }
+    if (metadataPatterns.some((pattern) => pattern.test(trimmed))) {
+      start++;
+      continue;
+    }
+    break;
+  }
+
+  return lines.slice(start).join("\n").trim();
+}
+
 function cleanPostContent(text: string): string {
   let cleaned = text.trim();
+
+  cleaned = stripLeadingGenerationMetadata(cleaned);
 
   // Remove wrapping quotes
   if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
@@ -497,7 +547,84 @@ function cleanPostContent(text: string): string {
   // Remove leading/trailing whitespace lines
   cleaned = cleaned.trim();
 
+  // Run metadata stripping again after markdown cleanup in case headers were masking it.
+  cleaned = stripLeadingGenerationMetadata(cleaned);
+
   return cleaned;
+}
+
+function getPostContentRejectReason(text: string): string | null {
+  const cleaned = text.trim();
+  if (!cleaned) return "empty after cleanup";
+
+  const compact = cleaned.replace(/\s+/g, "");
+  if (/^[a-f0-9]{32,}$/i.test(compact)) {
+    return "raw hash or event-id output";
+  }
+
+  if (/^\[\s*(?:silent|queued|scheduled|done|no response)[^\]]*\]$/i.test(cleaned)) {
+    return "status wrapper output";
+  }
+
+  if (/^(?:posted|post sent|post complete|post published|the post has been published|done|sent)(?:[\s.:!-]|$)/i.test(cleaned)) {
+    return "post-status output instead of a real post";
+  }
+
+  if (/^(?:topic for this post|topic|mood|angle|task|guidelines?)\s*:/i.test(cleaned)) {
+    return "prompt metadata leaked into output";
+  }
+
+  if (/^here(?:'|’)s my next (?:nostr|twitter) post\b/i.test(cleaned)) {
+    return "generator preamble leaked into output";
+  }
+
+  if (/^write (?:your|the) next (?:nostr|twitter) post\b/i.test(cleaned)) {
+    return "instruction text leaked into output";
+  }
+
+  return null;
+}
+
+function evaluateGeneratedPostCandidate(
+  responseText: string | null | undefined,
+  maxLength: number,
+): { status: "ok" | "silent" | "retry"; content?: string; reason?: string } {
+  if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
+    return { status: "silent" };
+  }
+
+  let cleaned = cleanPostContent(responseText);
+  if (!cleaned) return { status: "retry", reason: "empty after cleanup" };
+
+  if (cleaned.length > maxLength) {
+    cleaned = cleaned.slice(0, maxLength - 3) + "...";
+  }
+
+  const rejectReason = getPostContentRejectReason(cleaned);
+  if (rejectReason) {
+    return { status: "retry", reason: rejectReason };
+  }
+
+  const dupCheck = isTooSimilarToRecentPosts(cleaned);
+  if (dupCheck.similar) {
+    return { status: "retry", reason: dupCheck.reason };
+  }
+
+  return { status: "ok", content: cleaned };
+}
+
+function isDuplicateRejectReason(reason: string): boolean {
+  const lower = reason.toLowerCase();
+  return lower.includes("word similarity") || lower.includes("repeated phrases");
+}
+
+function scheduleLoop(
+  existing: ReturnType<typeof setTimeout> | null,
+  loop: () => Promise<void>,
+  delayMs: number,
+): ReturnType<typeof setTimeout> | null {
+  if (!running) return existing;
+  return setTimeout(loop, delayMs);
 }
 
 /** Get a random interval between min and max (jitter) */
@@ -698,7 +825,7 @@ async function generatePost(): Promise<string | null> {
 
   const context = await buildPostContext(topic, mood);
 
-  const systemPrompt = `${character}
+  const baseSystemPrompt = `${character}
 
 ${context}
 
@@ -718,52 +845,51 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
 - NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
+  const baseUserPrompt = "Write your next Nostr post. Use a completely different angle and vocabulary than your recent posts.";
+  let lastRejectReason = "";
 
-  const responseText = await backgroundLlmCall({
-    systemPrompt,
-    userPrompt: "Write your next Nostr post. Use a completely different angle and vocabulary than your recent posts.",
-    tools: pixelTools,
-    label: "heartbeat",
-  });
+  for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
+    const responseText = await backgroundLlmCall({
+      systemPrompt: attempt === 1
+        ? baseSystemPrompt
+        : `${baseSystemPrompt}\n\n## Retry constraints\nPrevious draft was rejected because: ${lastRejectReason}\nWrite a completely different post. Avoid status updates, prompt metadata, and recycled phrasing.`,
+      userPrompt: attempt === 1
+        ? baseUserPrompt
+        : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
+      tools: pixelTools,
+      label: "heartbeat",
+    });
 
-  // Check for [SILENT] response
-  if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
-    console.log(`[heartbeat] Agent chose silence on topic '${topic}' — nothing to post`);
-    audit("heartbeat_silent", `Chose silence on topic '${topic}' (mood: ${mood})`, { topic, mood });
-    return null;
-  }
-
-  // Clean up any quotes, preamble, or markdown artifacts the LLM might add
-  let cleaned = cleanPostContent(responseText);
-
-  // Truncate if too long
-  if (cleaned.length > 500) {
-    cleaned = cleaned.slice(0, 497) + "...";
-  }
-
-  // DEDUPLICATION: Check similarity to recent posts
-  const dupCheck = isTooSimilarToRecentPosts(cleaned);
-  if (dupCheck.similar) {
-    console.log(`[heartbeat] REJECTED duplicate post: ${dupCheck.reason}`);
-    audit("heartbeat_duplicate", `Rejected similar post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
-    return null;
-  }
-
-  if (cleaned) {
-    lastTopic = topic;
-    lastMood = mood;
-    topicHistory.push(topic);
-    if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
-      topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+    const evaluation = evaluateGeneratedPostCandidate(responseText, 500);
+    if (evaluation.status === "silent") {
+      console.log(`[heartbeat] Agent chose silence on topic '${topic}' — nothing to post`);
+      audit("heartbeat_silent", `Chose silence on topic '${topic}' (mood: ${mood})`, { topic, mood });
+      return null;
     }
-    if (topic === "canvas") {
-      lastCanvasPostTime = Date.now();
+
+    if (evaluation.status === "ok" && evaluation.content) {
+      const cleaned = evaluation.content;
+      lastTopic = topic;
+      lastMood = mood;
+      topicHistory.push(topic);
+      if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
+        topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+      }
+      if (topic === "canvas") {
+        lastCanvasPostTime = Date.now();
+      }
+      saveHeartbeatState();
+      console.log(`[heartbeat] Generated [${topic}/${mood}]${attempt > 1 ? ` attempt ${attempt}` : ""}: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+      return cleaned;
     }
-    saveHeartbeatState();
-    console.log(`[heartbeat] Generated [${topic}/${mood}]: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+
+    lastRejectReason = evaluation.reason ?? "not publishable";
+    console.log(`[heartbeat] Rejected generated post attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}: ${lastRejectReason}`);
   }
 
-  return cleaned || null;
+  const finalAuditType = isDuplicateRejectReason(lastRejectReason) ? "heartbeat_duplicate" : "heartbeat_invalid_output";
+  audit(finalAuditType, `Rejected generated post on '${topic}'`, { topic, mood, reason: lastRejectReason });
+  return null;
 }
 
 // ============================================================
@@ -778,7 +904,7 @@ async function generateTwitterPost(): Promise<string | null> {
   const mood = pickRandom(MOODS, lastMood);
   const context = await buildPostContext(topic, mood);
 
-  const systemPrompt = `${character}
+  const baseSystemPrompt = `${character}
 
 ${context}
 
@@ -796,46 +922,48 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 - If you genuinely have nothing interesting to say about this topic right now, respond with exactly: [SILENT]
 - NEVER recycle phrases from recent posts listed above. Find a completely fresh angle.
 - Write the post text directly. No quotes, no preamble, no explanation.`;
+  const baseUserPrompt = "Write your next Twitter post. Use a completely different angle and vocabulary than your recent posts.";
+  let lastRejectReason = "";
 
-  const responseText = await backgroundLlmCall({
-    systemPrompt,
-    userPrompt: "Write your next Twitter post. Use a completely different angle and vocabulary than your recent posts.",
-    tools: pixelTools,
-    label: "heartbeat",
-  });
+  for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
+    const responseText = await backgroundLlmCall({
+      systemPrompt: attempt === 1
+        ? baseSystemPrompt
+        : `${baseSystemPrompt}\n\n## Retry constraints\nPrevious draft was rejected because: ${lastRejectReason}\nWrite a completely different post. Avoid status updates, prompt metadata, and recycled phrasing.`,
+      userPrompt: attempt === 1
+        ? baseUserPrompt
+        : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
+      tools: pixelTools,
+      label: "heartbeat",
+    });
 
-  if (!responseText || responseText.trim() === "[SILENT]" || responseText.includes("[SILENT]")) {
-    console.log(`[heartbeat] Agent chose silence on twitter topic '${topic}' — nothing to post`);
-    audit("heartbeat_twitter_silent", `Chose silence on twitter topic '${topic}' (mood: ${mood})`, { topic, mood });
-    return null;
-  }
-
-  let cleaned = cleanPostContent(responseText);
-
-  if (cleaned.length > 280) {
-    cleaned = cleaned.slice(0, 277) + "...";
-  }
-
-  // DEDUPLICATION: Check similarity to recent posts
-  const dupCheck = isTooSimilarToRecentPosts(cleaned);
-  if (dupCheck.similar) {
-    console.log(`[heartbeat] REJECTED duplicate twitter post: ${dupCheck.reason}`);
-    audit("heartbeat_twitter_duplicate", `Rejected similar twitter post on '${topic}'`, { topic, mood, reason: dupCheck.reason });
-    return null;
-  }
-
-  if (cleaned) {
-    lastTopic = topic;
-    lastMood = mood;
-    topicHistory.push(topic);
-    if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
-      topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+    const evaluation = evaluateGeneratedPostCandidate(responseText, 280);
+    if (evaluation.status === "silent") {
+      console.log(`[heartbeat] Agent chose silence on twitter topic '${topic}' — nothing to post`);
+      audit("heartbeat_twitter_silent", `Chose silence on twitter topic '${topic}' (mood: ${mood})`, { topic, mood });
+      return null;
     }
-    saveHeartbeatState();
-    console.log(`[heartbeat] Generated twitter post [${topic}/${mood}]: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+
+    if (evaluation.status === "ok" && evaluation.content) {
+      const cleaned = evaluation.content;
+      lastTopic = topic;
+      lastMood = mood;
+      topicHistory.push(topic);
+      if (topicHistory.length > TOPIC_HISTORY_LIMIT) {
+        topicHistory = topicHistory.slice(-TOPIC_HISTORY_LIMIT);
+      }
+      saveHeartbeatState();
+      console.log(`[heartbeat] Generated twitter post [${topic}/${mood}]${attempt > 1 ? ` attempt ${attempt}` : ""}: "${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}"`);
+      return cleaned;
+    }
+
+    lastRejectReason = evaluation.reason ?? "not publishable";
+    console.log(`[heartbeat] Rejected generated twitter post attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}: ${lastRejectReason}`);
   }
 
-  return cleaned || null;
+  const finalAuditType = isDuplicateRejectReason(lastRejectReason) ? "heartbeat_twitter_duplicate" : "heartbeat_twitter_invalid_output";
+  audit(finalAuditType, `Rejected generated twitter post on '${topic}'`, { topic, mood, reason: lastRejectReason });
+  return null;
 }
 
 /** Publish a tweet (respects Twitter connector rate limits). */
@@ -876,7 +1004,7 @@ async function publishPost(content: string): Promise<boolean> {
     event.content = content;
     event.tags = [];
 
-    await event.publish();
+    await publishNostrEvent(event);
     appendRecentPost(content, "heartbeat");
     return true;
   } catch (err: any) {
@@ -1004,7 +1132,7 @@ async function checkAndReplyToMentions(): Promise<void> {
           reply.tags.push(["e", event.id, "", "root"]);
         }
 
-        await reply.publish();
+        await publishNostrEvent(reply);
         markReplied(event.id);
         console.log(`[heartbeat/engage] Replied to ${event.pubkey.slice(0, 8)}...`);
         audit("engagement_reply", `Replied to ${event.pubkey.slice(0, 8)} on Nostr`, { from: event.pubkey, contentPreview: event.content?.slice(0, 80), responsePreview: response?.slice(0, 80) });
@@ -1150,21 +1278,18 @@ async function clawstrLoop(): Promise<void> {
   } catch (err: any) {
     console.error("[heartbeat/clawstr] Loop error:", err.message);
     audit("clawstr_error", `Clawstr loop failed: ${err.message}`, { error: err.message });
-  }
-
-  if (running) {
-    clawstrTimer = setTimeout(clawstrLoop, CLAWSTR_CHECK_MS);
+  } finally {
+    clawstrTimer = scheduleLoop(clawstrTimer, clawstrLoop, CLAWSTR_CHECK_MS);
   }
 }
 
 /** Nostr discovery loop — find trending topics and engage */
 async function discoveryLoop(): Promise<void> {
   if (!running) return;
-
-  const instance = getNostrInstance();
-  if (!instance) return;
-
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1176,7 +1301,13 @@ async function discoveryLoop(): Promise<void> {
       limit: 200,
     }), 15_000);
 
-    if (!events) return;
+    if (!events) {
+      audit("engagement_error", "Discovery loop fetch timed out", { error: "fetch timeout" });
+      return;
+    }
+
+    lastDiscoveryTime = Date.now();
+    saveHeartbeatState();
 
     const all = [...events].filter((e) => e.pubkey !== pubkey && e.content && e.content.length > 40);
 
@@ -1252,21 +1383,18 @@ async function discoveryLoop(): Promise<void> {
   } catch (err: any) {
     console.error("[heartbeat/discovery] Loop error:", err.message);
     audit("engagement_error", `Discovery loop failed: ${err.message}`, { error: err.message });
-  }
-
-  if (running) {
-    discoveryTimer = setTimeout(discoveryLoop, DISCOVERY_CHECK_MS);
+  } finally {
+    discoveryTimer = scheduleLoop(discoveryTimer, discoveryLoop, DISCOVERY_CHECK_MS);
   }
 }
 
 /** Nostr notifications loop — replies + reactions directed at us */
 async function notificationLoop(): Promise<void> {
   if (!running) return;
-
-  const instance = getNostrInstance();
-  if (!instance) return;
-
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1279,7 +1407,10 @@ async function notificationLoop(): Promise<void> {
       limit: 200,
     }), 15_000);
 
-    if (!events) return;
+    if (!events) {
+      audit("engagement_error", "Notification loop fetch timed out", { error: "fetch timeout" });
+      return;
+    }
 
     const mentions = [...events].filter((e) => e.kind === 1 && e.pubkey !== pubkey && !isMuted(e.pubkey));
     const reactions = [...events].filter((e) => e.kind === 7 && e.pubkey !== pubkey);
@@ -1345,7 +1476,7 @@ async function notificationLoop(): Promise<void> {
         ["e", event.id, "", "root"],
       ];
 
-      await reply.publish();
+      await publishNostrEvent(reply);
       markReplied(event.id);
       markThreadHandled(threadRootId);
       audit("engagement_reply", `Replied to notification ${event.pubkey.slice(0, 8)}...`, { eventId: event.id, threadId: threadRootId });
@@ -1355,21 +1486,18 @@ async function notificationLoop(): Promise<void> {
   } catch (err: any) {
     console.error("[heartbeat/notifications] Loop error:", err.message);
     audit("engagement_error", `Notification loop failed: ${err.message}`, { error: err.message });
-  }
-
-  if (running) {
-    notificationTimer = setTimeout(notificationLoop, NOTIFICATION_CHECK_MS);
+  } finally {
+    notificationTimer = scheduleLoop(notificationTimer, notificationLoop, NOTIFICATION_CHECK_MS);
   }
 }
 
 /** Nostr zap thanks loop — thank for zaps */
 async function zapLoop(): Promise<void> {
   if (!running) return;
-
-  const instance = getNostrInstance();
-  if (!instance) return;
-
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1382,7 +1510,13 @@ async function zapLoop(): Promise<void> {
       limit: 200,
     }), 15_000);
 
-    if (!events) return;
+    if (!events) {
+      audit("engagement_error", "Zap loop fetch timed out", { error: "fetch timeout" });
+      return;
+    }
+
+    lastZapCheckTime = Date.now();
+    saveHeartbeatState();
 
     let thanked = 0;
     for (const event of [...events]) {
@@ -1405,7 +1539,7 @@ async function zapLoop(): Promise<void> {
       ];
       if (sender) reply.tags.push(["p", sender]);
 
-      await reply.publish();
+      await publishNostrEvent(reply);
       zapThankedIds.push(event.id);
       if (zapThankedIds.length > 200) {
         zapThankedIds = zapThankedIds.slice(-200);
@@ -1418,7 +1552,6 @@ async function zapLoop(): Promise<void> {
           zapCorrelation = zapCorrelation.slice(-ZAP_CORRELATION_HISTORY_LIMIT);
         }
       }
-      lastZapCheckTime = Date.now();
       saveHeartbeatState();
       audit("zap_thanks", `Zap thanks sent (${amountMsats ? Math.floor(amountMsats / 1000) : "?"} sats)`, { eventId: event.id, sender });
 
@@ -1442,10 +1575,8 @@ async function zapLoop(): Promise<void> {
   } catch (err: any) {
     console.error("[heartbeat/zaps] Loop error:", err.message);
     audit("engagement_error", `Zap loop failed: ${err.message}`, { error: err.message });
-  }
-
-  if (running) {
-    zapTimer = setTimeout(zapLoop, ZAP_CHECK_MS);
+  } finally {
+    zapTimer = scheduleLoop(zapTimer, zapLoop, ZAP_CHECK_MS);
   }
 }
 
@@ -1465,21 +1596,24 @@ async function publishContacts(ndk: NDK, contacts: Set<string>): Promise<void> {
   event.kind = 3;
   event.tags = [...contacts].map((pk) => ["p", pk]);
   event.content = "";
-  await event.publish();
+  await publishNostrEvent(event);
 }
 
 async function followLoop(): Promise<void> {
   if (!running) return;
-  const instance = getNostrInstance();
-  if (!instance) return;
 
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const now = Date.now();
     if (lastFollowCheckTime && now - lastFollowCheckTime < FOLLOW_CHECK_MS) {
-      followTimer = setTimeout(followLoop, FOLLOW_CHECK_MS);
       return;
     }
+
+    lastFollowCheckTime = Date.now();
+    saveHeartbeatState();
 
     const contacts = await loadContacts(ndk, pubkey);
 
@@ -1511,30 +1645,30 @@ async function followLoop(): Promise<void> {
       followed++;
       await new Promise((r) => setTimeout(r, 2_000));
     }
-
-    lastFollowCheckTime = Date.now();
     saveHeartbeatState();
   } catch (err: any) {
     console.error("[heartbeat/follow] Loop error:", err.message);
-  }
-
-  if (running) {
-    followTimer = setTimeout(followLoop, FOLLOW_CHECK_MS);
+    audit("engagement_error", `Follow loop failed: ${err.message}`, { error: err.message });
+  } finally {
+    followTimer = scheduleLoop(followTimer, followLoop, FOLLOW_CHECK_MS);
   }
 }
 
 async function unfollowLoop(): Promise<void> {
   if (!running) return;
-  const instance = getNostrInstance();
-  if (!instance) return;
 
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const now = Date.now();
     if (lastUnfollowCheckTime && now - lastUnfollowCheckTime < UNFOLLOW_CHECK_MS) {
-      unfollowTimer = setTimeout(unfollowLoop, UNFOLLOW_CHECK_MS);
       return;
     }
+
+    lastUnfollowCheckTime = Date.now();
+    saveHeartbeatState();
 
     const contacts = await loadContacts(ndk, pubkey);
     const list = [...contacts];
@@ -1552,31 +1686,30 @@ async function unfollowLoop(): Promise<void> {
         await new Promise((r) => setTimeout(r, 2_000));
       }
     }
-
-    lastUnfollowCheckTime = Date.now();
     saveHeartbeatState();
   } catch (err: any) {
     console.error("[heartbeat/unfollow] Loop error:", err.message);
-  }
-
-  if (running) {
-    unfollowTimer = setTimeout(unfollowLoop, UNFOLLOW_CHECK_MS);
+    audit("engagement_error", `Unfollow loop failed: ${err.message}`, { error: err.message });
+  } finally {
+    unfollowTimer = scheduleLoop(unfollowTimer, unfollowLoop, UNFOLLOW_CHECK_MS);
   }
 }
 
 async function artReportLoop(): Promise<void> {
   if (!running) return;
 
-  const instance = getNostrInstance();
-  if (!instance) return;
-
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const now = Date.now();
     if (lastArtReportTime && now - lastArtReportTime < ART_REPORT_CHECK_MS) {
-      artReportTimer = setTimeout(artReportLoop, ART_REPORT_CHECK_MS);
       return;
     }
+
+    lastArtReportTime = Date.now();
+    saveHeartbeatState();
 
     const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const relayEvents = await ndk.fetchEvents({ kinds: [1], since, limit: 200 });
@@ -1590,7 +1723,6 @@ async function artReportLoop(): Promise<void> {
 
     const samples = [...relayArt, ...primalArt].slice(0, 10).map((e) => e.content?.slice(0, 200)).filter(Boolean);
     if (samples.length < ART_REPORT_MIN_POSTS) {
-      artReportTimer = setTimeout(artReportLoop, ART_REPORT_CHECK_MS);
       return;
     }
 
@@ -1607,24 +1739,21 @@ async function artReportLoop(): Promise<void> {
     );
 
     if (!response || response.includes("[SILENT]")) {
-      artReportTimer = setTimeout(artReportLoop, ART_REPORT_CHECK_MS);
       return;
     }
 
     const post = new NDKEvent(ndk);
     post.kind = 1;
     post.content = response;
-    await post.publish();
+    await publishNostrEvent(post);
     appendRecentPost(response, "art_report");
-    lastArtReportTime = Date.now();
     saveHeartbeatState();
     audit("engagement_reply", "Posted art trend report", { preview: response.slice(0, 120) });
   } catch (err: any) {
     console.error("[heartbeat/art-report] Loop error:", err.message);
-  }
-
-  if (running) {
-    artReportTimer = setTimeout(artReportLoop, ART_REPORT_CHECK_MS);
+    audit("engagement_error", `Art report loop failed: ${err.message}`, { error: err.message });
+  } finally {
+    artReportTimer = scheduleLoop(artReportTimer, artReportLoop, ART_REPORT_CHECK_MS);
   }
 }
 
@@ -1650,16 +1779,18 @@ async function revenueGoalLoop(): Promise<void> {
 async function spotlightLoop(): Promise<void> {
   if (!running) return;
 
-  const instance = getNostrInstance();
-  if (!instance) return;
-
   try {
+    const instance = getNostrInstance();
+    if (!instance) return;
+
     const { ndk, pubkey } = instance;
     const now = Date.now();
     if (lastSpotlightTime && now - lastSpotlightTime < SPOTLIGHT_CHECK_MS) {
-      spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
       return;
     }
+
+    lastSpotlightTime = Date.now();
+    saveHeartbeatState();
 
     const trending = await fetchPrimalTrending24h();
     const candidates = trending.filter((e) => e.pubkey !== pubkey && !isMuted(e.pubkey) && e.content && e.content.length > 40)
@@ -1672,7 +1803,6 @@ async function spotlightLoop(): Promise<void> {
         return true;
       });
     if (candidates.length === 0) {
-      spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
       return;
     }
 
@@ -1690,7 +1820,6 @@ async function spotlightLoop(): Promise<void> {
     );
 
     if (!response || response.includes("[SILENT]")) {
-      spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
       return;
     }
 
@@ -1702,17 +1831,15 @@ async function spotlightLoop(): Promise<void> {
       ["p", pick.pubkey],
       ["q", pick.id],
     ];
-    await post.publish();
+    await publishNostrEvent(post);
     appendRecentPost(response, "spotlight");
-    lastSpotlightTime = Date.now();
     saveHeartbeatState();
     audit("engagement_reply", "Posted community spotlight", { eventId: pick.id, preview: response.slice(0, 120) });
   } catch (err: any) {
     console.error("[heartbeat/spotlight] Loop error:", err.message);
-  }
-
-  if (running) {
-    spotlightTimer = setTimeout(spotlightLoop, SPOTLIGHT_CHECK_MS);
+    audit("engagement_error", `Spotlight loop failed: ${err.message}`, { error: err.message });
+  } finally {
+    spotlightTimer = scheduleLoop(spotlightTimer, spotlightLoop, SPOTLIGHT_CHECK_MS);
   }
 }
 
@@ -1859,7 +1986,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
       ["p", item.pubkey],
       ["q", item.eventId],
     ];
-    await quote.publish();
+    await publishNostrEvent(quote);
   } else {
     const reply = new NDKEvent(ndk);
     reply.kind = 1;
@@ -1869,7 +1996,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
       ["p", item.pubkey],
       ["e", item.eventId, "", "root"],
     ];
-    await reply.publish();
+    await publishNostrEvent(reply);
   }
   await publishReaction(ndk, eventStub);
 
@@ -2161,7 +2288,7 @@ async function publishReaction(ndk: NDK, event: NDKEvent): Promise<void> {
     ["e", event.id],
     ["p", event.pubkey],
   ];
-  await reaction.publish();
+  await publishNostrEvent(reaction);
 }
 
 async function publishRepost(ndk: NDK, event: NDKEvent): Promise<void> {
@@ -2178,7 +2305,7 @@ async function publishRepost(ndk: NDK, event: NDKEvent): Promise<void> {
     ["e", event.id],
     ["p", event.pubkey],
   ];
-  await repost.publish();
+  await publishNostrEvent(repost);
 }
 
 async function maybeReplyToClawstr(output: string): Promise<void> {
@@ -2320,6 +2447,7 @@ export function startHeartbeat(): void {
   console.log(`[heartbeat] Unfollow check every ${UNFOLLOW_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Art report every ${ART_REPORT_CHECK_MS / 60_000} minutes`);
   console.log(`[heartbeat] Community spotlight every ${SPOTLIGHT_CHECK_MS / 60_000} minutes`);
+  console.log(`[heartbeat] Revenue check every ${REVENUE_CHECK_MS / 60_000} minutes`);
 
   // Delay first beat to let Nostr connect and stabilize
   timer = setTimeout(beat, STARTUP_DELAY_MS);
@@ -2347,6 +2475,9 @@ export function startHeartbeat(): void {
   // Start art report + spotlight loops
   artReportTimer = setTimeout(artReportLoop, STARTUP_DELAY_MS + 360_000);
   spotlightTimer = setTimeout(spotlightLoop, STARTUP_DELAY_MS + 420_000);
+
+  // Start revenue loop
+  revenueTimer = setTimeout(revenueGoalLoop, STARTUP_DELAY_MS + 150_000);
 }
 
 /** Stop the heartbeat service */
@@ -2391,6 +2522,10 @@ export function stopHeartbeat(): void {
   if (spotlightTimer) {
     clearTimeout(spotlightTimer);
     spotlightTimer = null;
+  }
+  if (revenueTimer) {
+    clearTimeout(revenueTimer);
+    revenueTimer = null;
   }
   console.log("[heartbeat] Stopped");
 }

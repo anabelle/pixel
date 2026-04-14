@@ -8,7 +8,7 @@
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5 (744B) → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5.1 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -136,7 +136,7 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-5 (744B, reasoning) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
+- **Primary (conversations):** Z.AI GLM-5.1 (reasoning, 200K context / 128K max output) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
 - **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
@@ -186,9 +186,9 @@ Authorization config lives in `servers.json`:
 
 ### Architecture & Models
 
-- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
+- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5.1 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
 - **Model objects constructed manually** — not in pi-ai registry. Uses `openai-completions` provider.
-- **Multi-level fallback:** GLM-5/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
+- **Multi-level fallback:** GLM-5.1/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
 - **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` prefers `github-copilot/gpt-5.4` first for headless opencode sessions, then falls back to `zai-coding-plan/glm-5`, then the rest of the approved cascade.
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
@@ -835,3 +835,36 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 **What worked in practice:** pairing-code mode produced a valid code but failed for the user; switching to QR mode succeeded immediately. The secure path is: keep the admin lock in place, render the QR locally, scan it, then verify `registered: true`.
 
 **Lesson:** for WhatsApp, `connected` is transport-level only. The real truth is `registered`. Also: never loosen the QR endpoint auth just for convenience — deliver the QR through a trusted local/admin path instead.
+
+### Session 70: OpenViking Key Preference + Heartbeat Loop Resurrection
+
+**Problem:** two separate failures were degrading Pixel's continuity and initiative:
+1. the real OpenViking runtime was using a denied Google fallback key for its OpenAI-compatible Gemini calls, causing `403` failures on semantic recall/search
+2. several heartbeat subloops could die silently because early `return` paths skipped re-scheduling, and the recent-post dedup corpus had become polluted with status/meta garbage that blocked valid posts
+
+**Solution:**
+1. **OpenViking key preference fixed**
+   - `entrypoint.sh` now derives `OPENVIKING_GOOGLE_KEY` with `GEMINI_API_KEY_PRIMARY` first, then falls back to the older Google key envs
+   - boot-generated OpenViking config now uses that resolved key for both embeddings and VLM extraction/search
+
+2. **Heartbeat dedup hygiene hardened**
+   - recent-post reads now clean and discard garbage/meta entries from `nostr-posts.jsonl`
+   - recent-post writes refuse hash/status/prompt-leak outputs
+   - Nostr/Twitter generation now retries up to 3 times instead of going silent after one bad draft
+
+3. **Loop rescheduling hardened**
+   - `clawstrLoop()` now always re-schedules from `finally`
+   - discovery / zap / follow / unfollow / art-report / spotlight loops now stamp their check times when they actually run, not only when they successfully publish
+   - revenue loop is started explicitly at boot and cleared on stop
+
+4. **Nostr publish reliability improved**
+   - added/exported `publishNostrEvent()` with reconnect retry in `src/connectors/nostr.ts`
+   - heartbeat publishing, Nostr mention replies, DM replies, and proactive DMs now use the shared retry path
+
+**Verification:**
+- OpenViking search returned `200` again after the key preference fix
+- `/health` after rebuild showed all services back up, including heartbeat, inner life, outreach, canvas listener, WhatsApp, Twitter, and revenue loop state
+- `/api/chat` responded normally as `syntropy-admin`
+- boot logs showed heartbeat loops starting with revenue check enabled
+
+**Lesson:** background loops must re-arm from `finally`, not from the happy path. And when multiple Google keys exist, prefer the project that is actually authorized instead of assuming any valid-looking fallback key will work.
