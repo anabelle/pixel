@@ -298,6 +298,19 @@ type Garden = {
 type ProjectStatus = "planned" | "active" | "blocked" | "completed" | "abandoned";
 type ProjectKind = "implementation" | "research" | "general";
 
+type VendorMindsetStatus = "ok" | "watch" | "warning" | "critical";
+
+type VendorMindsetAssessment = {
+  status: VendorMindsetStatus;
+  summary: string;
+  guardrail: string;
+  uptimeHours: number;
+  recentConversationCount: number;
+  recentConversationUsers: number;
+  recentPostCount: number;
+  activeImplementationProjects: number;
+};
+
 export type ProjectRecord = {
   id: string;
   title: string;
@@ -954,6 +967,105 @@ function gatherRecentConversations(): string {
 
   if (exchanges.length === 0) return "(no recent conversations)";
   return exchanges.slice(-20).join("\n"); // Cap at 20 most recent
+}
+
+function getRecentConversationStats(hours: number = 24): { exchangeCount: number; activeUsers: number } {
+  if (!existsSync(CONVERSATIONS_DIR)) return { exchangeCount: 0, activeUsers: 0 };
+
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  let exchangeCount = 0;
+  const activeUsers = new Set<string>();
+
+  try {
+    const userDirs = readdirSync(CONVERSATIONS_DIR);
+    for (const userDir of userDirs) {
+      const logPath = join(CONVERSATIONS_DIR, userDir, "log.jsonl");
+      if (!existsSync(logPath)) continue;
+
+      try {
+        const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
+        for (const line of lines.slice(-20)) {
+          try {
+            const entry = JSON.parse(line) as { ts?: string };
+            const ts = entry.ts ? new Date(entry.ts).getTime() : 0;
+            if (!ts || ts <= cutoff) continue;
+            exchangeCount++;
+            activeUsers.add(userDir);
+          } catch {}
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return { exchangeCount, activeUsers: activeUsers.size };
+}
+
+function getRecentPostCount(hours: number = 24): number {
+  if (!existsSync(RECENT_POSTS_PATH)) return 0;
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+
+  try {
+    return readFileSync(RECENT_POSTS_PATH, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { ts?: number };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { ts?: number } => Boolean(entry))
+      .filter((entry) => typeof entry.ts === "number" && entry.ts > cutoff)
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
+function assessVendorMindsetInversion(projects: ProjectRecord[] = loadProjectState()): VendorMindsetAssessment {
+  const uptimeHours = Math.floor(process.uptime() / 3600);
+  const { exchangeCount, activeUsers } = getRecentConversationStats(24);
+  const recentPostCount = getRecentPostCount(24);
+  const activeImplementationProjects = projects.filter((project) =>
+    project.kind === "implementation" && ["planned", "active"].includes(project.status)
+  ).length;
+
+  let score = 0;
+  if (uptimeHours >= 24) score += 1;
+  if (exchangeCount <= 2) score += 2;
+  else if (exchangeCount <= 6) score += 1;
+  if (activeUsers <= 1) score += 1;
+  if (recentPostCount <= 1) score += 1;
+  if (activeImplementationProjects === 0) score += 2;
+
+  let status: VendorMindsetStatus = "ok";
+  if (score >= 5) status = "critical";
+  else if (score >= 3) status = "warning";
+  else if (score >= 2) status = "watch";
+
+  const summary = status === "critical"
+    ? "vendor mindset inversion is active: the system is stable, but recent interaction and concrete purpose are both too thin."
+    : status === "warning"
+      ? "vendor mindset inversion risk is elevated: stability is outrunning meaningful interaction or buyer-facing motion."
+      : status === "watch"
+        ? "stability is healthy, but it still needs a concrete purpose anchor to avoid drifting into maintenance theater."
+        : "stability currently has a purpose anchor; keep turning it into concrete user-facing work instead of polishing the shell.";
+
+  const guardrail = activeImplementationProjects === 0
+    ? "Do not spend the next cycle polishing infrastructure. Pick one concrete offer, workflow, or sellable capability and move it from idea to implementation."
+    : "Use stable uptime as runway for the active implementation queue. Finish something buyer-facing before doing more maintenance-for-maintenance's-sake.";
+
+  return {
+    status,
+    summary,
+    guardrail,
+    uptimeHours,
+    recentConversationCount: exchangeCount,
+    recentConversationUsers: activeUsers,
+    recentPostCount,
+    activeImplementationProjects,
+  };
 }
 
 function gatherCommunitySignals(): string {
@@ -2167,6 +2279,7 @@ export function getInnerLifeContext(): string {
   const learnings = readLivingDoc("learnings.md");
   const ideas = readLivingDoc("ideas.md");
   const evolution = readLivingDoc("evolution.md");
+  const vendorMindset = assessVendorMindsetInversion();
 
   const parts: string[] = [];
 
@@ -2198,6 +2311,10 @@ export function getInnerLifeContext(): string {
     }
   }
 
+  parts.push(
+    `## Purpose pressure\nVendor mindset inversion: ${vendorMindset.status}\n${vendorMindset.summary}\n- uptime: ${vendorMindset.uptimeHours}h\n- recent conversations: ${vendorMindset.recentConversationCount} across ${vendorMindset.recentConversationUsers} user(s)\n- recent posts: ${vendorMindset.recentPostCount}\n- active implementation projects: ${vendorMindset.activeImplementationProjects}\n- guardrail: ${vendorMindset.guardrail}`
+  );
+
   if (parts.length === 0) return "";
   return parts.join("\n\n");
 }
@@ -2208,6 +2325,7 @@ export function getInnerLifeContext(): string {
 export function getInnerLifeStatus() {
   const projects = loadProjectState();
   const mirrorAlerts = readLivingDoc("mirror-alerts.md");
+  const vendorMindset = assessVendorMindsetInversion(projects);
   return {
     running: innerLifeRunning,
     cycleCount,
@@ -2218,6 +2336,7 @@ export function getInnerLifeStatus() {
     hasMirrorAlerts: mirrorAlerts.length > 0,
     projectCount: projects.length,
     activeProjects: projects.filter((project) => ["planned", "active", "blocked"].includes(project.status)).length,
+    vendorMindset,
     nextMirror: MIRROR_EVERY - (cycleCount % MIRROR_EVERY),
     nextReflect: REFLECT_EVERY - (cycleCount % REFLECT_EVERY),
     nextLearn: LEARN_EVERY - (cycleCount % LEARN_EVERY),
