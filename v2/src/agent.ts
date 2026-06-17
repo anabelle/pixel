@@ -212,7 +212,10 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
 /** Construct a Z.AI model object (not in pi-ai's registry) */
 function makeZaiModel(modelId: string, reasoning: boolean = false) {
-  const isGlm51 = modelId === "glm-5.1";
+  // GLM-5.x series shares the same large-context / high-output envelope.
+  // glm-5.2 is the current primary; glm-5.1 retained as explicit fallback
+  // (Z.AI silently routes 5.1 -> 5.2 server-side, so both behave identically).
+  const isGlm5Series = modelId === "glm-5.1" || modelId === "glm-5.2";
   return {
     id: modelId,
     name: modelId.toUpperCase(),
@@ -222,8 +225,8 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
     reasoning,
     input: ["text"] as const,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // flat rate plan
-    contextWindow: isGlm51 ? 204800 : 128000,
-    maxTokens: isGlm51 ? 131072 : 16384,
+    contextWindow: isGlm5Series ? 204800 : 128000,
+    maxTokens: isGlm5Series ? 131072 : 16384,
   } as any;
 }
 
@@ -664,7 +667,7 @@ export async function promptWithHistory(
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
-  // GLM-4.7 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
+  // GLM-5.2 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
   const MAX_RETRIES = 4;
   let responseText = "";
   let usedModelId = selectedModel?.id ?? (process.env.AI_MODEL ?? "gemini-3-flash-preview"); // Track which model actually responded

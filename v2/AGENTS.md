@@ -1,14 +1,14 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-03-14 | Session: 65
+> Last updated: 2026-06-17 | Session: 71
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5.1 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
+**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5.2 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
 **Total containers:** 6 (down from 18 at V1 peak)
 **Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
 **Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
@@ -136,7 +136,7 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-5.1 (reasoning, 200K context / 128K max output) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently.
+- **Primary (conversations):** Z.AI GLM-5.2 (reasoning, 200K context / 128K max output) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently. (Z.AI silently routes GLM-5.1 → 5.2 server-side; `glm-5.1` retained as explicit env-level fallback in `makeZaiModel`.)
 - **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
 - **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
 - **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
@@ -186,9 +186,9 @@ Authorization config lives in `servers.json`:
 
 ### Architecture & Models
 
-- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5.1 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
+- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5.2 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
 - **Model objects constructed manually** — not in pi-ai registry. Uses `openai-completions` provider.
-- **Multi-level fallback:** GLM-5.1/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
+- **Multi-level fallback:** GLM-5.2/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
 - **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` prefers `github-copilot/gpt-5.4` first for headless opencode sessions, then falls back to `zai-coding-plan/glm-5`, then the rest of the approved cascade.
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
@@ -868,3 +868,23 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 - boot logs showed heartbeat loops starting with revenue check enabled
 
 **Lesson:** background loops must re-arm from `finally`, not from the happy path. And when multiple Google keys exist, prefer the project that is actually authorized instead of assuming any valid-looking fallback key will work.
+
+### Session 71: GLM-5.2 Primary Upgrade
+
+**Problem:** Z.AI released GLM-5.2; Pixel was still pinned to GLM-5.1 via `AI_MODEL=glm-5.1`. Pre-flight API probe revealed Z.AI is already silently routing `glm-5.1` traffic to `glm-5.2` server-side (the `"model"` field in API responses returned `"glm-5.2"` even when the request asked for `"glm-5.1"`). The pin was therefore cosmetically wrong and producing misleading cost-monitor / audit entries, not functionally broken.
+
+**Solution:**
+1. **Primary model swapped** (`v2/docker-compose.yml`): `AI_MODEL=glm-5.1` → `AI_MODEL=glm-5.2`
+2. **`makeZaiModel()` generalized** (`src/agent.ts`): replaced `isGlm51` single-model check with `isGlm5Series = modelId === "glm-5.1" || modelId === "glm-5.2"`. Both GLM-5.x variants get the same 200K context / 128K max-output envelope. `glm-5.1` retained as explicit env-level fallback so a one-line revert works without code change.
+3. **Cost monitor** (`src/services/cost-monitor.ts`): added `'glm-5.2': { input: 0, output: 0, free: true }` entry.
+4. **Comment cascade updated**: retry-loop comment in `agent.ts` now reads `GLM-5.2 → Gemini 3 Flash → ...`.
+
+**Verification:**
+- Pre-flight: direct curl to `https://api.z.ai/api/coding/paas/v4/chat/completions` with `model:"glm-5.2"` returned `HTTP 200` with valid reasoning_content. Control call with `"glm-5.1"` returned `200` but `"model":"glm-5.2"` in body — confirmed silent server-side routing.
+- Container rebuilt and healthy after 15min build (OpenViking wheel build dominates wall-clock time).
+- `docker exec ... printenv AI_MODEL` → `glm-5.2`
+- Agent log shows `[agent] User syntropy-admin authorized for 75/75 tools | model: glm-5.2`
+- Chat test via `/api/chat`: Pixel correctly self-identified as running on GLM-5.2.
+- Heartbeat, inner-life, WhatsApp (transport), Twitter all green after reboot. WhatsApp still `registered: false` (pre-existing, unrelated).
+
+**Lesson:** When a provider silently upgrades a model alias, keeping the old alias in code is free insurance (one-line revert path) but you still must swap the canonical pin so logs, cost-monitor entries, and self-reporting match reality. Also: always probe the endpoint before changing code — model existence is an empirical question, not a documentation question.
