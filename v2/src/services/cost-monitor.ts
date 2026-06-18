@@ -44,6 +44,8 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   // Gemini embedding model (free tier)
   'gemini-embedding-001': { input: 0, output: 0, free: true },
   // OpenRouter (free tier)
+  'openai/gpt-oss-20b:free': { input: 0, output: 0, free: true },
+  // arcee-ai/trinity-large-preview:free — dead as of 2026-06-17 (404). Retained for historical log entries.
   'arcee-ai/trinity-large-preview:free': { input: 0, output: 0, free: true },
   // GLM models (flat-rate Coding Lite plan - $84/yr, effectively $0 per call)
   'glm-4.5': { input: 0, output: 0, free: true },

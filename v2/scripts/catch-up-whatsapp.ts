@@ -41,8 +41,26 @@ const ONLY_FLAG = args.has("--only") ? process.argv[process.argv.indexOf("--only
 async function loadAgent() {
   return await import("../src/agent.js");
 }
-async function loadWhatsApp() {
-  return await import("../src/connectors/whatsapp.js");
+
+/**
+ * Send via the live agent's HTTP endpoint, NOT via direct module import.
+ * The catch-up script runs as a separate bun process — importing
+ * sendWhatsAppMessage would get a fresh module with sock=null, since the
+ * live WhatsApp socket only exists in the main agent process (PID 1).
+ */
+async function sendViaApi(phone: string, text: string): Promise<boolean> {
+  try {
+    const res = await fetch("http://127.0.0.1:4000/api/whatsapp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: phone, message: text }),
+    });
+    const data = await res.json() as { ok?: boolean; error?: string };
+    return data.ok === true;
+  } catch (err: any) {
+    console.error(`    API send error: ${err?.message ?? err}`);
+    return false;
+  }
 }
 
 interface LogEntry {
@@ -181,11 +199,6 @@ async function main() {
 
   // Load agent module
   const { promptWithHistory } = await loadAgent();
-  let sendWhatsAppMessage: ((phone: string, text: string) => Promise<boolean>) | null = null;
-  if (DO_SEND) {
-    const wa = await loadWhatsApp();
-    sendWhatsAppMessage = wa.sendWhatsAppMessage;
-  }
 
   const limit = MAX_FLAG || candidates.length;
   const toProcess = candidates.slice(0, limit);
@@ -215,7 +228,6 @@ async function main() {
     // Sanity: reject drafts with markdown leakage
     const hasMarkdown = /^\s*[*#_>]/m.test(draft) || /\*\*.+\*\*/.test(draft);
     if (hasMarkdown) {
-      // Strip common markdown rather than reject — Pixel sometimes adds it
       draft = draft
         .replace(/^\s*[*#_>]+\s*/gm, "")
         .replace(/\*\*(.+?)\*\*/g, "$1")
@@ -224,31 +236,32 @@ async function main() {
     }
 
     // Reject drafts that look like preamble instead of a real message
-    if ( /^(sure|here'?s|here is|of course|okay|ok,)/i.test(draft) && draft.length > 200) {
+    if (/^(sure|here'?s|here is|of course|okay|ok,)/i.test(draft) && draft.length > 200) {
       console.warn("    DRAFT looks like preamble — truncating to first paragraph");
       draft = draft.split(/\n\n/)[0].trim();
     }
 
+    // Reject drafts where Pixel refused (safety)
+    if (/doesn'?t add up|no voy a enviar|refus|contradic/i.test(draft)) {
+      console.warn(`    DRAFT REFUSED by Pixel — skipping send`);
+      failed++;
+      continue;
+    }
+
     console.log(`    DRAFT: ${draft}`);
 
-    if (DO_SEND && sendWhatsAppMessage) {
+    if (DO_SEND) {
       const phone = userIdToPhone(candidate.userId);
       console.log(`    SENDING to ${phone}...`);
-      try {
-        const ok = await sendWhatsAppMessage(phone, draft);
-        if (ok) {
-          sent++;
-          console.log("    ✓ sent");
-        } else {
-          failed++;
-          console.error("    ✗ send failed (returned false)");
-        }
-      } catch (err: any) {
+      const ok = await sendViaApi(phone, draft);
+      if (ok) {
+        sent++;
+        console.log("    ✓ sent");
+      } else {
         failed++;
-        console.error(`    ✗ send threw: ${err?.message ?? err}`);
+        console.error("    ✗ send failed (API returned ok=false)");
       }
 
-      // Stagger between sends
       if (i < toProcess.length - 1) {
         console.log(`    (waiting ${SEND_DELAY_MS / 1000}s before next send...)`);
         await new Promise(r => setTimeout(r, SEND_DELAY_MS));

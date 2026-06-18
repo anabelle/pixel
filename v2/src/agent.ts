@@ -1267,7 +1267,7 @@ export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVis
 
 // ─── BACKGROUND LLM CALL ─────────────────────────────────────
 // Shared utility for heartbeat, inner-life, jobs — any autonomous agent cycle.
-// Tries Trinity (OpenRouter free) first, then GLM-4.7, then Gemini cascade.
+// Tries OpenRouter free tier first, then GLM-4.7, then Gemini cascade.
 // Tracks costs. Logs errors with detail.
 
 export interface BackgroundLlmOptions {
@@ -1281,7 +1281,9 @@ export interface BackgroundLlmOptions {
 export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
   const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000 } = opts;
   const models = [
-    makeOpenRouterModel("arcee-ai/trinity-large-preview:free"),
+    // OpenRouter free tier — was arcee-ai/trinity-large-preview:free (dead as of 2026-06-17, 404).
+    // gpt-oss-20b is the OpenAI open-weights model, reliable + fast for background tasks.
+    makeOpenRouterModel("openai/gpt-oss-20b:free"),
     getSimpleModel(),
     getFallbackModel(1),
     getFallbackModel(2),
