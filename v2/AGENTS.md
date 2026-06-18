@@ -1,7 +1,7 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-06-17 | Session: 71
+> Last updated: 2026-06-18 | Session: 72
 
 ---
 
@@ -888,3 +888,38 @@ The LLM had a single-line mention of memory tools in the system prompt and no gu
 - Heartbeat, inner-life, WhatsApp (transport), Twitter all green after reboot. WhatsApp still `registered: false` (pre-existing, unrelated).
 
 **Lesson:** When a provider silently upgrades a model alias, keeping the old alias in code is free insurance (one-line revert path) but you still must swap the canonical pin so logs, cost-monitor entries, and self-reporting match reality. Also: always probe the endpoint before changing code — model existence is an empirical question, not a documentation question.
+
+### Session 72: WhatsApp History Store + Trinity Replacement + LID Reality
+
+**Problem:** Three issues surfaced after the GLM-5.2 upgrade:
+1. WhatsApp had been unregistered since mid-April (~2 months of lost messages). After re-pairing, there was no mechanism to catch up on messages received during downtime.
+2. `arcee-ai/trinity-large-preview:free` (OpenRouter background model) died with 404, causing compaction/self-learning/observation-capture failures.
+3. WhatsApp's LID privacy system blocks proactive messaging to most contacts after a fresh pair.
+
+**Solution (1) — History capture (Path B):**
+- `makeInMemoryStore` now bound to `sock.ev` in `whatsapp.ts`, persisting to `store.json` every 30s
+- `messaging-history` handler catches history-sync blobs and defers processing via `processHistoryCatchUp()`
+- Catch-up walks chats with `unreadCount > 0`, filters by timestamp cutoff, feeds through agent with backlog marker
+- `lastProcessedMessageTs` high-water mark stamped on both live messages and history catch-up
+- Groups and status broadcasts excluded from catch-up (spam risk)
+
+**Solution (2) — Trinity → gpt-oss-20b:**
+- Probed OpenRouter free models: `openai/gpt-oss-20b:free` responds 200 in 1.5s with correct output
+- Replaced `arcee-ai/trinity-large-preview:free` → `openai/gpt-oss-20b:free` in `backgroundLlmCall()`
+- Cost monitor entry added; trinity retained in cost table for historical log entries
+
+**Solution (3) — Catch-up script (Path A):**
+- `scripts/catch-up-whatsapp.ts`: walks conversation dirs, detects language from history, asks Pixel to write per-convo apologies
+- Uses store-based JID lookup (digits → `@lid` or `@s.whatsapp.net`) to avoid error 463 from wrong JID type
+- Dry-run by default, `--send` flag required, 90s stagger between sends
+- Safety: refuses to send to active conversations, skips groups, skips Pixel-refused drafts
+
+**Limitation discovered — LID privacy wall:**
+After a fresh WhatsApp pair (creds wiped + re-paired), **sends to LID-based contacts fail with error 463**. Only 2 of 195 store contacts have `@s.whatsapp.net` JIDs; the rest are `@lid`. Proactive apology sends are therefore blocked for 28 of 32 eligible conversations. The 3 rapid re-pairings triggered WhatsApp's anti-abuse system, blocking ALL outgoing sends (including self-messages) for a cooldown period (~24h estimated).
+
+**What delivered:**
+- 1 message successfully sent to `wa-573112683133` before the device_removed event
+- 14 more drafts ready in `/tmp/catch-up-send2.log` (can be re-sent after cooldown)
+- History handler live — when LID contacts message Pixel organically, their messages WILL be processed
+
+**Lesson:** WhatsApp's LID system creates a hard wall for proactive messaging after device resets. The practical recovery strategy is: (1) history handler for incoming messages (automatic catch-up), (2) proactive sends only work for phone-number-based contacts, (3) never pair a device 3 times in 30 minutes unless you want to trigger anti-abuse throttling.

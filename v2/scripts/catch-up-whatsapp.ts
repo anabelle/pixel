@@ -177,6 +177,36 @@ function userIdToPhone(userId: string): string {
   return userId.replace(/^wa-/, "");
 }
 
+/**
+ * Build a JID lookup map from the persisted WhatsApp store.
+ * Most WhatsApp contacts now use LIDs internally (@lid), not phone numbers
+ * (@s.whatsapp.net). The conversation directory strips the suffix, so we
+ * need the store to tell us which JID type each contact actually uses.
+ * Without this, sends to LID-based contacts fail with error 463 (not on WA).
+ */
+async function buildJidMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const { makeInMemoryStore } = await import("@whiskeysockets/baileys");
+    const storePath = "/app/data/whatsapp-auth/store.json";
+    if (!existsSync(storePath)) {
+      console.log("⚠️  No store file — JID lookup unavailable, will use phone numbers");
+      return map;
+    }
+    const store = makeInMemoryStore({});
+    store.readFromFile(storePath);
+    for (const chat of store.chats.all()) {
+      // Extract the digits portion from JID: "85843645575210@lid" → "85843645575210"
+      const digits = chat.id.split("@")[0];
+      if (digits) map.set(digits, chat.id);
+    }
+    console.log(`JID lookup map: ${map.size} contacts from store`);
+  } catch (err: any) {
+    console.warn(`Store load failed: ${err?.message} — will fall back to phone numbers`);
+  }
+  return map;
+}
+
 async function main() {
   console.log("=== WhatsApp Stale Conversation Catch-Up ===");
   console.log(`Mode: ${DO_SEND ? "SEND (real messages)" : "DRY RUN (no sends)"}`);
@@ -197,8 +227,9 @@ async function main() {
   });
   console.log("");
 
-  // Load agent module
+  // Load agent module + JID lookup map
   const { promptWithHistory } = await loadAgent();
+  const jidMap = await buildJidMap();
 
   const limit = MAX_FLAG || candidates.length;
   const toProcess = candidates.slice(0, limit);
@@ -251,9 +282,12 @@ async function main() {
     console.log(`    DRAFT: ${draft}`);
 
     if (DO_SEND) {
-      const phone = userIdToPhone(candidate.userId);
-      console.log(`    SENDING to ${phone}...`);
-      const ok = await sendViaApi(phone, draft);
+      // Look up the correct JID from the store. Most contacts use LIDs
+      // internally; sending to a LID number as @s.whatsapp.net gives error 463.
+      const digits = userIdToPhone(candidate.userId);
+      const jid = jidMap.get(digits) ?? digits;
+      console.log(`    SENDING to ${jid}...`);
+      const ok = await sendViaApi(jid, draft);
       if (ok) {
         sent++;
         console.log("    ✓ sent");
