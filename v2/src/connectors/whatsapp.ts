@@ -20,6 +20,7 @@ import makeWASocket, {
   Browsers,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  makeInMemoryStore,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
@@ -34,6 +35,23 @@ let sock: WASocket | null = null;
 let sockRef: WASocket | null = null;
 /** True once connection.update fires with connection === "open" */
 let isConnectedAndReady = false;
+/**
+ * In-memory store bound to sock.ev so history-sync blobs (received on every
+ * reconnect / fresh pair) are captured instead of discarded. Without this,
+ * any messages sent while Pixel was offline are decrypted by Baileys and
+ * thrown away because nothing was listening — the agent only handles
+ * `messages.upsert` with type "notify" (live messages).
+ *
+ * The store itself does NOT process messages through the agent. The
+ * `messaging-history` handler below is what catches up on missed messages.
+ */
+let store: ReturnType<typeof makeInMemoryStore> | null = null;
+/**
+ * ISO timestamp of the last message Pixel actually processed through the
+ * agent. Used by the history handler to skip already-handled messages and
+ * anything older than the most recent processed message.
+ */
+let lastProcessedMessageTs: number = 0;
 const WHATSAPP_TEXT_DEDUP_WINDOW_MS = 2_000;
 const recentWhatsAppTextSends = new Map<string, number>();
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
@@ -593,6 +611,118 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
   });
   sockRef = sock;
 
+  // Bind in-memory store so chat state (unread counts, message history from
+  // sync blobs) is preserved. Without this, history-sync notifications are
+  // decrypted and discarded — losing every message received during downtime.
+  if (!store) {
+    store = makeInMemoryStore({});
+    store.readFromFile(`${AUTH_DIR}/store.json`);
+    store.bind(sock.ev);
+
+    // Persist store to disk periodically so it survives reconnects
+    setInterval(() => {
+      try { store?.writeToFile(`${AUTH_DIR}/store.json`); } catch {}
+    }, 30_000).unref?.();
+
+    console.log("[whatsapp] In-memory store bound (history capture enabled)");
+  } else {
+    // Re-bind store to new socket on reconnect
+    store.bind(sock.ev);
+    console.log("[whatsapp] In-memory store re-bound to new socket");
+  }
+
+  // Catch up on messages received while offline.
+  // History-sync blobs fire as `messaging-history` events containing arrays
+  // of messages. We filter to: not from me, not status broadcast, newer than
+  // the cutoff (last processed message), and not already in our log.
+  // Then we feed each one through the agent so Pixel can respond.
+  let historyCatchUpScheduled = false;
+  sock.ev.on("messaging-history", ({ messages, isLatest }) => {
+    if (!messages || messages.length === 0) return;
+
+    // Defer processing — history arrives in chunks and we don't want to
+    // block the connection handshake. Process once after a short delay.
+    if (!historyCatchUpScheduled) {
+      historyCatchUpScheduled = true;
+      setTimeout(() => {
+        historyCatchUpScheduled = false;
+        processHistoryCatchUp().catch((err) => {
+          console.warn("[whatsapp] History catch-up error:", err?.message ?? err);
+        });
+      }, 5_000).unref?.();
+    }
+  });
+
+  /**
+   * Process missed messages from the in-memory store.
+   * Walks every chat with unreadCount > 0, filters messages by the cutoff
+   * timestamp (lastProcessedMessageTs), and feeds each through the agent.
+   * Safety guards: skip groups (no broadcast replies), skip status broadcasts,
+   * skip protocol messages, cap at 50 messages per chat to prevent floods.
+   */
+  async function processHistoryCatchUp(): Promise<void> {
+    if (!store || !isConnectedAndReady) return;
+
+    const chats = store.chats.all();
+    let totalProcessed = 0;
+    const cutoff = lastProcessedMessageTs;
+
+    for (const chat of chats) {
+      // Skip groups — broadcast apologies to groups are spammy and dangerous
+      if (chat.id.endsWith("@g.us")) continue;
+      // Skip status broadcasts
+      if (chat.id === "status@broadcast") continue;
+      // Skip chats with no unread
+      if (!chat.unreadCount || chat.unreadCount === 0) continue;
+
+      const messages = store.messages[chat.id]?.array?.() ?? [];
+      if (messages.length === 0) continue;
+
+      // Filter to: incoming, newer than cutoff, has actual message content
+      const candidates = messages
+        .filter((m: any) => !m.key.fromMe)
+        .filter((m: any) => m.messageTimestamp && (m.messageTimestamp > cutoff / 1000))
+        .filter((m: any) => m.message)
+        .slice(-50); // cap at 50 most recent per chat
+
+      if (candidates.length === 0) continue;
+
+      const jid = chat.id;
+      const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@lid", "")}`;
+      console.log(`[whatsapp] History catch-up: ${candidates.length} unread message(s) from ${userId}`);
+
+      for (const msg of candidates) {
+        const text = extractWhatsAppText(msg.message);
+        if (!text) continue; // skip media-only for now (would need transcription)
+
+        const msgTs = (msg.messageTimestamp ?? 0) * 1000;
+        if (msgTs > lastProcessedMessageTs) {
+          lastProcessedMessageTs = msgTs;
+        }
+
+        // Feed through agent with a marker so Pixel knows this is a backlog msg
+        try {
+          const backlogMarker = `[message received while offline, ${new Date(msgTs).toISOString()}]\n${text}`;
+          await promptWithHistory(
+            { userId, platform: "whatsapp", chatId: jid },
+            backlogMarker
+          );
+          appendToLog(userId, `${text} [offline-backlog]`, "(processed from history)", "whatsapp");
+          totalProcessed++;
+        } catch (err: any) {
+          console.warn(`[whatsapp] History catch-up failed for ${userId}:`, err?.message);
+        }
+
+        // Stagger to avoid hammering the LLM
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+
+    if (totalProcessed > 0) {
+      console.log(`[whatsapp] History catch-up complete: ${totalProcessed} message(s) processed`);
+    }
+  }
+
   // Track if we've already requested pairing code to avoid duplicates
   let pairingCodeRequested = false;
 
@@ -707,6 +837,12 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
     for (const msg of event.messages) {
       // Skip messages from self, status broadcasts, or protocol messages
       if (msg.key.fromMe) continue;
+
+      // Track high-water mark for history catch-up cutoff
+      if (msg.messageTimestamp) {
+        const ts = msg.messageTimestamp * 1000;
+        if (ts > lastProcessedMessageTs) lastProcessedMessageTs = ts;
+      }
       if (msg.key.remoteJid === "status@broadcast") continue;
       if (!msg.message) continue;
 
