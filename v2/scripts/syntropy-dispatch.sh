@@ -182,13 +182,20 @@ notify_owner_and_retry() {
 }
 
 select_model() {
-  # First choice: GitHub Copilot GPT-5.4 for autonomous opencode sessions
+  # First choice: Z.AI GLM-5.2 via coding plan (paid, already have the key)
+  # copilot/gpt models started returning "model not supported" in late June 2026
+  if model_exists "zai-coding-plan/glm-5.2" && probe_zai; then
+    echo "zai-coding-plan/glm-5.2"
+    return 0
+  fi
+
+  # Second choice: GitHub Copilot GPT-5.4 (kept as fallback in case it recovers)
   if model_exists "github-copilot/gpt-5.4"; then
     echo "github-copilot/gpt-5.4"
     return 0
   fi
 
-  # Second choice: Z.AI GLM-5 on the coding plan
+  # Third choice: Z.AI GLM-5 on the coding plan (older but stable)
   if probe_zai; then
     echo "zai-coding-plan/glm-5"
     return 0
