@@ -1174,26 +1174,53 @@ const researchTaskSchema = Type.Object({
   topic: Type.String({ description: "What to research" }),
   instructions: Type.String({ description: "Specific instructions, criteria, or questions to answer" }),
   internal: Type.Optional(Type.Boolean({ description: "If true, results are for Pixel's autonomous learning (no user notification). Use this for self-directed research to expand Pixel's knowledge, not to answer user questions." })),
+  force: Type.Optional(Type.Boolean({ description: "Force a fresh research even if a recent non-empty result exists for this topic. Use this when prior research returned empty, stale, or incomplete results. Empty results are automatically re-researchable without this flag." })),
 });
 
 export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
   name: "research_task",
   label: "Background Research",
-  description: "Enqueue a background research task. Use this for research that requires visiting multiple websites, comparing information, or takes more than a few tool calls in current conversation. Set internal=true for autonomous learning (no notification to user).",
+  description: "Enqueue a background research task. Uses a 24h result cache keyed by topic — a recent non-empty result is returned instead of re-running, unless force=true. Empty/stub results are NEVER cached (always re-researchable). Use this for research that requires visiting multiple websites, comparing information, or takes more than a few tool calls in current conversation. Set internal=true for autonomous learning (no notification to user).",
   parameters: researchTaskSchema,
-  execute: async (_id, { topic, instructions, internal = false }) => {
+  execute: async (_id, { topic, instructions, internal = false, force = false }) => {
     const ctx = getToolContext();
     if (!internal && (!ctx.userId || !ctx.platform)) {
       throw new Error("No tool context available — cannot determine callback chat for external jobs");
     }
 
-    const { enqueueJob } = await import("./jobs.js");
+    const { enqueueJob, findCachedResearchResult } = await import("./jobs.js");
+
+    if (!force) {
+      const cached = findCachedResearchResult(topic);
+      if (cached) {
+        const preview = (cached.output ?? "").length > 4000
+          ? (cached.output ?? "").slice(0, 4000) + "\n\n[... resultado cacheado truncado]"
+          : cached.output ?? "";
+        auditToolUse("research_task", { topic, instructions, internal, force }, {
+          jobId: cached.id, cacheHit: true, skipped: true,
+        });
+        return {
+          content: [{
+            type: "text" as const,
+            text: internal
+              ? `ya investigué "${topic}" recientemente (job ${cached.id}, ${new Date(cached.completedAt!).toISOString()}). resultado cacheado (usa force=true para refrescar):\n\n${preview}`
+              : `ya tengo resultados recientes de "${topic}" (job ${cached.id}). si necesitas investigación fresca, pídeme que re-investigue con force=true.\n\n${preview}`,
+          }],
+          details: { jobId: cached.id, cacheHit: true },
+        };
+      }
+    }
 
     const prompt = [
       `## Research Task: ${topic}`,
       ``,
       `### Instructions`,
       instructions,
+      ...(force ? [
+        ``,
+        `### Note`,
+        `This is a FORCED REFRESH. Prior research on this topic may have returned empty or stale results due to transient failures. Ignore any prior cached knowledge and conduct fresh, thorough research.`,
+      ] : []),
       ``,
       `### Process`,
       `1. Use web_search to find relevant sources (try multiple queries if needed)`,
@@ -1223,16 +1250,16 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
           }
     );
 
-    auditToolUse("research_task", { topic, instructions, internal }, { jobId: job.id });
+    auditToolUse("research_task", { topic, instructions, internal, force }, { jobId: job.id, forced: force });
 
     return {
       content: [{
         type: "text" as const,
         text: internal
-          ? `investigación interna encolada: "${topic}" (job ${job.id}). para mi aprendizaje autónomo.`
-          : `investigación encolada: "${topic}" (job ${job.id}). los resultados se entregarán a este chat cuando estén listos (~60s).`,
+          ? `investigación interna encolada: "${topic}" (job ${job.id})${force ? " [forced refresh]" : ""}. para mi aprendizaje autónomo.`
+          : `investigación encolada: "${topic}" (job ${job.id})${force ? " [forced refresh]" : ""}. los resultados se entregarán a este chat cuando estén listos (~60s).`,
       }],
-      details: { jobId: job.id },
+      details: { jobId: job.id, forced: force },
     };
   },
 };

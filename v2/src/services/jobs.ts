@@ -385,6 +385,42 @@ export function getRecentJobs(limit = 10): JobEntry[] {
   }
 }
 
+export function isResearchOutputEmpty(output: string | undefined | null): boolean {
+  if (!output) return true;
+  const trimmed = output.trim();
+  if (trimmed.length < 50) return true;
+  const lower = trimmed.toLowerCase();
+  if (lower === "(no output)" || lower === "(sin resultados)") return true;
+  if (/^(no |sin |without )?(results?|resultados|findings?|hallazgos|sources?|fuentes)\s*(found|encontrad[oa]s)?\.?\s*$/i.test(trimmed)) return true;
+  return false;
+}
+
+export function findCachedResearchResult(topic: string, maxAgeMs: number = 24 * 60 * 60 * 1000): JobEntry | null {
+  if (!existsSync(JOB_LOG_PATH)) return null;
+  const cutoff = Date.now() - maxAgeMs;
+  let best: JobEntry | null = null;
+  try {
+    const lines = readFileSync(JOB_LOG_PATH, "utf-8").split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let entry: JobEntry;
+      try {
+        entry = JSON.parse(lines[i]);
+      } catch {
+        continue;
+      }
+      if (entry.status !== "completed" || !entry.completedAt || entry.completedAt < cutoff) continue;
+      if (entry.callbackLabel !== topic) continue;
+      if (isResearchOutputEmpty(entry.output)) continue;
+      if (!best || (entry.completedAt > (best.completedAt ?? 0))) {
+        best = entry;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return best;
+}
+
 async function deliverJobResult(job: JobEntry): Promise<void> {
   // Internal jobs: wake Pixel up with the findings (alarm-style)
   if (job.internal) {
