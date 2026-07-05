@@ -762,7 +762,10 @@ export async function promptWithHistory(
       errorStr.includes("subscription plan") ||
       errorStr.includes("rate limit") ||
       errorStr.includes("Usage limit") ||
-      errorStr.includes("1308")
+      errorStr.includes("1308") ||
+      errorStr.includes("403") ||
+      errorStr.includes("PERMISSION_DENIED") ||
+      errorStr.includes("denied access")
     );
     if (isRetryable && attempt < MAX_RETRIES) {
       // If Google quota hit, flip to fallback key for next attempts
@@ -1349,7 +1352,9 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
         llmError.includes("rate limit") || llmError.includes("Usage limit") ||
         llmError.includes("insufficient_quota") || llmError.includes("model_not_found") ||
         llmError.includes("provider_error") ||
-        llmError.includes("1308") || llmError.includes("timeout")
+        llmError.includes("1308") || llmError.includes("timeout") ||
+        llmError.includes("403") || llmError.includes("PERMISSION_DENIED") ||
+        llmError.includes("denied access")
       );
       if (isRetryable && attempt < models.length - 1) {
         // Google quota hit — flip to fallback (billed) key

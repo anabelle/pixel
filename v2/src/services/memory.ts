@@ -18,7 +18,7 @@ import { memories } from "../db.js";
 import type * as schema from "../db.js";
 import { audit } from "./audit.js";
 import { costMonitor } from "./cost-monitor.js";
-import { resolveGoogleApiKey } from "./google-key.js";
+import { resolveGoogleApiKey, setGoogleKeyFallback, isUsingFallbackKey } from "./google-key.js";
 import { resolveCanonicalSubject } from "./identity.js";
 
 // ─── Configuration ───────────────────────────────────────────
@@ -26,6 +26,16 @@ import { resolveCanonicalSubject } from "./identity.js";
 const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 256;
 const GEMINI_EMBED_URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}`;
+
+/** Detect Google API errors that warrant a key failover (403 permission ban, 429/quota). */
+function isGoogleKeyError(status: number, errorText: string): boolean {
+  if (status === 403 || status === 429) return true;
+  const lower = errorText.toLowerCase();
+  return lower.includes("permission_denied") ||
+    lower.includes("denied access") ||
+    lower.includes("resource_exhausted") ||
+    lower.includes("quota");
+}
 
 /** Hybrid retrieval weights — Memory-as-Identity framework */
 const VECTOR_WEIGHT = 0.40;
@@ -216,33 +226,36 @@ export async function generateEmbedding(
 
   const truncatedText = text.slice(0, 8000);
   const inputTokens = Math.ceil(truncatedText.length / 4);
+  const body = JSON.stringify({
+    model: `models/${EMBEDDING_MODEL}`,
+    content: { parts: [{ text: truncatedText }] },
+    taskType,
+    outputDimensionality: EMBEDDING_DIMENSIONS,
+  });
 
-  const response = await fetch(
-    `${GEMINI_EMBED_URL}:embedContent?key=${resolveGoogleApiKey()}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: `models/${EMBEDDING_MODEL}`,
-        content: { parts: [{ text: truncatedText }] },
-        taskType,
-        outputDimensionality: EMBEDDING_DIMENSIONS,
-      }),
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await fetch(
+      `${GEMINI_EMBED_URL}:embedContent?key=${resolveGoogleApiKey()}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body }
+    );
+
+    if (response.ok) {
+      const data = await response.json() as { embedding: { values: number[] } };
+      costMonitor.recordUsage(EMBEDDING_MODEL, inputTokens, 0, 'memory');
+      return data.embedding.values;
     }
-  );
 
-  if (!response.ok) {
     const errorText = await response.text();
+    if (attempt === 0 && isGoogleKeyError(response.status, errorText) && !isUsingFallbackKey()) {
+      console.warn(`[memory] Embedding ${response.status} on primary key — flipping to fallback and retrying`);
+      setGoogleKeyFallback();
+      costMonitor.recordError(EMBEDDING_MODEL, `Embedding key failover ${response.status}`, 'memory');
+      continue;
+    }
     costMonitor.recordError(EMBEDDING_MODEL, `Embedding API error ${response.status}`, 'memory');
     throw new Error(`Embedding API error ${response.status}: ${errorText}`);
   }
-
-  const data = await response.json() as { embedding: { values: number[] } };
-  
-  // Track embedding usage (output is vector, not tokens - use 0)
-  costMonitor.recordUsage(EMBEDDING_MODEL, inputTokens, 0, 'memory');
-  
-  return data.embedding.values;
+  throw new Error("Embedding API: exhausted key failover retries");
 }
 
 /**
@@ -274,23 +287,27 @@ export async function generateEmbeddingsBatch(
       taskType,
       outputDimensionality: EMBEDDING_DIMENSIONS,
     }));
+    const batchBody = JSON.stringify({ requests });
 
-    const response = await fetch(
-      `${GEMINI_EMBED_URL}:batchEmbedContents?key=${resolveGoogleApiKey()}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requests }),
-      }
-    );
-
-    if (!response.ok) {
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      response = await fetch(
+        `${GEMINI_EMBED_URL}:batchEmbedContents?key=${resolveGoogleApiKey()}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: batchBody }
+      );
+      if (response.ok) break;
       const errorText = await response.text();
+      if (attempt === 0 && isGoogleKeyError(response.status, errorText) && !isUsingFallbackKey()) {
+        console.warn(`[memory] Batch embedding ${response.status} on primary key — flipping to fallback and retrying`);
+        setGoogleKeyFallback();
+        costMonitor.recordError(EMBEDDING_MODEL, `Batch embedding key failover ${response.status}`, 'memory');
+        continue;
+      }
       costMonitor.recordError(EMBEDDING_MODEL, `Batch embedding API error ${response.status}`, 'memory');
       throw new Error(`Batch embedding API error ${response.status}: ${errorText}`);
     }
 
-    const data = await response.json() as { embeddings: { values: number[] }[] };
+    const data = await response!.json() as { embeddings: { values: number[] }[] };
     for (const emb of data.embeddings) {
       allEmbeddings.push(emb.values);
     }
