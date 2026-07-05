@@ -16,9 +16,13 @@ chown -R bun:bun /app/data 2>/dev/null || true
 mkdir -p /app/data/openviking /app/data/log 2>/dev/null || true
 chown -R bun:bun /app/data/openviking /app/data/log 2>/dev/null || true
 
-# Prefer the primary Gemini project for OpenViking's OpenAI-compatible calls.
-# The fallback/billed Google key may be denied for this project even when present.
-OPENVIKING_GOOGLE_KEY="${GEMINI_API_KEY_PRIMARY:-${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-${GEMINI_API_KEY_FALLBACK:-}}}}"
+# Resolve a working Google key for OpenViking's OpenAI-compatible calls.
+# GEMINI_API_KEY_PRIMARY is excluded — that project was hard-banned (403
+# PERMISSION_DENIED) and OpenViking has no key-failover, so feeding it the
+# dead key takes the entire semantic recall layer down silently. The other
+# keys (GOOGLE_GENERATIVE_AI_API_KEY / GEMINI_API_KEY / GEMINI_API_KEY_FALLBACK)
+# are all the same working key.
+OPENVIKING_GOOGLE_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-${GEMINI_API_KEY:-${GEMINI_API_KEY_FALLBACK:-${GEMINI_API_KEY_PRIMARY:-}}}}"
 
 # Generate OpenViking runtime config at boot in writable data dir
 OPENVIKING_BOOT_CONFIG=/app/data/openviking/openviking-ov.conf
