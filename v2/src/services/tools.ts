@@ -24,6 +24,7 @@ import { createIdentityClaim, redeemIdentityClaim, listIdentityClaims } from "./
 import { readAgentLog, searchAgentLog } from "./logging.js";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getRevenueStats } from "./revenue.js";
+import { shouldSuppressAlert, markAlertSent } from "./digest.js";
 import { appendToLog } from "../conversations.js";
 import { parse } from "node-html-parser";
 import { generateImage } from "./image-gen.js";
@@ -2808,7 +2809,7 @@ const notifyOwnerSchema = Type.Object({
 const notifyOwnerTool: AgentTool<typeof notifyOwnerSchema> = {
   name: "notify_owner",
   label: "Notify Owner",
-  description: "Send a Telegram message to Ana (the owner/operator). Use this when you need to proactively alert her about something important, share an insight, or respond to a request to contact her. This actually sends a real Telegram message — use it intentionally.",
+  description: "Send a Telegram message to Ana (the owner/operator). Use this when you need to proactively alert her about something important, share an insight, or respond to a request to contact her. This actually sends a real Telegram message — use it intentionally. Duplicate or near-duplicate messages within 30 minutes are automatically suppressed.",
   parameters: notifyOwnerSchema,
   execute: async (_id, { message }) => {
     if (!canNotify()) {
@@ -2818,9 +2819,19 @@ const notifyOwnerTool: AgentTool<typeof notifyOwnerSchema> = {
         details: { sent: false },
       };
     }
+    // Dedup: suppress near-duplicate owner notifications within the TTL window
+    const { suppress, fingerprint } = shouldSuppressAlert("notify_owner", message);
+    if (suppress) {
+      auditToolUse("notify_owner", { messageLength: message.length }, { suppressed: true });
+      return {
+        content: [{ type: "text" as const, text: "Skipped — a very similar notification was sent to Ana recently. She was not pinged again to avoid duplicate alerts. If this is genuinely new information, rephrase and try again." }],
+        details: { sent: false, suppressed: true },
+      };
+    }
     try {
       const sent = await notifyOwner(message);
       auditToolUse("notify_owner", { messageLength: message.length }, { sent });
+      if (sent) markAlertSent("notify_owner", fingerprint);
       if (sent) {
         return {
           content: [{ type: "text" as const, text: "Message sent to Ana via Telegram." }],

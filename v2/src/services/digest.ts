@@ -15,6 +15,8 @@
  * V2 pushes the important stuff to your phone.
  */
 
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import { notifyOwner, canNotify } from "../connectors/telegram.js";
 import { getAuditSince, formatAuditSummary, audit } from "./audit.js";
 import { getHeartbeatStatus } from "./heartbeat.js";
@@ -28,6 +30,21 @@ import { getClawstrNotifications } from "./clawstr.js";
 const DIGEST_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DIGEST_DELAY_MS = 3 * 60 * 1000;  // 3 minutes after boot (let services stabilize)
 
+const DATA_DIR = process.env.INNER_LIFE_DIR ?? "./data";
+const ALERT_DEDUP_PATH = join(DATA_DIR, "alert-dedup.json");
+const ALERT_DEDUP_DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour default window
+const ALERT_DEDUP_PRUNE_MS = 6 * 60 * 60 * 1000;   // drop entries older than 6h on cleanup
+const ALERT_DEDUP_MAX_ENTRIES = 200;
+const ALERT_DEDUP_TTL_BY_CATEGORY: Record<string, number> = {
+  boot: 6 * 60 * 60 * 1000,        // 6h — one boot alert per cycle
+  revenue: 30 * 60 * 1000,          // 30min — re-alert allowed after half an hour
+  error: 30 * 60 * 1000,            // 30min — flapping errors collapse, persistent ones re-surface
+  evolution: 3 * 60 * 60 * 1000,    // 3h
+  milestone: 2 * 60 * 60 * 1000,    // 2h
+  engagement: 60 * 60 * 1000,       // 1h
+  notify_owner: 30 * 60 * 1000,     // 30min — LLM tool path
+};
+
 // ============================================================
 // State
 // ============================================================
@@ -36,6 +53,95 @@ let digestTimer: ReturnType<typeof setTimeout> | null = null;
 let lastDigestTime: Date = new Date();
 let running = false;
 
+// ─── Alert dedup registry ───────────────────────────────────
+
+type DedupEntry = { fingerprint: string; ts: number; category: string };
+let dedupState: { entries: DedupEntry[] } = { entries: [] };
+let dedupLoaded = false;
+
+function loadDedupState(): void {
+  if (dedupLoaded) return;
+  dedupLoaded = true;
+  try {
+    if (existsSync(ALERT_DEDUP_PATH)) {
+      const raw = readFileSync(ALERT_DEDUP_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.entries)) {
+        dedupState = { entries: parsed.entries };
+      }
+    }
+  } catch {
+    dedupState = { entries: [] };
+  }
+}
+
+function saveDedupState(): void {
+  try {
+    writeFileSync(ALERT_DEDUP_PATH, JSON.stringify(dedupState, null, 2), "utf-8");
+  } catch (err: any) {
+    console.error("[digest] Failed to save alert dedup state:", err.message);
+  }
+}
+
+function ttlForCategory(category: string): number {
+  return ALERT_DEDUP_TTL_BY_CATEGORY[category] ?? ALERT_DEDUP_DEFAULT_TTL_MS;
+}
+
+/**
+ * Compute a normalized fingerprint for an alert so the same logical event
+ * (with slightly different wording) still deduplicates.
+ * Incorporates a natural key from `data` (e.g. txHash) when available.
+ */
+export function alertFingerprint(
+  category: string,
+  message: string,
+  data?: Record<string, any>
+): string {
+  const normalized = message
+    .toLowerCase()
+    .replace(/^\[[\w]+\]\s*/, "")   // strip [category] prefixes
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150);
+  const dataKey = data?.txHash ? `tx:${String(data.txHash).slice(0, 32)}` : "";
+  return `${category}::${dataKey}::${normalized}`;
+}
+
+/**
+ * Check whether an alert should be suppressed because a matching alert
+ * was already delivered within its category's TTL window.
+ */
+export function shouldSuppressAlert(
+  category: string,
+  message: string,
+  data?: Record<string, any>
+): { suppress: boolean; fingerprint: string; ageMs?: number } {
+  loadDedupState();
+  const fingerprint = alertFingerprint(category, message, data);
+  const now = Date.now();
+  const ttl = ttlForCategory(category);
+  // Prune stale entries on every check
+  dedupState.entries = dedupState.entries.filter(
+    (e) => now - e.ts < ALERT_DEDUP_PRUNE_MS
+  );
+  const match = dedupState.entries.find(
+    (e) => e.fingerprint === fingerprint && now - e.ts < ttl
+  );
+  return match
+    ? { suppress: true, fingerprint, ageMs: now - match.ts }
+    : { suppress: false, fingerprint };
+}
+
+/** Record that an alert was delivered, so future duplicates are suppressed. */
+export function markAlertSent(category: string, fingerprint: string): void {
+  loadDedupState();
+  dedupState.entries.push({ fingerprint, ts: Date.now(), category });
+  if (dedupState.entries.length > ALERT_DEDUP_MAX_ENTRIES) {
+    dedupState.entries = dedupState.entries.slice(-ALERT_DEDUP_MAX_ENTRIES);
+  }
+  saveDedupState();
+}
+
 // ============================================================
 // Instant Alerts
 // ============================================================
@@ -43,6 +149,7 @@ let running = false;
 /**
  * Send an instant alert to the owner.
  * Call this from any service when something important happens.
+ * Deduplicated by category + normalized message within a per-category TTL.
  */
 export async function alertOwner(
   category: string,
@@ -51,11 +158,19 @@ export async function alertOwner(
 ): Promise<void> {
   if (!canNotify()) return;
 
+  const { suppress, fingerprint, ageMs } = shouldSuppressAlert(category, message, data);
+  if (suppress) {
+    audit("notification_suppressed", `Alert suppressed (dedup ${Math.round((ageMs ?? 0) / 1000)}s ago): ${category} — ${message.slice(0, 60)}`, data);
+    console.log(`[digest] Suppressing duplicate alert [${category}] (${Math.round((ageMs ?? 0) / 1000)}s ago)`);
+    return;
+  }
+
   const prefix = categoryEmoji(category);
   const text = `${prefix} ${message}`;
 
   const sent = await notifyOwner(text);
   if (sent) {
+    markAlertSent(category, fingerprint);
     audit("notification_sent", `Alert: ${category} — ${message.slice(0, 60)}`, data);
   }
 }
