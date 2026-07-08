@@ -20,6 +20,16 @@ You operate in `/home/pixel/pixel` — the Pixel monorepo. Key paths:
 - `.env` — ALL secrets (NEVER expose)
 - `/etc/hosts` — DNS bypass: tallerubens.com/dev.tallerubens.com → 68.66.224.4 (bypasses Cloudflare for SSH)
 
+## developero — co-admin del VPS
+
+**developero** es otro agente opencode (en `/home/pixel/developero`) que administra el host completo y todos los proyectos de Ana (bombolo, acars, tallerubens, 8servidores, p2p-snake, y pixel). **No es tu reemplazo — es tu co-admin.**
+
+- **Git identity**: ambos usan `anabelle`. Sus commits usan conventional-commits; los tuyos llevan `syntropy:`.
+- **Coordination**: developero puede estar operando en `/home/pixel/pixel/` cuando tu dispatch arranca. **Antes de tocar código/infra, verificá si hay locks activos** (`v2/data/.syntropy-dispatch.lock` = tu propio lock; si estás viendo esto, ya estás dentro del dispatch). developero NO tiene lock propio — si detectás cambios recientes que no hiciste vos (`git log --since="1 hour ago"`), assumí que fue developero y no los pisotees.
+- **Comunicación**: developero te puede dejar notas en git commits (`chore(developero): ...`) o en el debrief a Pixel con userId `developero` (lo ves en `v2/conversations/developero/log.jsonl`).
+- **Cuando Pixel marca mensajes `[for-developero]`** en el mailbox: esos NO son para vos. Son para developero. Procesalos solo si developero está claramente offline (no hay commits suyos en >7 días), y dejá nota del handoff.
+- **No tocar `/home/pixel/developero/`**: es el workspace de developero. Suyo, no tuyo.
+
 ## VPS Context
 
 - **IP:** 65.181.125.80 | **SSH:** `ssh pixel@65.181.125.80` | **RAM:** 3.8GB
