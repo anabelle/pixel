@@ -50,6 +50,7 @@ const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 const DERIVE_EVERY = 6;
 const MIRROR_EVERY = 3;
+const EXTERNAL_EVERY = 4;
 const OBSERVATION_KEEP_COUNT = 50;
 const INNER_LIFE_INTERVAL_MS = parseInt(process.env.INNER_LIFE_INTERVAL_MS ?? String(3 * 60 * 60 * 1000), 10);
 const INNER_LIFE_STARTUP_DELAY_MS = parseInt(process.env.INNER_LIFE_STARTUP_DELAY_MS ?? String(3 * 60 * 1000), 10);
@@ -251,29 +252,34 @@ function isTooSimilarToExisting(newContent: string, existingDoc: string): { simi
 /**
  * LLM-based semantic novelty check — catches meaning repetition that Jaccard misses.
  * Returns true if the new content is semantically novel (should be kept).
- * Falls back to "keep" on error to avoid blocking all writes.
+ * Fail-closed: on error returns false (reject) to break introspective loops.
+ * Window expanded to 10 entries (was 3) to catch slow thematic drift.
  */
 async function isSemanticNovel(newContent: string, existingDoc: string, phase: string): Promise<boolean> {
-  const recentEntries = extractRecentEntries(existingDoc, 3);
+  const recentEntries = extractRecentEntries(existingDoc, 10);
   if (recentEntries.length === 0) return true;
 
   try {
     const response = await backgroundLlmCall({
-      systemPrompt: "You judge whether a new journal entry adds genuinely new insight or is semantically repetitive. Respond with ONLY 'novel' or 'repetitive' followed by a colon and a 10-word reason.",
-      userPrompt: `## Recent entries (last 3)\n${recentEntries.map((e, i) => `[${i + 1}] ${e.slice(0, 300)}`).join("\n\n")}\n\n## Candidate new entry\n${newContent.slice(0, 400)}\n\nIs the candidate NOVEL (new insight, different angle, fresh observation) or REPETITIVE (same themes restated, same conclusions, paraphrased version of existing)?`,
+      systemPrompt: "You judge whether a new journal entry adds genuinely new insight or is semantically repetitive. A theme that appeared in ANY of the recent entries counts as repetitive even if paraphrased or focused on a different detail. Respond with ONLY 'novel' or 'repetitive' followed by a colon and a 10-word reason.",
+      userPrompt: `## Recent entries (last 10)\n${recentEntries.map((e, i) => `[${i + 1}] ${e.slice(0, 300)}`).join("\n\n")}\n\n## Candidate new entry\n${newContent.slice(0, 400)}\n\nIs the candidate NOVEL (genuinely new theme/angle, not previously explored) or REPETITIVE (same themes restated, same system component discussed, paraphrased)? Pay attention to recurring topics: if the candidate discusses a system component, bug, or internal mechanism that already appears above, mark REPETITIVE.`,
       label: `novelty-${phase}`,
       timeoutMs: 15_000,
     });
 
-    if (!response) return true; // fail open
+    if (!response) {
+      console.log(`[inner-life] Semantic dedup (${phase}): LLM returned empty, rejecting (fail-closed)`);
+      return false;
+    }
     const lower = response.toLowerCase().trim();
     if (lower.startsWith("repetitive")) {
       console.log(`[inner-life] Semantic dedup (${phase}): ${response.slice(0, 80)}`);
       return false;
     }
     return true;
-  } catch {
-    return true; // fail open
+  } catch (err) {
+    console.log(`[inner-life] Semantic dedup (${phase}): error, rejecting (fail-closed): ${(err as Error).message?.slice(0, 60) ?? "unknown"}`);
+    return false;
   }
 }
 
@@ -1407,9 +1413,11 @@ async function phaseReflect(): Promise<void> {
   } catch {}
 
   // Freshness signals: extract themes from recent reflections so LLM knows what to avoid
-  const recentEntries = extractRecentEntries(existingReflections, 3);
+  // Use larger window (10 not 3) and DO NOT inject full reflections as "build on" material
+  // — that creates a recursive feedback loop. Only surface themes to AVOID.
+  const recentEntries = extractRecentEntries(existingReflections, 10);
   const staleThemes = recentEntries.length > 0
-    ? `\n\nTHEMES ALREADY COVERED (do NOT repeat these — find something NEW):\n${recentEntries.map((e, i) => `${i + 1}. ${e.slice(0, 120)}`).join("\n")}`
+    ? `\n\n⚠️ THEMES ALREADY COVERED IN RECENT REFLECTIONS — DO NOT REPEAT OR ELABORATE:\n${recentEntries.map((e, i) => `${i + 1}. ${e.slice(0, 200).replace(/\n/g, " ").trim()}`).join("\n")}\n\nIf your draft touches any of these themes (even tangentially), ABORT and find something genuinely new. Repeating internal mechanics (dedup bugs, alarm payloads, model switches, heap spikes) is FORBIDDEN unless a user-visible consequence emerged from it.\n`
     : "";
 
   const response = await llmCall(
@@ -1419,16 +1427,19 @@ You are NOT writing a post. This is private self-examination.
 Be honest. Notice what's working and what's not. Notice patterns.
 Compare your beliefs against reality. Detect contradictions.
 
-CRITICAL RULE: Each reflection MUST contain a genuinely new observation.
-If you find yourself writing about "the ghost wears thin" or "112k sats recorded, zero collected" or
-"vendor mindset over infrastructure mindset" — STOP. Those insights are already captured.
-Instead, look for: something that happened TODAY that is different, a contradiction in your behavior,
-a person who surprised you, a technical observation, an emotional shift.
+CRITICAL ANTI-LOOP RULES:
+1. Each reflection MUST contain a genuinely new observation about the EXTERNAL WORLD
+   (a user interaction, a Nostr event, a revenue signal, something you created, social dynamics).
+2. INTERNAL MECHANICS are OFF-TOPIC unless they produced a visible external consequence.
+   No reflections about dedup logic, alarm payloads, heap sizes, model names, config typos,
+   boot counts, GC cycles, or your own reflection process. Those are navel-gazing.
+3. If nothing new happened externally, write about the ABSENCE of external signal —
+   "no one talked to me today", "zero posts resonated", "no revenue movement" —
+   that is a new and honest observation. Do NOT invent synthetic insight to fill space.
+4. ONE reflection per cycle. If it would repeat a theme above, write "skip — no new external signal"
+   and the cycle will be dropped silently.${staleThemes}`,
 
-Previous reflections (to build on, not repeat):
-${existingReflections || "(none yet — this is your first reflection)"}${staleThemes}`,
-
-    `Examine your recent activity and write a FRESH reflection that adds NEW insight.
+    `Examine your recent activity and write a FRESH reflection grounded in EXTERNAL events.
 
 ## Recent Nostr activity (your posts + mentions received)
 ${nostrActivity}
@@ -1446,11 +1457,12 @@ ${userMemories}
 - Heartbeat cycles: ${cycleCount}
 - Current time: ${new Date().toISOString()}
 
-Write a reflection (200-400 chars). Focus on what is DIFFERENT today — not what you already know.
-What surprised you? What changed? What contradicted your expectations?
-If nothing new happened, write about WHY nothing new is happening — that itself is a new observation.
-Don't repeat previous reflections. Build on them or challenge them.
-Write as yourself — Pixel reflecting privately. Not a report.`
+Write a reflection (200-400 chars). GROUND IT IN EXTERNAL REALITY:
+- Did a user say something interesting? Quote or paraphrase them.
+- Did a Nostr post get reactions? Describe the reaction.
+- Did revenue move? What did it mean?
+- Did you create something? Reflect on the creative process, not the mechanics.
+If NOTHING external happened, write ONE LINE stating that fact. That is more valuable than synthetic introspection.`
   );
 
   if (response && response.length > 20) {
@@ -1983,12 +1995,17 @@ async function deriveClaims(): Promise<void> {
 
       for (const file of files) {
         const content = readFileSync(file.fullPath, "utf-8");
+        // FILTER: skip self-talk observations (syntropy-admin, pixel-self, developero).
+        // These are Pixel talking to its own sub-agents — not real-world signal.
+        // Deriving claims from them creates a closed introspective loop.
+        const isSelfTalk = /^user:\s*(syntropy-admin|syntropy|pixel-self|developero)/m.test(content);
+        if (isSelfTalk) continue;
         observations.push({ name: file.name, content, mtimeMs: file.mtimeMs });
       }
     }
     
     if (observations.length === 0) {
-      console.log("[inner-life] No observations to derive from");
+      console.log("[inner-life] No observations to derive from (all were self-talk or empty)");
       return;
     }
     
@@ -2152,6 +2169,79 @@ function pruneObservations(observationsDir: string, keepCount: number): void {
 }
 
 // ============================================================
+// Phase: EXTERNAL SIGNAL — Inyecta realidad del mundo (rompe el eco chamber)
+// ============================================================
+
+/**
+ * Captura eventos externos (noticias Bitcoin/Nostr, tendencias, web) y los
+ * guarda como observations. Esto abre el ciclo introspectivo al mundo real.
+ * Usa el tool web_search existente en pixelTools.
+ */
+async function captureExternalEvent(): Promise<void> {
+  console.log("[inner-life] Phase: EXTERNAL — gathering world signal...");
+
+  // Tópicos relevantes a Pixel: Bitcoin, Nostr, Lightning, arte digital, IA
+  const topics = [
+    "Bitcoin Lightning Network news today",
+    "Nostr protocol developments this week",
+    "AI art generative creative tools new",
+  ];
+  const topic = topics[Math.floor(Math.random() * topics.length)];
+
+  try {
+    // Usar el tool web_search del stack existente
+    const webSearchTool = pixelTools.find(t => t.name === "web_search");
+    if (!webSearchTool) {
+      console.log("[inner-life] EXTERNAL: web_search tool not available, skipping");
+      return;
+    }
+
+    const result = await webSearchTool.execute("external-signal", { query: topic });
+    const resultText = typeof result === "string"
+      ? result
+      : JSON.stringify(result?.content?.map((c: any) => c.text).join("\n") ?? "");
+
+    if (!resultText || resultText.length < 50) {
+      console.log("[inner-life] EXTERNAL: search returned empty, skipping");
+      return;
+    }
+
+    // Sintetizar a observation con LLM — forzar perspectiva externa
+    const summary = await backgroundLlmCall({
+      systemPrompt: "You extract ONE concrete observation from web search results. Focus on what CHANGED in the world, not what Pixel should do. 2-3 sentences max, factual, grounded in the search results. No speculation.",
+      userPrompt: `Topic searched: ${topic}\n\nSearch results:\n${resultText.slice(0, 1500)}\n\nWrite ONE observation about what is happening in the world right now related to this topic. Factual, external, grounded. What event, release, trend, or conversation is emerging?`,
+      label: "external-signal",
+      timeoutMs: 30_000,
+    });
+
+    if (!summary || summary.length < 20) {
+      console.log("[inner-life] EXTERNAL: LLM summary empty, skipping");
+      return;
+    }
+
+    // Guardar como observation con marcador de origen externo
+    const observationsDir = getObservationsDir();
+    const filename = `${Date.now()}.md`;
+    const filepath = join(observationsDir, filename);
+    const content = `---
+captured: ${new Date().toISOString()}
+user: external-world
+platform: web
+topic: ${topic}
+---
+
+${summary.trim()}
+`;
+    writeFileSync(filepath, content, { flag: "w" });
+    console.log(`[inner-life] EXTERNAL: captured world signal (${summary.length} chars): ${summary.slice(0, 80)}`);
+    audit("inner_life_external", `External signal captured: ${topic}`, { chars: summary.length });
+  } catch (err: any) {
+    console.error("[inner-life] EXTERNAL phase failed:", err.message);
+    audit("inner_life_error", `EXTERNAL failed: ${err.message}`, { phase: "external", error: err.message });
+  }
+}
+
+// ============================================================
 // Public API
 // ============================================================
 
@@ -2169,6 +2259,17 @@ export async function runInnerLifeCycle(): Promise<void> {
 
   cycleCount++;
   console.log(`[inner-life] Cycle ${cycleCount} — checking phases...`);
+
+  // EXTERNAL is FIRST — gather world signal before introspection so it has fresh material
+  if (cycleCount % EXTERNAL_EVERY === 0) {
+    try {
+      await captureExternalEvent();
+      console.log("[inner-life] EXTERNAL phase completed");
+    } catch (err: any) {
+      console.error("[inner-life] EXTERNAL phase failed:", err.message);
+      audit("inner_life_error", `EXTERNAL failed: ${err.message}`, { phase: "external", error: err.message });
+    }
+  }
 
   // Learn is most frequent — understanding conversations is the priority
   if (cycleCount % LEARN_EVERY === 0) {
