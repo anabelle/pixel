@@ -2860,7 +2860,7 @@ const SYNTROPY_NOTIFY_COOLDOWN_MS = 30_000; // 30 seconds minimum between notifi
 let lastSyntropyNotifyTime = 0;
 
 const syntropyNotifySchema = Type.Object({
-  message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent). Be concise and actionable." }),
+  message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent) OR developero (VPS admin). Be concise and actionable. To reach developero specifically, START the message with '[for-developero]'." }),
   priority: Type.Optional(Type.Union([
     Type.Literal("low"),
     Type.Literal("normal"),
@@ -2870,8 +2870,8 @@ const syntropyNotifySchema = Type.Object({
 
 const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
   name: "syntropy_notify",
-  label: "Notify Syntropy",
-  description: "Send a message to Syntropy (the oversoul/infrastructure agent). Writes to a shared mailbox that Syntropy reads each cycle. RATE LIMITED: 1 notification per 30 seconds max.",
+  label: "Notify Syntropy / developero",
+  description: "Send a message to the infrastructure agents. Writes to a shared mailbox (syntropy-mailbox.jsonl) read every 30min by cron dispatch. TWO recipients: (1) Syntropy — the oversoul/infra agent that fixes your code/config. (2) developero — the VPS admin agent that manages the host and all of Ana's projects (including you). To target developero specifically, START your message with '[for-developero]'. Without the marker, Syntropy handles it. RATE LIMITED: 1 notification per 30 seconds max.",
   parameters: syntropyNotifySchema,
   execute: async (_id, { message, priority }) => {
     // Rate limiting check
