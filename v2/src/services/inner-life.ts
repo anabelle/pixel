@@ -50,7 +50,6 @@ const IDEATE_EVERY = 5;
 const EVOLVE_EVERY = 10;
 const DERIVE_EVERY = 6;
 const MIRROR_EVERY = 3;
-const EXTERNAL_EVERY = 4;
 const OBSERVATION_KEEP_COUNT = 50;
 const INNER_LIFE_INTERVAL_MS = parseInt(process.env.INNER_LIFE_INTERVAL_MS ?? String(3 * 60 * 60 * 1000), 10);
 const INNER_LIFE_STARTUP_DELAY_MS = parseInt(process.env.INNER_LIFE_STARTUP_DELAY_MS ?? String(3 * 60 * 1000), 10);
@@ -2169,79 +2168,6 @@ function pruneObservations(observationsDir: string, keepCount: number): void {
 }
 
 // ============================================================
-// Phase: EXTERNAL SIGNAL — Inyecta realidad del mundo (rompe el eco chamber)
-// ============================================================
-
-/**
- * Captura eventos externos (noticias Bitcoin/Nostr, tendencias, web) y los
- * guarda como observations. Esto abre el ciclo introspectivo al mundo real.
- * Usa el tool web_search existente en pixelTools.
- */
-async function captureExternalEvent(): Promise<void> {
-  console.log("[inner-life] Phase: EXTERNAL — gathering world signal...");
-
-  // Tópicos relevantes a Pixel: Bitcoin, Nostr, Lightning, arte digital, IA
-  const topics = [
-    "Bitcoin Lightning Network news today",
-    "Nostr protocol developments this week",
-    "AI art generative creative tools new",
-  ];
-  const topic = topics[Math.floor(Math.random() * topics.length)];
-
-  try {
-    // Usar el tool web_search del stack existente
-    const webSearchTool = pixelTools.find(t => t.name === "web_search");
-    if (!webSearchTool) {
-      console.log("[inner-life] EXTERNAL: web_search tool not available, skipping");
-      return;
-    }
-
-    const result = await webSearchTool.execute("external-signal", { query: topic });
-    const resultText = typeof result === "string"
-      ? result
-      : JSON.stringify(result?.content?.map((c: any) => c.text).join("\n") ?? "");
-
-    if (!resultText || resultText.length < 50) {
-      console.log("[inner-life] EXTERNAL: search returned empty, skipping");
-      return;
-    }
-
-    // Sintetizar a observation con LLM — forzar perspectiva externa
-    const summary = await backgroundLlmCall({
-      systemPrompt: "You extract ONE concrete observation from web search results. Focus on what CHANGED in the world, not what Pixel should do. 2-3 sentences max, factual, grounded in the search results. No speculation.",
-      userPrompt: `Topic searched: ${topic}\n\nSearch results:\n${resultText.slice(0, 1500)}\n\nWrite ONE observation about what is happening in the world right now related to this topic. Factual, external, grounded. What event, release, trend, or conversation is emerging?`,
-      label: "external-signal",
-      timeoutMs: 30_000,
-    });
-
-    if (!summary || summary.length < 20) {
-      console.log("[inner-life] EXTERNAL: LLM summary empty, skipping");
-      return;
-    }
-
-    // Guardar como observation con marcador de origen externo
-    const observationsDir = getObservationsDir();
-    const filename = `${Date.now()}.md`;
-    const filepath = join(observationsDir, filename);
-    const content = `---
-captured: ${new Date().toISOString()}
-user: external-world
-platform: web
-topic: ${topic}
----
-
-${summary.trim()}
-`;
-    writeFileSync(filepath, content, { flag: "w" });
-    console.log(`[inner-life] EXTERNAL: captured world signal (${summary.length} chars): ${summary.slice(0, 80)}`);
-    audit("inner_life_external", `External signal captured: ${topic}`, { chars: summary.length });
-  } catch (err: any) {
-    console.error("[inner-life] EXTERNAL phase failed:", err.message);
-    audit("inner_life_error", `EXTERNAL failed: ${err.message}`, { phase: "external", error: err.message });
-  }
-}
-
-// ============================================================
 // Public API
 // ============================================================
 
@@ -2259,17 +2185,6 @@ export async function runInnerLifeCycle(): Promise<void> {
 
   cycleCount++;
   console.log(`[inner-life] Cycle ${cycleCount} — checking phases...`);
-
-  // EXTERNAL is FIRST — gather world signal before introspection so it has fresh material
-  if (cycleCount % EXTERNAL_EVERY === 0) {
-    try {
-      await captureExternalEvent();
-      console.log("[inner-life] EXTERNAL phase completed");
-    } catch (err: any) {
-      console.error("[inner-life] EXTERNAL phase failed:", err.message);
-      audit("inner_life_error", `EXTERNAL failed: ${err.message}`, { phase: "external", error: err.message });
-    }
-  }
 
   // Learn is most frequent — understanding conversations is the priority
   if (cycleCount % LEARN_EVERY === 0) {
