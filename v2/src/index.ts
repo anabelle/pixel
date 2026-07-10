@@ -46,6 +46,7 @@ import { startDreamCycle, stopDreamCycle, getDreamCycleStatus, triggerDreamCycle
 import { audit, getRecentAudit } from "./services/audit.js";
 import { startDigest, alertOwner, getDigestStatus, stopDigest } from "./services/digest.js";
 import { startOutreach, getOutreachStatus, stopOutreach } from "./services/outreach.js";
+import { startHeapWatchdog, stopHeapWatchdog, getHeapWatchdogStatus, registerClearableCache } from "./services/heap-watchdog.js";
 import { startJobs, enqueueJob, getRecentJobs, stopJobs, markRunningJobsFailed } from "./services/jobs.js";
 import { costMonitor, initCostMonitor } from "./services/cost-monitor.js";
 import { startScheduler as startReminders, initReminders, getReminderStats } from "./services/reminders.js";
@@ -356,6 +357,7 @@ app.get("/health", (c) => {
     dream_cycle: getDreamCycleStatus(),
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
+    heap_watchdog: getHeapWatchdogStatus(),
     canvas_listener: getCanvasListenerStatus(),
     whatsapp: getWhatsAppStatus(),
     twitter: getTwitterStatus(),
@@ -1800,6 +1802,14 @@ async function boot() {
   // Start proactive outreach (owner pings)
   startOutreach();
 
+  // Register clearable caches for heap-spike mitigation (before starting watchdog)
+  try {
+    registerClearableCache("skill-graph", () => invalidateSkillGraphCache());
+  } catch {}
+
+  // Start heap spike watchdog (memory monitor + mitigator)
+  startHeapWatchdog();
+
   // Start job runner
   startJobs();
 
@@ -1878,6 +1888,7 @@ function gracefulShutdown(signal: string): void {
   stopDreamCycle();
   stopDigest();
   stopOutreach();
+  stopHeapWatchdog();
   stopTwitter();
   stopCanvasListener();
 
