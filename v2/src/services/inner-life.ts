@@ -53,7 +53,7 @@ const MIRROR_EVERY = 3;
 const OBSERVATION_KEEP_COUNT = 50;
 const INNER_LIFE_INTERVAL_MS = parseInt(process.env.INNER_LIFE_INTERVAL_MS ?? String(3 * 60 * 60 * 1000), 10);
 const INNER_LIFE_STARTUP_DELAY_MS = parseInt(process.env.INNER_LIFE_STARTUP_DELAY_MS ?? String(3 * 60 * 1000), 10);
-const INNER_LIFE_TIMEOUT_MS = parseInt(process.env.INNER_LIFE_TIMEOUT_MS ?? String(120_000), 10);
+const INNER_LIFE_TIMEOUT_MS = parseInt(process.env.INNER_LIFE_TIMEOUT_MS ?? String(240_000), 10);
 
 // Maximum document sizes (in characters) to prevent bloat
 const MAX_REFLECTIONS_SIZE = 6000;
@@ -924,13 +924,15 @@ function autoHarvestProjects(garden: Garden): void {
   writeLivingDoc(IDEA_GARDEN_PATH, renderGarden(garden));
 }
 
-/** Run a simple LLM prompt and return the response text (with 60s timeout, full fallback cascade) */
+/** Run a simple LLM prompt and return the response text (with 90s per-call timeout, full fallback cascade).
+ * Per-phase timeout caps each LLM call so one slow phase can't blow the entire cycle budget. */
 async function llmCall(systemPrompt: string, userPrompt: string): Promise<string> {
   return backgroundLlmCall({
     systemPrompt,
     userPrompt,
     tools: pixelTools,
     label: "inner-life",
+    timeoutMs: 90_000, // 90s per phase — leaves room for multiple phases in the 240s cycle
   });
 }
 

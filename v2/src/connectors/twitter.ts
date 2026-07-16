@@ -316,6 +316,10 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
         disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", json);
         return { success: false, error: "TWITTER_API_PROJECT_MISCONFIG: keys and tokens are not attached to a Twitter Project. Manual fix required in Twitter developer portal." };
       }
+      if (resp.status === 401) {
+        disableApiV2("API v2 credentials rejected (401) — token revoked, expired, or mismatched", json);
+        return { success: false, error: "TWITTER_AUTH_FAILED: API v2 token rejected (401). Token revoked or expired. Do NOT retry until credentials are updated." };
+      }
 
       consecutiveFailures++;
 
@@ -375,6 +379,8 @@ export async function searchTwitter(query: string, limit = 10): Promise<any[]> {
         console.error(`[twitter] Search rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
       } else if (status === 403 && isTwitterProjectConfigError(data)) {
         disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
+      } else if (status === 401) {
+        disableApiV2("API v2 credentials rejected (401) — token revoked, expired, or mismatched", data);
       } else {
         console.error(`[twitter] API v2 search failed (${status}):`, JSON.stringify(data).slice(0, 200));
       }
@@ -484,6 +490,8 @@ async function pollMentions(): Promise<void> {
         console.log(`[twitter] Mention poll rate-limited, resets in ${Math.ceil(waitSec / 60)}m`);
       } else if (status === 403 && isTwitterProjectConfigError(data)) {
         disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
+      } else if (status === 401) {
+        disableApiV2("API v2 credentials rejected (401) — token revoked, expired, or mismatched", data);
       } else {
         console.error(`[twitter] Mention poll API error (${status}):`, JSON.stringify(data).slice(0, 200));
       }
@@ -614,7 +622,31 @@ export async function startTwitter(): Promise<void> {
       }
     } catch { /* ignore */ }
 
-    // If not cached, resolve via API
+    // Validate cached creds with a live probe (GET /2/users/me)
+    // Cached user ID alone doesn't prove tokens are still valid — a revoked
+    // token passes the cache check but silently fails on every subsequent call.
+    if (twitterUserId) {
+      try {
+        const { ok: probeOk, status: probeStatus, data: probeData } = await twitterApiV2("GET", "https://api.twitter.com/2/users/me");
+        if (!probeOk) {
+          if (probeStatus === 401) {
+            disableApiV2("API v2 credentials rejected (401) — token revoked, expired, or mismatched", probeData);
+            twitterUserId = "";
+          } else if (probeStatus === 403 && isTwitterProjectConfigError(probeData)) {
+            disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", probeData);
+            twitterUserId = "";
+          } else {
+            console.warn(`[twitter] Cred probe returned ${probeStatus} — proceeding with caution`);
+          }
+        } else {
+          console.log("[twitter] API v2 credentials validated via /users/me probe");
+        }
+      } catch (err: any) {
+        console.warn(`[twitter] Cred probe failed: ${err.message} — proceeding with cached user ID`);
+      }
+    }
+
+    // If not cached (or probe cleared a bad cache), resolve via API
     if (!twitterUserId) {
       try {
         const { ok, status, data } = await twitterApiV2("GET", `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`);
@@ -624,8 +656,11 @@ export async function startTwitter(): Promise<void> {
           console.log(`[twitter] Resolved user ID: ${twitterUserId}`);
         } else if (status === 403 && isTwitterProjectConfigError(data)) {
           disableApiV2("keys and tokens are not attached to a Twitter Project; manual developer-portal fix required", data);
+        } else if (status === 401) {
+          disableApiV2("API v2 credentials rejected (401) — token revoked, expired, or mismatched", data);
         } else {
-          console.error("[twitter] Failed to resolve user ID:", JSON.stringify(data).slice(0, 200));
+          // Any other failure means creds are not working — degrade immediately instead of silent failure
+          disableApiV2(`API v2 user-ID resolution failed (${status})`, data);
         }
       } catch (err: any) {
         console.error("[twitter] User ID lookup failed:", err.message);

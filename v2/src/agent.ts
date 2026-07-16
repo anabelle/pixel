@@ -34,6 +34,33 @@ const MEMORY_EXTRACT_INTERVAL = 5; // Extract memory every N messages
 const GROUP_SUMMARY_INTERVAL = 8; // Update group summary every N messages
 const groupMessageCounts = new Map<string, number>();
 
+// ─── Z.AI Rate-Limit Circuit Breaker ──────────────────────────
+// Sticky cooldown that short-circuits the primary model (glm-5.2) when
+// Z.AI is actively returning 429s. Without this, every new conversation
+// call re-attempts glm-5.2 first even during a known rate-limit window,
+// wasting latency and racking up error counts.
+const ZAI_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000; // 5 min — Z.AI uses rolling 5h window
+let zaiRateLimitUntil = 0;
+
+export function setZaiRateLimit(durationMs: number = ZAI_RATE_LIMIT_COOLDOWN_MS): void {
+  zaiRateLimitUntil = Date.now() + durationMs;
+  console.log(`[agent] Z.AI rate-limit cooldown set for ${Math.round(durationMs / 1000)}s — primary model will be skipped until ${new Date(zaiRateLimitUntil).toISOString().slice(11, 19)}`);
+}
+
+export function isZaiRateLimited(): boolean {
+  return Date.now() < zaiRateLimitUntil;
+}
+
+export function resetZaiRateLimit(): void {
+  zaiRateLimitUntil = 0;
+}
+
+function isZaiModel(model: any): boolean {
+  if (!model?.id) return false;
+  const id = String(model.id).toLowerCase();
+  return id.includes("glm-") || id.includes("zai");
+}
+
 /** Load Pixel's character document */
 function loadCharacter(): string {
   if (existsSync(CHARACTER_PATH)) {
@@ -672,11 +699,18 @@ export async function promptWithHistory(
   let responseText = "";
   let usedModelId = selectedModel?.id ?? (process.env.AI_MODEL ?? "gemini-3-flash-preview"); // Track which model actually responded
 
+  // Circuit breaker: if Z.AI primary is in rate-limit cooldown, skip straight to fallback
+  let startAttempt = 0;
+  if (!hasImages && isZaiModel(selectedModel) && isZaiRateLimited()) {
+    startAttempt = 1;
+    console.log(`[agent] Z.AI primary rate-limited — skipping to fallback for ${userId}`);
+  }
+
   // Set tool context so schedule_alarm can auto-fill chatId
   setToolContext({ userId, platform, chatId });
 
   try {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = startAttempt; attempt <= MAX_RETRIES; attempt++) {
     const responseChunks: string[] = [];
     let llmError: string | null = null;
 
@@ -742,6 +776,10 @@ export async function promptWithHistory(
       if (retryModel.provider === "google") {
         resetGoogleKeyToPrimary();
       }
+      // Z.AI call succeeded — clear rate-limit cooldown (self-healing)
+      if (isZaiModel(retryModel)) {
+        resetZaiRateLimit();
+      }
       if (attemptAgent.state?.messages) {
         const noImages = stripImageBlocks(attemptAgent.state.messages as any[]);
         const sanitized = sanitizeMessagesForContext(noImages);
@@ -772,6 +810,11 @@ export async function promptWithHistory(
       if (retryModel.provider === "google") {
         setGoogleKeyFallback();
       }
+      // If Z.AI primary hit rate limit, set circuit breaker so subsequent
+      // conversation calls skip glm-5.2 immediately instead of re-trying
+      if (isZaiModel(retryModel)) {
+        setZaiRateLimit();
+      }
       console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}: ${errorStr.substring(0, 150)} — cascading to fallback`);
       const nextModel = getFallbackModel(attempt + 1);
       costMonitor.recordError(
@@ -780,6 +823,9 @@ export async function promptWithHistory(
         'conversation',
         nextModel.id
       );
+      // Brief backoff before cascading (avoids hammering next provider immediately)
+      const backoffMs = Math.min(500 * (attempt + 1), 2000);
+      if (backoffMs > 0) await new Promise((r) => setTimeout(r, backoffMs));
       continue;
     }
 
