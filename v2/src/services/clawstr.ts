@@ -1,6 +1,11 @@
 /**
  * Clawstr CLI wrapper for Pixel V2
  * Uses docker-cli to run the Clawstr CLI in a Node container with host-mounted config.
+ *
+ * IMPORTANT: stderr from npx/npm is NOISE (install progress, npm error wrappers,
+ * SIGTERM messages from timeouts). It must NEVER be concatenated into the data
+ * output or thrown raw as an error message. We keep stdout and stderr separate
+ * and filter npm noise from errors.
  */
 
 const hostPixelRoot = process.env.HOST_PIXEL_ROOT ?? "/home/pixel/pixel";
@@ -22,6 +27,28 @@ function isClawstrConfigured(): boolean {
     clawstrConfigured = false;
     return false;
   }
+}
+
+/**
+ * Filter npm/npx noise from stderr so error messages are clean and actionable.
+ * Removes: npm notice, npm warn, npm error (lifecycle wrapper lines), New major version notices.
+ * Keeps: actual error messages from the clawstr CLI itself.
+ */
+function filterNpmNoise(stderr: string): string {
+  return stderr
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      // Drop npm boilerplate
+      if (/^npm (notice|warn|error)\s/.test(trimmed)) return false;
+      if (/^npm error (code|path|errno|syscall|signal|command)/.test(trimmed)) return false;
+      if (/New major version of npm/.test(trimmed)) return false;
+      if (/^npm notice/.test(trimmed)) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
 }
 
 async function runClawstrCommand(args: string[], timeoutMs = 60_000): Promise<string> {
@@ -56,20 +83,26 @@ async function runClawstrCommand(args: string[], timeoutMs = 60_000): Promise<st
     const exitCode = await proc.exited;
     clearTimeout(timer);
 
-    let output = "";
-    if (stdout.trim()) output += stdout;
-    if (stderr.trim()) output += (output ? "\n" : "") + stderr;
-    if (!output.trim()) output = "(no output)";
+    // stdout is the ONLY data source — never concatenate stderr into output
+    let output = stdout.trim();
+    if (!output) output = "(no output)";
 
     if (output.length > 50_000) {
       output = output.slice(0, 50_000) + `\n\n[... truncated, total ${output.length} chars]`;
     }
 
     if (exitCode !== 0) {
-      throw new Error(`${output}\n\nExit code: ${exitCode}`);
+      // Build a clean error message from filtered stderr — no npm noise, no raw reply text dumps
+      const cleanStderr = filterNpmNoise(stderr);
+      const cmdPreview = args.slice(0, 2).join(" ");
+      const parts = [`Clawstr CLI failed (exit ${exitCode}): ${cmdPreview}`];
+      if (cleanStderr) {
+        parts.push(cleanStderr.slice(0, 500));
+      }
+      throw new Error(parts.join(" — "));
     }
 
-    return output.trim();
+    return output;
   } finally {
     clearTimeout(timer);
   }
