@@ -263,6 +263,135 @@ export function getNostrInstance(): { ndk: NDK; pubkey: string } | null {
   return { ndk: sharedNdk, pubkey: sharedPubkey };
 }
 
+/**
+ * Nostr Engagement Circuit Breaker
+ *
+ * Problem: When relays become unreachable, all 3 engagement loops (notification,
+ * zap, discovery) hit 15s fetch timeouts simultaneously. Without a circuit
+ * breaker, each loop independently triggers reconnects, all fail, and the
+ * cascade of unhandled promise rejections / timeouts can crash the process.
+ *
+ * Solution: A shared circuit breaker with 3 states:
+ *   - CLOSED: normal operation, fetches proceed
+ *   - OPEN: relays confirmed unreachable, all engagement loops skip fetches
+ *   - HALF_OPEN: probing — one loop attempts a fetch, others still skip
+ *
+ * The circuit trips after N consecutive failures across all loops, opens for
+ * a cooldown period, then enters half-open to probe recovery. This prevents
+ * the death spiral while still auto-recovering when relays come back.
+ */
+
+type CircuitState = "closed" | "open" | "half_open";
+let circuitState: CircuitState = "closed";
+let circuitOpenedAt = 0;
+let totalFetchFailures = 0;
+let reconnectInProgress = false;
+
+const CIRCUIT_OPEN_THRESHOLD = 3;          // trip after 3 consecutive failures
+const CIRCUIT_OPEN_COOLDOWN_MS = 2 * 60 * 1000;  // stay open 2 min before probing
+const RECONNECT_BACKOFF_MS = 30_000;       // min gap between reconnect attempts
+
+/**
+ * Check if engagement loops should skip their fetch.
+ * Returns true if the circuit is OPEN (skip) or HALF_OPEN and another
+ * loop is already probing (skip). Returns false if CLOSED or this is
+ * the first HALF_OPEN probe.
+ */
+export function isNostrCircuitOpen(): boolean {
+  if (circuitState === "closed") return false;
+  if (circuitState === "open") {
+    // Check if cooldown has elapsed → transition to half_open
+    if (Date.now() - circuitOpenedAt >= CIRCUIT_OPEN_COOLDOWN_MS) {
+      circuitState = "half_open";
+      console.log("[nostr] Circuit breaker → HALF_OPEN (probing relay connectivity)");
+      return false; // allow this one fetch as a probe
+    }
+    return true;
+  }
+  // half_open: only allow one probe at a time
+  return reconnectInProgress;
+}
+
+/**
+ * Called by engagement loops when a fetch times out.
+ * Centralized circuit breaker logic prevents death spirals.
+ */
+export async function onNostrFetchTimeout(): Promise<void> {
+  totalFetchFailures++;
+  console.warn(`[nostr] Fetch timeout (total: ${totalFetchFailures}, circuit: ${circuitState})`);
+
+  if (circuitState === "open") return; // already tripped, nothing more to do
+
+  if (circuitState === "half_open") {
+    // Probe failed — go back to open
+    tripCircuit("half-open probe failed");
+    return;
+  }
+
+  // closed: count failures and trip if threshold reached
+  if (totalFetchFailures >= CIRCUIT_OPEN_THRESHOLD) {
+    tripCircuit(`${totalFetchFailures} consecutive fetch failures`);
+    // Attempt ONE reconnect with backoff (not 3 simultaneous reconnects)
+    await attemptReconnectWithBackoff();
+  }
+}
+
+/**
+ * Called by engagement loops on successful fetch.
+ * Resets the failure counter and closes the circuit.
+ */
+export function onNostrFetchSuccess(): void {
+  if (circuitState !== "closed" || totalFetchFailures > 0) {
+    console.log(`[nostr] Circuit breaker → CLOSED (recovered from ${circuitState}, was ${totalFetchFailures} failures)`);
+  }
+  circuitState = "closed";
+  totalFetchFailures = 0;
+  reconnectInProgress = false;
+}
+
+function tripCircuit(reason: string): void {
+  circuitState = "open";
+  circuitOpenedAt = Date.now();
+  console.error(`[nostr] Circuit breaker → OPEN: ${reason}. Engagement loops will skip fetches for ${CIRCUIT_OPEN_COOLDOWN_MS / 1000}s.`);
+  audit("nostr_circuit_open", `Nostr engagement circuit tripped: ${reason}`, { totalFailures: totalFetchFailures });
+}
+
+/**
+ * Attempt a single relay reconnect with backoff guard.
+ * Multiple engagement loops calling this simultaneously will be serialized
+ * — only one reconnect runs at a time, others return immediately.
+ */
+async function attemptReconnectWithBackoff(): Promise<void> {
+  if (reconnectInProgress) {
+    console.log("[nostr] Reconnect already in progress — skipping");
+    return;
+  }
+  if (!sharedNdk) return;
+
+  reconnectInProgress = true;
+  try {
+    console.log("[nostr] Attempting relay reconnect...");
+    await reconnectNostrRelays(10_000);
+    console.log("[nostr] Reconnect succeeded — circuit will close on next successful fetch");
+  } catch (err: any) {
+    console.error(`[nostr] Reconnect failed: ${err.message} — circuit stays OPEN, will probe in ${CIRCUIT_OPEN_COOLDOWN_MS / 1000}s`);
+    // Don't retry immediately — the half_open probe will test recovery after cooldown
+  } finally {
+    reconnectInProgress = false;
+  }
+}
+
+/** Get circuit breaker status for /health endpoint */
+export function getNostrCircuitStatus() {
+  return {
+    state: circuitState,
+    totalFetchFailures,
+    openedAt: circuitOpenedAt > 0 ? new Date(circuitOpenedAt).toISOString() : null,
+    cooldownMs: CIRCUIT_OPEN_COOLDOWN_MS,
+    reconnectInProgress,
+  };
+}
+
 /** Check if we've already replied to this event */
 export function hasRepliedTo(eventId: string): boolean {
   return repliedEventIds.has(eventId);

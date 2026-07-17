@@ -28,7 +28,7 @@ import { generateImage } from "./services/image-gen.js";
 import { uploadToBlossom } from "./services/blossom.js";
 import * as schema from "./db.js";
 import { startTelegram } from "./connectors/telegram.js";
-import { startNostr, saveRepliedIds as saveNostrRepliedIds } from "./connectors/nostr.js";
+import { startNostr, saveRepliedIds as saveNostrRepliedIds, getNostrCircuitStatus } from "./connectors/nostr.js";
 import { startWhatsApp, repairWhatsApp, getWhatsAppStatus, getWhatsAppQr, sendWhatsAppMessage, sendWhatsAppGroupMessage } from "./connectors/whatsapp.js";
 import { startTwitter, getTwitterStatus, stopTwitter } from "./connectors/twitter.js";
 import { getConversationStats, appendToLog } from "./conversations.js";
@@ -358,6 +358,7 @@ app.get("/health", (c) => {
     digest: getDigestStatus(),
     outreach: getOutreachStatus(),
     heap_watchdog: getHeapWatchdogStatus(),
+    nostr_circuit: getNostrCircuitStatus(),
     canvas_listener: getCanvasListenerStatus(),
     whatsapp: getWhatsAppStatus(),
     twitter: getTwitterStatus(),

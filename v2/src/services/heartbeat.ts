@@ -20,7 +20,7 @@
  */
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
-import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled, publishNostrEvent } from "../connectors/nostr.js";
+import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled, publishNostrEvent, onNostrFetchTimeout, onNostrFetchSuccess, isNostrCircuitOpen } from "../connectors/nostr.js";
 import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
@@ -1290,6 +1290,9 @@ async function discoveryLoop(): Promise<void> {
     const instance = getNostrInstance();
     if (!instance) return;
 
+    // Circuit breaker: skip fetch entirely when relays are confirmed unreachable
+    if (isNostrCircuitOpen()) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1303,8 +1306,11 @@ async function discoveryLoop(): Promise<void> {
 
     if (!events) {
       audit("engagement_error", "Discovery loop fetch timed out", { error: "fetch timeout" });
+      await onNostrFetchTimeout();
       return;
     }
+
+    onNostrFetchSuccess();
 
     lastDiscoveryTime = Date.now();
     saveHeartbeatState();
@@ -1395,6 +1401,9 @@ async function notificationLoop(): Promise<void> {
     const instance = getNostrInstance();
     if (!instance) return;
 
+    // Circuit breaker: skip fetch entirely when relays are confirmed unreachable
+    if (isNostrCircuitOpen()) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1409,8 +1418,11 @@ async function notificationLoop(): Promise<void> {
 
     if (!events) {
       audit("engagement_error", "Notification loop fetch timed out", { error: "fetch timeout" });
+      await onNostrFetchTimeout();
       return;
     }
+
+    onNostrFetchSuccess();
 
     const mentions = [...events].filter((e) => e.kind === 1 && e.pubkey !== pubkey && !isMuted(e.pubkey));
     const reactions = [...events].filter((e) => e.kind === 7 && e.pubkey !== pubkey);
@@ -1498,6 +1510,9 @@ async function zapLoop(): Promise<void> {
     const instance = getNostrInstance();
     if (!instance) return;
 
+    // Circuit breaker: skip fetch entirely when relays are confirmed unreachable
+    if (isNostrCircuitOpen()) return;
+
     const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
@@ -1512,9 +1527,11 @@ async function zapLoop(): Promise<void> {
 
     if (!events) {
       audit("engagement_error", "Zap loop fetch timed out", { error: "fetch timeout" });
+      await onNostrFetchTimeout();
       return;
     }
 
+    onNostrFetchSuccess();
     lastZapCheckTime = Date.now();
     saveHeartbeatState();
 
