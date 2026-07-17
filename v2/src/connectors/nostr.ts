@@ -305,6 +305,10 @@ export function isNostrCircuitOpen(): boolean {
     if (Date.now() - circuitOpenedAt >= CIRCUIT_OPEN_COOLDOWN_MS) {
       circuitState = "half_open";
       console.log("[nostr] Circuit breaker → HALF_OPEN (probing relay connectivity)");
+      // Force a reconnect BEFORE the probe — stale WebSocket connections
+      // are the most common cause of sustained fetch failures during long
+      // uptime. Without this, the probe tests against dead sockets.
+      attemptReconnectWithBackoff().catch(() => {});
       return false; // allow this one fetch as a probe
     }
     return true;
@@ -480,7 +484,47 @@ export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTi
 
 async function reconnectNostrRelays(timeoutMs: number = 10_000): Promise<void> {
   if (!sharedNdk) return;
-  const connectPromise = sharedNdk.connect();
+
+  // Force-close stale relay connections before reconnecting.
+  // NDK's connect() is a no-op if it thinks relays are already connected,
+  // but the underlying WebSockets may be dead after long uptime.
+  //
+  // SAFETY: Serialize the closes with small delays. Closing many WebSockets
+  // simultaneously can cause resource exhaustion or unhandled errors in the
+  // teardown path (this was the root cause of boot 21 crashing after 8 min).
+  // Each close is individually wrapped and errors are swallowed.
+  try {
+    const pool = (sharedNdk as any).pool;
+    if (pool?.relays) {
+      const relayList = [...pool.relays];
+      console.log(`[nostr] Force-closing ${relayList.length} stale relay connections (serialized)`);
+      for (const [url, relay] of relayList) {
+        try {
+          if (relay?.disconnect) {
+            relay.disconnect();
+          } else if (relay?.connectivity?.websocket) {
+            relay.connectivity.websocket.close();
+          }
+        } catch {
+          // swallow — individual close failures must never propagate
+        }
+        // Small delay between closes to avoid resource spike
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      console.log(`[nostr] Force-closed ${relayList.length} relays`);
+    }
+  } catch {
+    // pool access may vary across NDK versions — best effort
+  }
+
+  // Let sockets fully close before reconnecting
+  await new Promise((r) => setTimeout(r, 300));
+
+  const connectPromise = sharedNdk.connect().catch((err: any) => {
+    // connect() rejecting should not crash the caller — the circuit
+    // breaker handles the "still broken" state via probe failures
+    console.warn(`[nostr] connect() rejected during reconnect: ${err?.message ?? err}`);
+  });
   const timeoutPromise = new Promise<void>((_, reject) => setTimeout(() => reject(new Error(`Reconnect timeout (${timeoutMs}ms)`)), timeoutMs));
   await Promise.race([connectPromise, timeoutPromise]);
 }
