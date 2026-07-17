@@ -18,6 +18,7 @@ import { appendToLog } from "../conversations.js";
 import { extractImageUrls, fetchImages } from "../services/vision.js";
 import { getUnsafeReason } from "../services/content-filter.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
+import { audit } from "../services/audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 
 // Throttle: don't reply to the same pubkey more than once per interval
