@@ -34,6 +34,39 @@ import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } fr
 import { pixelTools } from "./tools.js";
 import { rebuildSkillGraph, invalidateSkillGraphCache } from "./skill-graph.js";
 
+/**
+ * Memory reclamation pause between inner-life phases.
+ *
+ * Inner-life phases make heavy LLM calls that allocate large context windows.
+ * When multiple phases fire on the same cycle (e.g. cycle 30 = LCM of all),
+ * the heap compounds because V8 hasn't GC'd the previous phase's allocations
+ * before the next one starts. This is the primary memory spike trigger
+ * identified during boot 23 (96h uptime, heap hit 578MB).
+ *
+ * This helper runs between phases to:
+ *   1. Invalidate the skill-graph cache (largest in-process cache)
+ *   2. Call global.gc() if Bun was started with --expose-gc
+ *   3. Brief delay to let V8 settle before the next phase
+ */
+async function reclaimMemoryBetweenPhases(phaseLabel: string): Promise<void> {
+  try {
+    invalidateSkillGraphCache();
+  } catch {
+    // best effort
+  }
+  const gc = (global as any).gc;
+  if (typeof gc === "function") {
+    try { gc(); } catch { /* ignore */ }
+  }
+  // Brief delay — lets V8's incremental GC make progress before next phase
+  await new Promise((r) => setTimeout(r, 500));
+  const mem = process.memoryUsage();
+  const mb = Math.round(mem.heapUsed / 1024 / 1024);
+  if (mb > 350) {
+    console.log(`[inner-life] Memory after ${phaseLabel}: ${mb}MB heap — reclaimed`);
+  }
+}
+
 
 // ============================================================
 // Configuration
@@ -2198,6 +2231,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] LEARN phase failed:", err.message);
       audit("inner_life_error", `LEARN failed: ${err.message}`, { phase: "learn", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("LEARN");
   }
 
   // Reflect every 3 cycles
@@ -2210,6 +2244,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] REFLECT phase failed:", err.message);
       audit("inner_life_error", `REFLECT failed: ${err.message}`, { phase: "reflect", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("REFLECT");
   }
 
   // Ideate every 5 cycles
@@ -2222,6 +2257,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] IDEATE phase failed:", err.message);
       audit("inner_life_error", `IDEATE failed: ${err.message}`, { phase: "ideate", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("IDEATE");
   }
 
   // Evolve every 10 cycles — the slowest, most synthetic phase
@@ -2234,6 +2270,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] EVOLVE phase failed:", err.message);
       audit("inner_life_error", `EVOLVE failed: ${err.message}`, { phase: "evolve", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("EVOLVE");
   }
 
   // Derive claims every 6 cycles — extract patterns from observations
@@ -2246,6 +2283,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] DERIVE phase failed:", err.message);
       audit("inner_life_error", `DERIVE failed: ${err.message}`, { phase: "derive", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("DERIVE");
   }
 
   if (cycleCount % MIRROR_EVERY === 0) {
@@ -2257,6 +2295,7 @@ export async function runInnerLifeCycle(): Promise<void> {
       console.error("[inner-life] MIRROR phase failed:", err.message);
       audit("inner_life_error", `MIRROR failed: ${err.message}`, { phase: "mirror", error: err.message });
     }
+    await reclaimMemoryBetweenPhases("MIRROR");
   }
 }
 
