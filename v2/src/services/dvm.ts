@@ -16,6 +16,7 @@ import NDK, { NDKEvent, type NDKFilter } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
 import { createInvoice, verifyPayment } from "./lightning.js";
 import { recordRevenue } from "./revenue.js";
+import { publishNostrEvent } from "../connectors/nostr.js";
 
 // Track processed jobs to avoid duplicates
 const processedJobs = new Set<string>();
@@ -69,7 +70,7 @@ export async function publishDvmAnnouncement(ndk: NDK): Promise<void> {
   ];
 
   try {
-    await announcement.publish();
+    await publishNostrEvent(announcement);
     console.log("[dvm] Published NIP-89 announcement (kind 31990)");
   } catch (err: any) {
     console.error("[dvm] Failed to publish announcement:", err.message);
@@ -96,7 +97,7 @@ async function sendFeedback(
   ];
 
   try {
-    await feedback.publish();
+    await publishNostrEvent(feedback);
   } catch (err: any) {
     console.error(`[dvm] Failed to send feedback (${status}):`, err.message);
   }
@@ -237,7 +238,7 @@ export function startDvm(ndk: NDK, ourPubkey: string): void {
         result.tags.push(["amount", String(DVM_PRICE_SATS * 1000), paidInvoice.bolt11]);
       }
 
-      await result.publish();
+      await publishNostrEvent(result);
       console.log(`[dvm] Result published for job ${event.id.slice(0, 8)} (${response.length} chars, ${paidInvoice ? `${DVM_PRICE_SATS} sats paid` : "free"})`);
     } catch (err: any) {
       console.error(`[dvm] Job ${event.id.slice(0, 8)} failed:`, err.message);

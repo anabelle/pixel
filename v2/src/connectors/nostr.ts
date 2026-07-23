@@ -482,6 +482,47 @@ export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTi
   throw lastError;
 }
 
+/**
+ * Remove stale/dead relay URLs from the NDK pool.
+ * NDK auto-discovers relays from event tags (relay hints), which causes
+ * "Relay is disconnected" warnings when publishing to dead relays.
+ * Call this at boot after connecting to prune any stale entries.
+ */
+function pruneDeadRelaysFromPool(): void {
+  if (!sharedNdk) return;
+  const configuredUrls = new Set(
+    (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol")
+      .split(",")
+      .map((r) => r.trim().replace(/\/$/, ""))
+      .filter(Boolean)
+  );
+  try {
+    const pool = (sharedNdk as any).pool;
+    if (!pool?.relays) return;
+    const toRemove: string[] = [];
+    for (const [url] of pool.relays) {
+      const normalized = url.replace(/\/$/, "");
+      if (!configuredUrls.has(normalized)) {
+        toRemove.push(url);
+      }
+    }
+    for (const url of toRemove) {
+      try {
+        const relay = pool.relays.get(url);
+        if (relay?.disconnect) relay.disconnect();
+        pool.relays.delete(url);
+      } catch {
+        // best effort
+      }
+    }
+    if (toRemove.length > 0) {
+      console.log(`[nostr] Pruned ${toRemove.length} stale relay(s) from pool: ${toRemove.map(u => u.replace("wss://", "")).join(", ")}`);
+    }
+  } catch {
+    // pool structure may vary across NDK versions
+  }
+}
+
 async function reconnectNostrRelays(timeoutMs: number = 10_000): Promise<void> {
   if (!sharedNdk) return;
 
@@ -772,6 +813,9 @@ export async function startNostr(): Promise<void> {
   }
 
   console.log("[nostr] Mention listener active");
+
+  // Prune stale/dead relays from the NDK pool (auto-discovered from event tags)
+  pruneDeadRelaysFromPool();
 
   // Start NIP-90 DVM (text generation service)
   startDvm(ndk, pubkey);
