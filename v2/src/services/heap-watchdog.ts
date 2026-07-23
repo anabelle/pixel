@@ -55,6 +55,7 @@ const MAX_HISTORY = 60;                     // keep last 60 samples in state fil
 //   3. Spike frequency indicates a leak pattern (N+ spikes in 1h)
 const SPIKE_RECOVERY_CHECK_PCT = 10;        // if heap is still >10% above reference after mitigation = not recovered
 const SPIKES_PER_HOUR_THRESHOLD = 6;        // 6+ spikes in 60 min = leak pattern, alert
+const SPIKE_FREQUENCY_ABSOLUTE_FLOOR = 90 * 1024 * 1024; // ignore spikes under 90MB heap for frequency alerting
 
 // ============================================================
 // State
@@ -267,7 +268,12 @@ async function evaluate(): Promise<void> {
       spikesDetected++;
       const now = Date.now();
       const mb = (n: number) => Math.round(n / 1024 / 1024);
-      recentSpikeTimes.push(now);
+      // Only count significant spikes toward frequency-based leak detection.
+      // Small spikes (< 90MB absolute heap) that recover quickly are normal
+      // operational breathing, not leak patterns.
+      if (sample.heapUsed >= SPIKE_FREQUENCY_ABSOLUTE_FLOOR) {
+        recentSpikeTimes.push(now);
+      }
 
       const msg = `Heap spike +${jumpPct.toFixed(0)}% — ${mb(sample.heapUsed)}MB used vs ${mb(reference)}MB recent-peak (RSS ${mb(sample.rss)}MB)`;
       console.warn(`[heap-watchdog] ${msg}`);
