@@ -856,7 +856,7 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
       userPrompt: attempt === 1
         ? baseUserPrompt
         : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
-      tools: pixelTools,
+      tools: [],
       label: "heartbeat",
     });
 
@@ -933,7 +933,7 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
       userPrompt: attempt === 1
         ? baseUserPrompt
         : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
-      tools: pixelTools,
+      tools: [],
       label: "heartbeat",
     });
 

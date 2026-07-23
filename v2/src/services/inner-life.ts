@@ -958,12 +958,14 @@ function autoHarvestProjects(garden: Garden): void {
 }
 
 /** Run a simple LLM prompt and return the response text (with 90s per-call timeout, full fallback cascade).
- * Per-phase timeout caps each LLM call so one slow phase can't blow the entire cycle budget. */
+ * Per-phase timeout caps each LLM call so one slow phase can't blow the entire cycle budget.
+ * Tools are intentionally empty — inner-life phases reflect/ideate, they don't need tool access.
+ * This also avoids the "at most 64 tools are allowed" 400 error from gpt-oss-20b:free. */
 async function llmCall(systemPrompt: string, userPrompt: string): Promise<string> {
   return backgroundLlmCall({
     systemPrompt,
     userPrompt,
-    tools: pixelTools,
+    tools: [],
     label: "inner-life",
     timeoutMs: 90_000, // 90s per phase — leaves room for multiple phases in the 240s cycle
   });
