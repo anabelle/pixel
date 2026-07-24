@@ -483,10 +483,24 @@ export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTi
 }
 
 /**
+ * Known-dead relay URLs that should never be in the pool.
+ * These accumulate from event tags (relay hints) and cause disconnect
+ * warnings / failed fetch probes. Blacklisted permanently.
+ */
+const DEAD_RELAY_BLACKLIST = new Set([
+  "wss://bcast.girino.org/",
+  "wss://lightningrelay.com/",
+  "wss://nostr.agentcampfire.com/",
+  "wss://nostr.bit4use.com/",
+]);
+
+/**
  * Remove stale/dead relay URLs from the NDK pool.
  * NDK auto-discovers relays from event tags (relay hints), which causes
  * "Relay is disconnected" warnings when publishing to dead relays.
- * Call this at boot after connecting to prune any stale entries.
+ *
+ * Called at boot AND on a recurring interval (every 5 min) because NDK
+ * re-discovers stale relays at runtime from incoming event tags.
  */
 function pruneDeadRelaysFromPool(): void {
   if (!sharedNdk) return;
@@ -502,7 +516,8 @@ function pruneDeadRelaysFromPool(): void {
     const toRemove: string[] = [];
     for (const [url] of pool.relays) {
       const normalized = url.replace(/\/$/, "");
-      if (!configuredUrls.has(normalized)) {
+      // Remove if blacklisted or not in configured set
+      if (DEAD_RELAY_BLACKLIST.has(url) || !configuredUrls.has(normalized)) {
         toRemove.push(url);
       }
     }
@@ -520,6 +535,72 @@ function pruneDeadRelaysFromPool(): void {
     }
   } catch {
     // pool structure may vary across NDK versions
+  }
+}
+
+/**
+ * Monkey-patch the NDK relay pool to prevent dead relays from being added.
+ * NDK auto-discovers relay URLs from event tags and adds them to the pool
+ * at runtime. This defeats periodic pruning. By wrapping the pool's
+ * relay-adding method, we block blacklisted URLs from ever entering.
+ */
+function installRelayBlacklistGuard(): void {
+  if (!sharedNdk) return;
+  try {
+    const pool = (sharedNdk as any).pool;
+    if (!pool) return;
+
+    // Patch addRelay if it exists
+    if (typeof pool.addRelay === "function" && !(pool as any)._blacklistPatched) {
+      const originalAddRelay = pool.addRelay.bind(pool);
+      pool.addRelay = function (url: string, ...args: any[]) {
+        if (isDeadRelay(url)) {
+          return; // silently reject
+        }
+        return originalAddRelay(url, ...args);
+      };
+      (pool as any)._blacklistPatched = true;
+      console.log("[nostr] Relay pool blacklist guard installed");
+    }
+  } catch {
+    // pool structure may vary across NDK versions
+  }
+}
+
+function isDeadRelay(url: any): boolean {
+  if (!url) return false;
+  const str = typeof url === "string" ? url : (url?.url ?? String(url));
+  const normalized = str.replace(/\/$/, "");
+  for (const dead of DEAD_RELAY_BLACKLIST) {
+    if (normalized === dead.replace(/\/$/, "")) return true;
+  }
+  const configuredUrls = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol")
+    .split(",")
+    .map((r) => r.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  return !configuredUrls.includes(normalized);
+}
+
+/** Recurring prune timer — runs every 5 minutes as a safety net. */
+let pruneTimer: ReturnType<typeof setInterval> | null = null;
+const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+function startRelayPruneInterval(): void {
+  if (pruneTimer) return;
+  pruneTimer = setInterval(() => {
+    try {
+      pruneDeadRelaysFromPool();
+    } catch {
+      // never let the prune interval crash the process
+    }
+  }, PRUNE_INTERVAL_MS);
+  console.log(`[nostr] Relay pool prune interval started (every ${PRUNE_INTERVAL_MS / 1000}s)`);
+}
+
+function stopRelayPruneInterval(): void {
+  if (pruneTimer) {
+    clearInterval(pruneTimer);
+    pruneTimer = null;
   }
 }
 
@@ -816,6 +897,10 @@ export async function startNostr(): Promise<void> {
 
   // Prune stale/dead relays from the NDK pool (auto-discovered from event tags)
   pruneDeadRelaysFromPool();
+  // Install guard to prevent dead relays from re-entering the pool at runtime
+  installRelayBlacklistGuard();
+  // Start recurring prune as safety net
+  startRelayPruneInterval();
 
   // Start NIP-90 DVM (text generation service)
   startDvm(ndk, pubkey);
