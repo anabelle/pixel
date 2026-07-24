@@ -465,6 +465,11 @@ export async function sendNostrDm(
 
 /** Publish a Nostr event with one reconnect retry for transient relay failures. */
 export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTimeoutMs?: number }): Promise<void> {
+  // Prune dead relays before every publish — the pool re-pollutes between
+  // prune intervals, and publish iterates all pool relays causing 5×10s
+  // timeouts on dead ones.
+  pruneDeadRelaysFromPool();
+
   let lastError: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -583,7 +588,7 @@ function isDeadRelay(url: any): boolean {
 
 /** Recurring prune timer — runs every 5 minutes as a safety net. */
 let pruneTimer: ReturnType<typeof setInterval> | null = null;
-const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const PRUNE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes — short enough to catch stale connections before fetch timeouts
 
 function startRelayPruneInterval(): void {
   if (pruneTimer) return;
