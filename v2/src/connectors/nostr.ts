@@ -465,6 +465,11 @@ export async function sendNostrDm(
 
 /** Publish a Nostr event with one reconnect retry for transient relay failures. */
 export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTimeoutMs?: number }): Promise<void> {
+  // Strip relay hints pointing to dead relays from event tags.
+  // NDK re-discovers relays from "e" and "a" tag relay hints, re-adding
+  // dead URLs to the pool faster than prune can clear them.
+  stripDeadRelayHints(event);
+
   // Prune dead relays before every publish — the pool re-pollutes between
   // prune intervals, and publish iterates all pool relays causing 5×10s
   // timeouts on dead ones.
@@ -497,7 +502,38 @@ const DEAD_RELAY_BLACKLIST = new Set([
   "wss://lightningrelay.com/",
   "wss://nostr.agentcampfire.com/",
   "wss://nostr.bit4use.com/",
+  "wss://relay.nosto.re/",
 ]);
+
+/**
+ * Strip relay hints pointing to dead relays from event tags.
+ * NDK parses "e" and "a" tags (format: ["e", eventId, relayUrl, marker])
+ * and auto-discovers relay URLs from them. Dead relay hints re-pollute
+ * the pool faster than prune can clear them.
+ *
+ * We replace the relay URL with empty string so the tag structure is
+ * preserved but NDK won't try to connect to a dead relay.
+ */
+function stripDeadRelayHints(event: NDKEvent): void {
+  if (!event.tags) return;
+  let modified = false;
+  for (const tag of event.tags) {
+    if (tag.length >= 3 && (tag[0] === "e" || tag[0] === "a")) {
+      const relayUrl = tag[2];
+      if (typeof relayUrl === "string" && relayUrl) {
+        // Check against blacklist and configured relay set
+        const normalized = relayUrl.replace(/\/$/, "");
+        const isBlacklisted = [...DEAD_RELAY_BLACKLIST].some(
+          (d) => d.replace(/\/$/, "") === normalized
+        );
+        if (isBlacklisted) {
+          tag[2] = "";
+          modified = true;
+        }
+      }
+    }
+  }
+}
 
 /**
  * Remove stale/dead relay URLs from the NDK pool.
