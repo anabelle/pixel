@@ -39,6 +39,7 @@ const STATE_PATH = join(DATA_DIR, "heap-watchdog.json");
 
 const SAMPLE_INTERVAL_MS = 30_000;          // 30 seconds
 const SPIKE_THRESHOLD_PCT = 20;             // >20% jump over reference = spike
+const SPIKE_MIN_ABSOLUTE_DELTA = 20 * 1024 * 1024; // AND must be >20MB absolute delta — filters noise at low baseline (e.g. 55MB→66MB = 11MB delta trips 20% but is harmless)
 const REFERENCE_WINDOW = 8;                 // compare against max of last N samples (excluding current)
 const BASELINE_WINDOW = 20;                 // window for reporting median in status
 const SPIKE_ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 min between owner alerts for sustained spikes
@@ -261,10 +262,11 @@ async function evaluate(): Promise<void> {
   const reference = referenceHeap();
   const prev = lastSample();
 
-  // --- Spike detection (>20% jump over recent high-water mark) ---
+  // --- Spike detection (>20% jump AND >20MB absolute delta over recent high-water mark) ---
   if (reference !== null && reference > 0) {
     const jumpPct = ((sample.heapUsed - reference) / reference) * 100;
-    if (jumpPct > SPIKE_THRESHOLD_PCT) {
+    const absoluteDelta = sample.heapUsed - reference;
+    if (jumpPct > SPIKE_THRESHOLD_PCT && absoluteDelta > SPIKE_MIN_ABSOLUTE_DELTA) {
       spikesDetected++;
       const now = Date.now();
       const mb = (n: number) => Math.round(n / 1024 / 1024);
