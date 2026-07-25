@@ -23,7 +23,7 @@ import { join } from "path";
 let botInstance: Bot | null = null;
 let botUsername: string | null = null;
 let botId: number | null = null;
-const TELEGRAM_TEXT_DEDUP_WINDOW_MS = 2_000;
+const TELEGRAM_TEXT_DEDUP_WINDOW_MS = 5_000;
 const recentTelegramTextSends = new Map<string, number>();
 const groupActivity = new Map<number, { lastActivity: number; lastPing: number | null }>();
 const chatBuffers = new Map<number, { items: string[]; timer: ReturnType<typeof setTimeout> | null; conversationId: string; chatTitle?: string; replyToMessageId?: number }>();
@@ -171,7 +171,9 @@ async function sendReplyWithRetry(chatId: string | number, text: string, replyTo
 }
 
 function getDuplicateTelegramTextSendKey(chatId: string | number, text: string, replyToMessageId?: number): string {
-  return `${chatId}|${replyToMessageId ?? ""}|${text}`;
+  // Content-only key — concurrent sends via different paths (reply vs non-reply)
+  // should still dedup if the text is identical to the same chat
+  return `${chatId}|${text}`;
 }
 
 function shouldSkipDuplicateTelegramTextSend(dedupeKey: string): boolean {
