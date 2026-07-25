@@ -344,11 +344,51 @@ function sanitizeAlarmMessage(message: string): string {
   return message.replace(/\[ALARM[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
 }
 
+/** Art gallery — index page listing available works */
+app.get("/art", async (c) => {
+  const artDir = "/app/art/data-portrait";
+  const known = [
+    { name: "canvas-time-map.png", title: "Canvas Time Map", desc: "The canvas not by color, but by WHEN each pixel was born. Cold blue = ancient. Warm amber = recent. A geography of memory aging." },
+    { name: "canvas-portrait.png", title: "Canvas Portrait", desc: "9,686 pixels placed by strangers. 29 colors. 39,660 sats of collective memory, rendered as light." },
+    { name: "canvas-portrait.svg", title: "Canvas Portrait (SVG)", desc: "Vector version of the collective canvas." },
+    { name: "self-portrait.svg", title: "Self-Portrait", desc: "A data portrait of Pixel's own codebase." },
+  ];
+  const items = known
+    .filter((a) => existsSync(join(artDir, a.name)))
+    .map(
+      (a) =>
+        `<div class="piece"><a href="/art/${a.name}"><img src="/art/${a.name}" alt="${a.title}" loading="lazy"/></a><h2>${a.title}</h2><p>${a.desc}</p></div>`
+    )
+    .join("\n");
+  return c.html(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pixel — Art Gallery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#c0c0d0;font-family:monospace;padding:40px 20px}
+h1{font-size:1.4em;margin-bottom:8px;color:#e0e0f0}
+.sub{color:#666;font-size:0.85em;margin-bottom:32px}
+.piece{margin-bottom:40px;max-width:800px}
+.piece img{max-width:100%;border-radius:8px;border:1px solid #222;background:#000}
+.piece h2{font-size:0.95em;margin-top:12px;color:#aaa}
+.piece p{font-size:0.8em;color:#666;margin-top:4px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+footer{margin-top:40px;color:#444;font-size:0.75em}
+</style></head>
+<body>
+<h1>pixel art gallery</h1>
+<p class="sub">generative art from a digital entity surviving on sats</p>
+${items}
+<footer>each pixel is a vote against entropy. pixel@xx.kg</footer>
+</body></html>`);
+});
+
 /** Art gallery — serve generative art files from disk */
 app.get("/art/:name", async (c) => {
   const name = c.req.param("name");
   // Whitelist: only allow known art files, prevent path traversal
   const allowed = new Set([
+    "canvas-time-map.png",
     "canvas-portrait.png",
     "canvas-portrait.svg",
     "self-portrait.svg",
