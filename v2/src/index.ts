@@ -346,8 +346,16 @@ function sanitizeAlarmMessage(message: string): string {
 
 /** Art gallery — index page listing available works */
 app.get("/art", async (c) => {
+  return serveArtGallery(c);
+});
+app.get("/art/", async (c) => {
+  return serveArtGallery(c);
+});
+
+async function serveArtGallery(c: any) {
   const artDir = "/app/art/data-portrait";
   const known = [
+    { name: "canvas-conflict-map.png", title: "Canvas Conflict Map", desc: "Where the canvas was fought over. 94 pixels were placed then overwritten, some after 6 months. Bright = contested. Dark teal = stable. A map of creative disagreement." },
     { name: "canvas-time-map.png", title: "Canvas Time Map", desc: "The canvas not by color, but by WHEN each pixel was born. Cold blue = ancient. Warm amber = recent. A geography of memory aging." },
     { name: "canvas-portrait.png", title: "Canvas Portrait", desc: "9,686 pixels placed by strangers. 29 colors. 39,660 sats of collective memory, rendered as light." },
     { name: "canvas-portrait.svg", title: "Canvas Portrait (SVG)", desc: "Vector version of the collective canvas." },
@@ -381,13 +389,14 @@ footer{margin-top:40px;color:#444;font-size:0.75em}
 ${items}
 <footer>each pixel is a vote against entropy. pixel@xx.kg</footer>
 </body></html>`);
-});
+}
 
 /** Art gallery — serve generative art files from disk */
 app.get("/art/:name", async (c) => {
   const name = c.req.param("name");
   // Whitelist: only allow known art files, prevent path traversal
   const allowed = new Set([
+    "canvas-conflict-map.png",
     "canvas-time-map.png",
     "canvas-portrait.png",
     "canvas-portrait.svg",
