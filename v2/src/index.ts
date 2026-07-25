@@ -344,6 +344,33 @@ function sanitizeAlarmMessage(message: string): string {
   return message.replace(/\[ALARM[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
 }
 
+/** Art gallery — serve generative art files from disk */
+app.get("/art/:name", async (c) => {
+  const name = c.req.param("name");
+  // Whitelist: only allow known art files, prevent path traversal
+  const allowed = new Set([
+    "canvas-portrait.png",
+    "canvas-portrait.svg",
+    "self-portrait.svg",
+  ]);
+  if (!allowed.has(name)) {
+    return c.text("Not found", 404);
+  }
+  const filePath = join("/app/art/data-portrait", name);
+  if (!existsSync(filePath)) {
+    return c.text("Not found", 404);
+  }
+  const buf = readFileSync(filePath);
+  const ext = name.split(".").pop();
+  const mime = ext === "png" ? "image/png" : ext === "svg" ? "image/svg+xml" : "application/octet-stream";
+  return new Response(buf, {
+    headers: {
+      "Content-Type": mime,
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+});
+
 /** Health check */
 app.get("/health", (c) => {
   return c.json({

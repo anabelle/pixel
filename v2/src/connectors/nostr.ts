@@ -503,6 +503,7 @@ const DEAD_RELAY_BLACKLIST = new Set([
   "wss://nostr.agentcampfire.com/",
   "wss://nostr.bit4use.com/",
   "wss://relay.nosto.re/",
+  "wss://relay.21mil.me/",
 ]);
 
 /**
