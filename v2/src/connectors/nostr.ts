@@ -466,14 +466,17 @@ export async function sendNostrDm(
 /** Publish a Nostr event with one reconnect retry for transient relay failures. */
 export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTimeoutMs?: number }): Promise<void> {
   // Strip relay hints pointing to dead relays from event tags.
-  // NDK re-discovers relays from "e" and "a" tag relay hints, re-adding
-  // dead URLs to the pool faster than prune can clear them.
   stripDeadRelayHints(event);
 
-  // Prune dead relays before every publish — the pool re-pollutes between
-  // prune intervals, and publish iterates all pool relays causing 5×10s
-  // timeouts on dead ones.
+  // Prune dead relays before every publish.
   pruneDeadRelaysFromPool();
+
+  // Build an explicit relay set from only configured relays.
+  // NDK's event.publish() computes its own relay coverage from event tags
+  // (parent event relay hints), which includes dead relays that NDK
+  // auto-discovered from incoming events. By explicitly passing a relay
+  // set, we override NDK's computation and only publish to healthy relays.
+  const configuredRelaySet = buildConfiguredRelaySet(event.ndk);
 
   let lastError: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -481,7 +484,11 @@ export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTi
       if (attempt > 0) {
         await reconnectNostrRelays(options?.reconnectTimeoutMs ?? 10_000);
       }
-      await event.publish();
+      if (configuredRelaySet) {
+        await event.publish(configuredRelaySet);
+      } else {
+        await event.publish();
+      }
       return;
     } catch (err: any) {
       lastError = err;
@@ -533,6 +540,36 @@ function stripDeadRelayHints(event: NDKEvent): void {
         }
       }
     }
+  }
+}
+
+/**
+ * Build an NDKRelaySet containing only explicitly configured relays.
+ * Used to override NDK's automatic relay-set computation in event.publish(),
+ * which includes dead relays auto-discovered from incoming event tags.
+ */
+function buildConfiguredRelaySet(ndk: any): any {
+  if (!ndk) return null;
+  try {
+    const configuredUrls = (process.env.NOSTR_RELAYS ?? "wss://nos.lol")
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    const pool = ndk.pool;
+    if (!pool?.relays) return null;
+    const relays: any[] = [];
+    for (const url of configuredUrls) {
+      const normalized = url.endsWith("/") ? url : url + "/";
+      const relay = pool.relays.get(normalized);
+      if (relay) relays.push(relay);
+    }
+    if (relays.length === 0) return null;
+    // NDKRelaySet constructor takes (relays, ndk)
+    const { NDKRelaySet } = require("@nostr-dev-kit/ndk");
+    const set = new NDKRelaySet(new Set(relays), ndk);
+    return set;
+  } catch {
+    return null;
   }
 }
 
