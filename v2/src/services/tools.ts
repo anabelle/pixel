@@ -38,6 +38,30 @@ import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.
 
 const OPENVIKING_ROOT = "/app/data/openviking";
 const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
+// Circuit breaker: after N consecutive failures, stop trying OpenViking
+// for a cooldown period to avoid spamming logs on every engagement interaction
+let openvikingFailures = 0;
+let openvikingDisabledUntil = 0;
+const OPENVIKING_FAILURE_THRESHOLD = 3;
+const OPENVIKING_COOLDOWN_MS = 10 * 60 * 1000; // 10 min
+
+function isOpenVikingAvailable(): boolean {
+  if (!OPENVIKING_ENDPOINT) return false;
+  if (Date.now() < openvikingDisabledUntil) return false;
+  return true;
+}
+
+function markOpenVikingFailure(): void {
+  openvikingFailures++;
+  if (openvikingFailures >= OPENVIKING_FAILURE_THRESHOLD) {
+    openvikingDisabledUntil = Date.now() + OPENVIKING_COOLDOWN_MS;
+    console.warn(`[openviking] ${openvikingFailures} consecutive failures — disabling recall for ${OPENVIKING_COOLDOWN_MS / 1000}s`);
+  }
+}
+
+function markOpenVikingSuccess(): void {
+  if (openvikingFailures > 0) openvikingFailures = 0;
+}
 
 async function getInnerLifeProjectApi() {
   const mod = await import("./inner-life.js");
@@ -393,7 +417,7 @@ export async function commitToOpenViking(userId: string, conversationText: strin
  * project tracking, and group lore, not merely for “did the user already say this?” cases.
  */
 export async function recallFromOpenViking(userId: string, query: string, limit: number = 4): Promise<string> {
-  if (!OPENVIKING_ENDPOINT || !query.trim()) return "";
+  if (!isOpenVikingAvailable() || !query.trim()) return "";
 
   const subject = await resolveCanonicalSubject(userId);
   const effectiveUserId = subject?.canonicalId ?? userId;
@@ -411,6 +435,7 @@ export async function recallFromOpenViking(userId: string, query: string, limit:
       }),
     });
 
+    markOpenVikingSuccess();
     const memories = result?.result?.memories ?? [];
     if (!Array.isArray(memories) || memories.length === 0) return "";
 
@@ -424,7 +449,10 @@ export async function recallFromOpenViking(userId: string, query: string, limit:
       .filter(Boolean)
       .join("\n");
   } catch (err: any) {
-    console.warn(`[openviking] Recall failed for ${userId}: ${err.message}`);
+    markOpenVikingFailure();
+    if (openvikingFailures <= OPENVIKING_FAILURE_THRESHOLD) {
+      console.warn(`[openviking] Recall failed for ${userId}: ${err.message}`);
+    }
     return "";
   }
 }
