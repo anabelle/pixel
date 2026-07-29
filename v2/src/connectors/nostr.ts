@@ -265,6 +265,101 @@ export function getNostrInstance(): { ndk: NDK; pubkey: string } | null {
 }
 
 /**
+ * Raw WebSocket fetch that bypasses NDK's broken fetchEvents under Bun.
+ *
+ * NDK's fetchEvents relies on WebSocket features Bun doesn't implement
+ * ('upgrade' event, 'unexpected-response' event), causing silent hangs
+ * that trip the circuit breaker even when relays are healthy.
+ *
+ * This function opens a raw WebSocket to each configured relay, sends a
+ * NIP-01 REQ, collects events, and returns them. It's the same protocol
+ * NDK uses internally, but without the broken WebSocket wrapper.
+ */
+export async function rawFetchEvents(
+  filter: Record<string, any>,
+  timeoutMs: number = 10_000
+): Promise<any[]> {
+  if (!sharedPubkey) return [];
+  const relayUrls = (process.env.NOSTR_RELAYS ?? "wss://nos.lol")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+
+  const subId = `pixel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const allEvents: any[] = [];
+  const seenIds = new Set<string>();
+
+  const promises = relayUrls.map((url) =>
+    fetchFromSingleRelay(url, filter, subId, timeoutMs)
+      .then((events) => {
+        for (const ev of events) {
+          if (!seenIds.has(ev.id)) {
+            seenIds.add(ev.id);
+            allEvents.push(ev);
+          }
+        }
+      })
+      .catch(() => {
+        // individual relay failure is fine — we have others
+      })
+  );
+
+  await Promise.all(promises);
+  return allEvents;
+}
+
+async function fetchFromSingleRelay(
+  relayUrl: string,
+  filter: Record<string, any>,
+  subId: string,
+  timeoutMs: number
+): Promise<any[]> {
+  return new Promise((resolve) => {
+    const events: any[] = [];
+    let ws: WebSocket | null = null;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try { ws?.close(); } catch {}
+      resolve(events);
+    };
+
+    const timer = setTimeout(finish, timeoutMs);
+
+    try {
+      ws = new WebSocket(relayUrl);
+
+      ws.onopen = () => {
+        const req = JSON.stringify(["REQ", subId, filter]);
+        try { ws?.send(req); } catch {}
+      };
+
+      ws.onmessage = (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data as string);
+          if (data[0] === "EVENT" && data[1] === subId && data[2]) {
+            events.push(data[2]);
+          } else if (data[0] === "EOSE" && data[1] === subId) {
+            clearTimeout(timer);
+            finish();
+          }
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        clearTimeout(timer);
+        finish();
+      };
+    } catch {
+      clearTimeout(timer);
+      finish();
+    }
+  });
+}
+
+/**
  * Nostr Engagement Circuit Breaker
  *
  * Problem: When relays become unreachable, all 3 engagement loops (notification,
