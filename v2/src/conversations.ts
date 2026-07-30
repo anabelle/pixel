@@ -24,6 +24,11 @@ const MAX_CONTEXT_MESSAGES = 100;
 // When context hits this threshold, compaction is triggered
 const COMPACTION_THRESHOLD = 80;
 
+// Also trigger compaction when total context characters exceed this
+// (~75K tokens) — prevents long Nostr threads from exceeding the model
+// context window even with few messages (e.g. 43 messages × 12K chars each)
+const COMPACTION_CHAR_THRESHOLD = 300_000;
+
 // After compaction, keep this many recent messages intact
 const KEEP_RECENT_MESSAGES = 40;
 
@@ -236,11 +241,24 @@ export function getConversationStats(userId: string): {
 
 /**
  * Check if a user's context needs compaction.
- * Returns true when context reaches COMPACTION_THRESHOLD.
+ * Returns true when context reaches COMPACTION_THRESHOLD messages
+ * OR COMPACTION_CHAR_THRESHOLD total characters (whichever comes first).
  */
 export function needsCompaction(userId: string): boolean {
   const messages = loadContext(userId);
-  return messages.length >= COMPACTION_THRESHOLD;
+  if (messages.length >= COMPACTION_THRESHOLD) return true;
+  // Check total character count for long-message threads (e.g. Nostr philosophical exchanges)
+  let totalChars = 0;
+  for (const m of messages) {
+    const content = typeof m.content === "string"
+      ? m.content
+      : Array.isArray(m.content)
+        ? m.content.map((c: any) => (typeof c === "string" ? c : c?.text ?? "")).join("")
+        : JSON.stringify(m.content ?? "");
+    totalChars += content.length;
+    if (totalChars >= COMPACTION_CHAR_THRESHOLD) return true;
+  }
+  return false;
 }
 
 /**
@@ -253,12 +271,14 @@ export function getMessagesForCompaction(userId: string): {
   toKeep: any[];
 } {
   const messages = loadContext(userId);
-  if (messages.length < COMPACTION_THRESHOLD) {
+  if (messages.length < COMPACTION_THRESHOLD && !needsCompaction(userId)) {
     return { toSummarize: [], toKeep: messages };
   }
 
   // Find a clean split point near KEEP_RECENT_MESSAGES from the end
-  const splitIdx = findCleanSplitIndex(messages, messages.length - KEEP_RECENT_MESSAGES);
+  // (or fewer if the thread is smaller but char-heavy)
+  const keepCount = Math.min(KEEP_RECENT_MESSAGES, Math.floor(messages.length / 2));
+  const splitIdx = findCleanSplitIndex(messages, messages.length - keepCount);
   const toKeep = messages.slice(splitIdx);
   const toSummarize = messages.slice(0, splitIdx);
   return { toSummarize, toKeep };

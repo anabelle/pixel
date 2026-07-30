@@ -1410,9 +1410,9 @@ async function notificationLoop(): Promise<void> {
       // Could be no events or could be all relays failing — check circuit state
       // If circuit is still closed, this is just "no new notifications"
       onNostrFetchSuccess();
+      lastNotificationCheckTime = Date.now();
       audit("engagement_check", "Nostr notifications: 0 replies, 0 reactions");
       saveHeartbeatState();
-      scheduleNextNotification();
       return;
     }
 
