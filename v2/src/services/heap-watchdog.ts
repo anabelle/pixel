@@ -40,6 +40,7 @@ const STATE_PATH = join(DATA_DIR, "heap-watchdog.json");
 const SAMPLE_INTERVAL_MS = 30_000;          // 30 seconds
 const SPIKE_THRESHOLD_PCT = 20;             // >20% jump over reference = spike
 const SPIKE_MIN_ABSOLUTE_DELTA = 20 * 1024 * 1024; // AND must be >20MB absolute delta — filters noise at low baseline (e.g. 55MB→66MB = 11MB delta trips 20% but is harmless)
+const MITIGATION_CACHE_CLEAR_THRESHOLD = 150 * 1024 * 1024; // Only clear caches (e.g. skill-graph) when heap >150MB — clearing at low heap causes rebuild churn that prevents baseline recovery
 const REFERENCE_WINDOW = 8;                 // compare against max of last N samples (excluding current)
 const BASELINE_WINDOW = 20;                 // window for reporting median in status
 const SPIKE_ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 min between owner alerts for sustained spikes
@@ -176,16 +177,23 @@ function lastSample(): Sample | null {
  * Run mitigation steps after a spike is detected.
  * Best-effort; never throws.
  */
-function runMitigation(reason: string): void {
+function runMitigation(reason: string, currentHeap: number = 0): void {
   mitigationsTriggered++;
   const cleared: string[] = [];
 
-  for (const cache of clearableCaches) {
-    try {
-      cache.clear();
-      cleared.push(cache.name);
-    } catch (err: any) {
-      console.error(`[heap-watchdog] Failed to clear cache ${cache.name}:`, err.message);
+  // Only clear caches when heap is genuinely high.
+  // Clearing skill-graph at low heap causes an immediate rebuild that
+  // allocates as much memory as was freed — preventing baseline recovery.
+  // This was the root cause of 24h baseline degradation (settling 40-95%
+  // above floor instead of returning).
+  if (currentHeap >= MITIGATION_CACHE_CLEAR_THRESHOLD) {
+    for (const cache of clearableCaches) {
+      try {
+        cache.clear();
+        cleared.push(cache.name);
+      } catch (err: any) {
+        console.error(`[heap-watchdog] Failed to clear cache ${cache.name}:`, err.message);
+      }
     }
   }
 
@@ -286,8 +294,8 @@ async function evaluate(): Promise<void> {
         rssMb: mb(sample.rss),
       });
 
-      // Always run mitigation (clears caches)
-      runMitigation("spike");
+      // Run mitigation (only clears caches when heap is genuinely high)
+      runMitigation("spike", sample.heapUsed);
 
       // Stage the spike for recovery check on next sample
       pendingSpike = {
@@ -344,7 +352,7 @@ async function evaluate(): Promise<void> {
       heapUsedMb: mb(sample.heapUsed),
       streak: pressureStreak,
     });
-    runMitigation("pressure");
+    runMitigation("pressure", sample.heapUsed);
     pressureStreak = 0;
     if (now - lastPressureAlertAt > PRESSURE_COOLDOWN_MS) {
       lastPressureAlertAt = now;
