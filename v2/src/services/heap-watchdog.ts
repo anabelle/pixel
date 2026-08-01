@@ -45,8 +45,8 @@ const REFERENCE_WINDOW = 8;                 // compare against max of last N sam
 const BASELINE_WINDOW = 20;                 // window for reporting median in status
 const SPIKE_ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 min between owner alerts for sustained spikes
 const PRESSURE_COOLDOWN_MS = 15 * 60 * 1000;// critical pressure re-alert window
-const RSS_DANGER_BYTES = 380 * 1024 * 1024; // 380MB — close to 512MB cgroup limit
-const RSS_CRITICAL_BYTES = 400 * 1024 * 1024; // 400MB — always alert regardless of recovery
+const RSS_DANGER_BYTES = 600 * 1024 * 1024; // 600MB — close to 768MB cgroup limit
+const RSS_CRITICAL_BYTES = 650 * 1024 * 1024; // 650MB — always alert regardless of recovery
 const PRESSURE_CONSECUTIVE_SAMPLES = 3;     // must be sustained across N samples
 const MAX_HISTORY = 60;                     // keep last 60 samples in state file
 
