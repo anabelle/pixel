@@ -35,9 +35,9 @@ const GROUP_SUMMARY_INTERVAL = 8; // Update group summary every N messages
 const groupMessageCounts = new Map<string, number>();
 
 // ─── Z.AI Rate-Limit Circuit Breaker ──────────────────────────
-// Sticky cooldown that short-circuits the primary model (glm-5.2) when
+// Sticky cooldown that short-circuits the primary model (glm-5.3) when
 // Z.AI is actively returning 429s. Without this, every new conversation
-// call re-attempts glm-5.2 first even during a known rate-limit window,
+// call re-attempts glm-5.3 first even during a known rate-limit window,
 // wasting latency and racking up error counts.
 const ZAI_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000; // 5 min — Z.AI uses rolling 5h window
 let zaiRateLimitUntil = 0;
@@ -240,9 +240,18 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 /** Construct a Z.AI model object (not in pi-ai's registry) */
 function makeZaiModel(modelId: string, reasoning: boolean = false) {
   // GLM-5.x series shares the same large-context / high-output envelope.
-  // glm-5.2 is the current primary; glm-5.1 retained as explicit fallback
-  // (Z.AI silently routes 5.1 -> 5.2 server-side, so both behave identically).
-  const isGlm5Series = modelId === "glm-5.1" || modelId === "glm-5.2";
+  // glm-5.3 is the current primary (2026-08-18); glm-5.2/5.1 retained as
+  // explicit fallbacks (Z.AI silently routed 5.1 -> 5.2 server-side).
+  const isGlm5Series = modelId === "glm-5.1" || modelId === "glm-5.2" || modelId === "glm-5.3";
+  // GLM-5.3 BREAKING CHANGE: thinking can no longer be disabled server-side —
+  // `thinking:{type:"disabled"}` is silently ignored (always-on ~36+ reasoning tokens
+  // even for trivial prompts). Effort now goes through top-level `reasoning_effort`
+  // (empirically verified 2026-08-18: "low"→0 reasoning tokens, "high"→~73).
+  // Override pi-ai's zai binary-thinking compat so reasoning_effort is sent instead.
+  const compat =
+    modelId === "glm-5.3"
+      ? { thinkingFormat: "openai" as const, supportsReasoningEffort: true }
+      : undefined;
   return {
     id: modelId,
     name: modelId.toUpperCase(),
@@ -254,6 +263,7 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // flat rate plan
     contextWindow: isGlm5Series ? 204800 : 128000,
     maxTokens: isGlm5Series ? 131072 : 16384,
+    ...(compat ? { compat } : {}),
   } as any;
 }
 
@@ -694,7 +704,7 @@ export async function promptWithHistory(
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
-  // GLM-5.2 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
+  // GLM-5.3 → Gemini 3 Flash → Gemini 2.5 Pro → Gemini 2.5 Flash → Gemini 2.0 Flash
   const MAX_RETRIES = 4;
   let responseText = "";
   let usedModelId = selectedModel?.id ?? (process.env.AI_MODEL ?? "gemini-3-flash-preview"); // Track which model actually responded

@@ -182,8 +182,15 @@ notify_owner_and_retry() {
 }
 
 select_model() {
-  # First choice: Z.AI GLM-5.2 via coding plan (paid, already have the key)
-  # copilot/gpt models started returning "model not supported" in late June 2026
+  # First choice: Z.AI GLM-5.3 via coding plan (thinking always-on since 5.3 — verified 2026-08-18).
+  # NOTE: opencode's `models` registry can lag behind Z.AI releases — glm-5.3 runs fine
+  # even when unlisted, so selection is probe-gated, not registry-gated.
+  if probe_zai; then
+    echo "zai-coding-plan/glm-5.3"
+    return 0
+  fi
+
+  # Second choice: GLM-5.2 (previous primary)
   if model_exists "zai-coding-plan/glm-5.2" && probe_zai; then
     echo "zai-coding-plan/glm-5.2"
     return 0

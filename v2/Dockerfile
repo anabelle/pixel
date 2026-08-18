@@ -28,7 +28,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN python3 -m venv /opt/openviking-venv && \
     . /opt/openviking-venv/bin/activate && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir openviking==0.2.6
+    pip install --no-cache-dir openviking==0.2.15
+    # 2026-08-18: 0.2.6 yanked from PyPI — pinned to latest stable 0.2.x (same API line)
 
 # ---- Runtime ----
 FROM oven/bun:1-alpine
