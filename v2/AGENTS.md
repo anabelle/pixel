@@ -923,3 +923,26 @@ After a fresh WhatsApp pair (creds wiped + re-paired), **sends to LID-based cont
 - History handler live — when LID contacts message Pixel organically, their messages WILL be processed
 
 **Lesson:** WhatsApp's LID system creates a hard wall for proactive messaging after device resets. The practical recovery strategy is: (1) history handler for incoming messages (automatic catch-up), (2) proactive sends only work for phone-number-based contacts, (3) never pair a device 3 times in 30 minutes unless you want to trigger anti-abuse throttling.
+
+### Session 73: Dispatch Session Surgery + GLM-5.3 Migration
+
+**Problem (1):** The persistent Syntropy opencode session (ses_3a069e7e) went silent — dispatch runs since Aug 15 exited in 2-3s with no LLM call; interactive messages got no replies.
+
+**Root cause:** Failed runs appended user messages that never got assistant replies. The dangling pending-prompt state made every subsequent opencode run exit silently at step 0 (no error, exit 0). Compounding: 6 months / 4,446 messages had bloated opencode.db to 1.17GB; a failed manual /compact left an orphaned compaction marker.
+
+**Fix:**
+1. Backed up DB to `backups/opencode-db-pre-surgery-20260818.db` before any surgery
+2. Emptied the session (session ID unchanged — dispatch needs no config change)
+3. Verified recovery: two clean exchanges, proper user/assistant alternation
+4. VACUUM: 1.1GB+175MB WAL → 945MB
+5. Prevention: `v2/scripts/prune-opencode-session.sh` (cron daily 3:50am) — caps session at 100 msgs, removes dangling unanswered prompts >30min old
+
+**Problem (2):** Operator greenlit GLM-5.2 → GLM-5.3 swap (mailbox messages were consumed by the wedged dispatch and lost — recovered from the DB backup).
+
+**Breaking change (empirically verified):** GLM-5.3 cannot disable thinking — `thinking:{type:"disabled"}` is silently ignored (~36+ reasoning tokens always-on, even trivial prompts). Effort now flows through top-level `reasoning_effort` ("low"→0 reasoning tokens, "high"→~73). pi-ai's zai compat is binary-thinking-only, so `makeZaiModel()` now sets `compat: {thinkingFormat: "openai", supportsReasoningEffort: true}` for glm-5.3 only.
+
+**Changes:** docker-compose `AI_MODEL=glm-5.3`; makeZaiModel glm-5.3 series + compat override; cost-monitor entry; dispatch select_model prefers glm-5.3 (probe-gated, not registry-gated — opencode's model registry lags Z.AI releases); OpenViking repinned 0.2.6→0.2.15 (0.2.6 yanked from PyPI, broke builds).
+
+**Verification:** container healthy; AGFS + OpenViking both 200 on 0.2.15; agent log shows `model: glm-5.3` serving requests; clean-room chat via fresh userId works; background paths untouched (glm-4.7 still honors thinking-disabled — only 5.3 lost that).
+
+**Lesson:** (1) An LLM session that accepts writes but never responds is usually wedged by dangling state, not by the model — check message-role alternation in the session store before blaming providers. (2) When a provider makes a param silently a no-op, probe empirically and route around it via transport-level compat overrides — don't trust the old parameter shape. (3) Dead pins on PyPI surface the moment layer cache evaporates — pins to yanked versions are landmines with a fuse measured in cache lifetime.
