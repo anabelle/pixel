@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { join } from "path";
 import { loadCharacter } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
+import { stripThinkingFromResponse } from "../agent.js";
 import { getNostrInstance } from "../connectors/nostr.js";
 import { getRevenueStats } from "./revenue.js";
 import { getUserStats } from "./users.js";
@@ -957,18 +958,39 @@ function autoHarvestProjects(garden: Garden): void {
   writeLivingDoc(IDEA_GARDEN_PATH, renderGarden(garden));
 }
 
+/** Scrub raw LLM output before it can land in a living document.
+ * Catches what stripThinkingFromResponse doesn't: chat-template token leakage
+ * (GLM/Qwen family) like "COMMENTary<|message|>..." or "<|tool_calls|>" —
+ * these tokens never legitimately appear in inner-life output, so their
+ * presence marks everything before the last leak as template garbage. */
+function sanitizeInnerLlmOutput(text: string): string {
+  if (!text) return text;
+  let out = stripThinkingFromResponse(text);
+  const tokenLeak = /<\|[^|>]{1,40}\|>/;
+  if (tokenLeak.test(out)) {
+    const parts = out.split(tokenLeak);
+    let tail = parts[parts.length - 1].trim();
+    // Drop a leading role-label line ("assistant", "user", ...) left behind by the template
+    tail = tail.replace(/^(assistant|user|system|observation|tool)\s*:?\s*\n/i, "").trim();
+    // If nothing usable follows the leak, fall back to scrubbing tokens in place
+    out = tail.length > 0 ? tail : out.replace(new RegExp(tokenLeak.source, "g"), " ").replace(/\s{2,}/g, " ").trim();
+  }
+  return out;
+}
+
 /** Run a simple LLM prompt and return the response text (with 90s per-call timeout, full fallback cascade).
  * Per-phase timeout caps each LLM call so one slow phase can't blow the entire cycle budget.
  * Tools are intentionally empty — inner-life phases reflect/ideate, they don't need tool access.
  * This also avoids the "at most 64 tools are allowed" 400 error from gpt-oss-20b:free. */
 async function llmCall(systemPrompt: string, userPrompt: string): Promise<string> {
-  return backgroundLlmCall({
+  const raw = await backgroundLlmCall({
     systemPrompt,
     userPrompt,
     tools: [],
     label: "inner-life",
     timeoutMs: 90_000, // 90s per phase — leaves room for multiple phases in the 240s cycle
   });
+  return sanitizeInnerLlmOutput(raw);
 }
 
 // ============================================================
