@@ -457,6 +457,27 @@ export async function recallFromOpenViking(userId: string, query: string, limit:
   }
 }
 
+/** Load the long-form relationship story for a user (OpenViking story.md).
+ * Surfaces the otherwise write-only story files as live relationship context.
+ * Returns "" for groups, missing/empty stories, or any failure — never throws. */
+export async function loadUserStory(userId: string, isGroup: boolean): Promise<string> {
+  if (isGroup) return "";
+  try {
+    const subject = await resolveCanonicalSubject(userId);
+    const effectiveUserId = subject?.canonicalId ?? userId;
+    const storyPath = `${OPENVIKING_ROOT}/viking/pixel/user/${effectiveUserId}/story.md`;
+    if (!existsSync(storyPath)) return "";
+    const raw = readFileSync(storyPath, "utf8").trim();
+    if (!raw || raw.length < 50) return "";
+    const MAX_STORY_CHARS = 2800;
+    return raw.length > MAX_STORY_CHARS
+      ? raw.slice(0, MAX_STORY_CHARS) + "\n\n(story truncated for context — full text available via the viking_stories tool)"
+      : raw;
+  } catch {
+    return "";
+  }
+}
+
 async function runtimeVikingBrowse(uri: string, view: "list" | "tree" | "stat", recursive?: boolean): Promise<string> {
   const { headers } = getOpenVikingHeaders();
 
@@ -3613,6 +3634,56 @@ const memCommitTool: AgentTool<typeof memCommitSchema> = {
   },
 };
 
+const vikingStoriesSchema = Type.Object({
+  subject: Type.Optional(Type.String({ description: "User subject id (e.g. tg-892935151). Omit to list all subjects that have a story with size/date/title." })),
+});
+
+const vikingStoriesTool: AgentTool<typeof vikingStoriesSchema> = {
+  name: "viking_stories",
+  label: "Review Relationship Stories",
+  description: "List or read the long-form relationship stories (OpenViking story.md per user). Without a subject: lists every story with author subject, size, last update, and title. With a subject: returns the full story text. Use to review relationship memory quality and spot stale or orphaned stories.",
+  parameters: vikingStoriesSchema,
+  execute: async (_id, { subject }) => {
+    const usersDir = `${OPENVIKING_ROOT}/viking/pixel/user`;
+    try {
+      if (!existsSync(usersDir)) {
+        return { content: [{ type: "text" as const, text: "No OpenViking user directory yet — no stories exist." }], details: { count: 0 } };
+      }
+
+      if (subject) {
+        const storyPath = `${usersDir}/${subject.replace(/[^a-zA-Z0-9_@.:\/-]/g, "")}/story.md`;
+        if (!existsSync(storyPath)) {
+          return { content: [{ type: "text" as const, text: `No story found for ${subject}.` }], details: { found: false } };
+        }
+        const content = readFileSync(storyPath, "utf8");
+        auditToolUse("viking_stories", { subject }, { read: true, chars: content.length });
+        return { content: [{ type: "text" as const, text: content }], details: { found: true, chars: content.length } };
+      }
+
+      const rows: string[] = [];
+      for (const entry of readdirSync(usersDir)) {
+        const storyPath = `${usersDir}/${entry}/story.md`;
+        try {
+          if (!statSync(storyPath).isFile()) continue;
+          const st = statSync(storyPath);
+          const content = readFileSync(storyPath, "utf8");
+          const title = (content.match(/^#\s+(.+)$/m) || [])[1]?.trim() || "(untitled)";
+          const updated = st.mtime.toISOString().split("T")[0];
+          rows.push(`- ${entry} — "${title}" (${st.size} bytes, updated ${updated})`);
+        } catch {}
+      }
+      const text = rows.length > 0
+        ? `Relationship stories (${rows.length}):\n${rows.join("\n")}`
+        : "No relationship stories found yet.";
+      auditToolUse("viking_stories", {}, { listed: rows.length });
+      return { content: [{ type: "text" as const, text }], details: { count: rows.length } };
+    } catch (err: any) {
+      auditToolUse("viking_stories", { subject }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `viking_stories failed: ${err.message}` }], details: { error: err.message } };
+    }
+  },
+};
+
 // ─── INTROSPECT ───────────────────────────────────────────────
 
 const introspectSchema = Type.Object({
@@ -4236,6 +4307,7 @@ export const pixelTools = [
   vikingReadTool,
   vikingSearchTool,
   memCommitTool,
+  vikingStoriesTool,
   scheduleAlarmTool,
   listAlarmsTool,
   listAllAlarmsTool,

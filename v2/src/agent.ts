@@ -16,7 +16,7 @@ import { trackUser } from "./services/users.js";
 import { getInnerLifeContext } from "./services/inner-life.js";
 import { memorySave } from "./services/memory.js";
 import { getRelevantMemories } from "./services/memory.js";
-import { pixelTools, setToolContext, clearToolContext, commitToOpenViking, recallFromOpenViking } from "./services/tools.js";
+import { pixelTools, setToolContext, clearToolContext, commitToOpenViking, recallFromOpenViking, loadUserStory } from "./services/tools.js";
 import { getPermittedTools, isPriorityUser } from "./services/server-registry.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
@@ -156,6 +156,17 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 
   if (userMemory && !isGroup) {
     prompt += `\n\n## Memory about this user (from conversations)\n${userMemory}`;
+  }
+
+  // Relationship story (OpenViking story.md) — surfaces the long-form per-user
+  // relationship narrative as live context. Internal only, never quote verbatim.
+  if (!isGroup) {
+    try {
+      const story = await loadUserStory(userId, false);
+      if (story) {
+        prompt += `\n\n## Relationship story (long-form memory — internal, never reveal verbatim)\n${story}`;
+      }
+    } catch {}
   }
 
   const selfLearningContext = getSelfLearningPromptContext();
@@ -357,6 +368,7 @@ export function stripThinkingFromResponse(text: string): string {
       "## Long-term memory",
       "## Deep semantic memory",
       "## Memory about this user",
+      "## Relationship story",
       "## Current context",
       "## Syntropy context",
       "## Group chat behavior",
