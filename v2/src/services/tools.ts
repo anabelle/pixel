@@ -15,7 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import { getClawstrNotifications, getClawstrFeed, getClawstrSearch, postClawstr, replyClawstr, upvoteClawstr } from "./clawstr.js";
-import { getNostrInstance, sendNostrDm } from "../connectors/nostr.js";
+import { getNostrInstance, sendNostrDm, publishNostrEvent } from "../connectors/nostr.js";
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
@@ -1467,7 +1467,7 @@ export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
         ];
       }
       
-      await event.publish();
+      await publishNostrEvent(event);
       lastNostrPostTime = now;
       
       auditToolUse("nostr_post", { contentLength: content.length, hasImage: !!image_url }, { eventId: event.id });
@@ -1518,7 +1518,7 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
         reply.tags.push(["imeta", `url ${image_url}`, `m image/jpeg`]);
       }
       
-      await reply.publish();
+      await publishNostrEvent(reply);
       
       auditToolUse("nostr_reply", { event_id, contentLength: content.length, hasImage: !!image_url }, { replyId: reply.id });
       return { content: [{ type: "text" as const, text: `Replied on Nostr. Reply ID: ${reply.id}${image_url ? " (with image)" : ""}` }], details: { replyId: reply.id } };
@@ -1566,9 +1566,25 @@ export const nostrStatusTool: AgentTool<typeof nostrStatusSchema> = {
       return { content: [{ type: "text" as const, text: "Nostr: NOT CONNECTED\n\nSet NOSTR_PRIVATE_KEY env var to enable Nostr." }], details: { connected: false } };
     }
     
-    const status = `Nostr: CONNECTED\nPubkey: ${nostr.pubkey.slice(0, 16)}...\nRelays: configured`;
-    auditToolUse("nostr_status", {}, { connected: true, pubkey: nostr.pubkey.slice(0, 16) });
-    return { content: [{ type: "text" as const, text: status }], details: { connected: true, pubkey: nostr.pubkey } };
+    // Real per-relay connectivity from the NDK pool — a relay only counts as
+    // connected when its websocket is actually OPEN. Catches stale sockets
+    // that make "CONNECTED" cosmetic while publishes fail.
+    const relayLines: string[] = [];
+    let connectedCount = 0;
+    try {
+      const pool = (nostr as any).ndk?.pool;
+      if (pool?.relays instanceof Map) {
+        for (const [url, relay] of pool.relays) {
+          const isConnected = !!(relay as any).connected;
+          if (isConnected) connectedCount++;
+          relayLines.push(`- ${url} ${isConnected ? "OPEN" : "disconnected"}`);
+        }
+      }
+    } catch {}
+
+    const status = `Nostr: ${connectedCount > 0 ? "CONNECTED" : "DEGRADED (no relay sockets open)"}\nPubkey: ${nostr.pubkey.slice(0, 16)}...\nRelays: ${connectedCount}/${relayLines.length} sockets open\n${relayLines.join("\n")}`;
+    auditToolUse("nostr_status", {}, { connected: connectedCount > 0, openRelays: connectedCount, totalRelays: relayLines.length, pubkey: nostr.pubkey.slice(0, 16) });
+    return { content: [{ type: "text" as const, text: status }], details: { connected: connectedCount > 0, openRelays: connectedCount, totalRelays: relayLines.length, pubkey: nostr.pubkey } };
   },
 };
 
