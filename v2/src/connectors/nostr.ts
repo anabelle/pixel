@@ -821,8 +821,36 @@ async function reconnectNostrRelays(timeoutMs: number = 10_000): Promise<void> {
     // breaker handles the "still broken" state via probe failures
     console.warn(`[nostr] connect() rejected during reconnect: ${err?.message ?? err}`);
   });
+
+  // ndk.connect() only resolves when ALL pool relays are open — a single
+  // unreachable relay (network-level timeout) would stall it past any sane
+  // deadline. Publishing only needs ONE open socket (requiredRelayCount=1),
+  // so race connect() against "any relay socket is actually OPEN".
+  const anyRelayOpen = new Promise<void>((resolve) => {
+    const isOpen = (): boolean => {
+      try {
+        const pool = (sharedNdk as any).pool;
+        if (pool?.relays instanceof Map) {
+          for (const [, relay] of pool.relays) {
+            if ((relay as any).connected) return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+    if (isOpen()) { resolve(); return; }
+    const iv = setInterval(() => {
+      if (isOpen()) {
+        clearInterval(iv);
+        resolve();
+      }
+    }, 200);
+    // Safety: never leak the interval if nothing ever opens
+    setTimeout(() => clearInterval(iv), timeoutMs + 5_000);
+  });
+
   const timeoutPromise = new Promise<void>((_, reject) => setTimeout(() => reject(new Error(`Reconnect timeout (${timeoutMs}ms)`)), timeoutMs));
-  await Promise.race([connectPromise, timeoutPromise]);
+  await Promise.race([anyRelayOpen, connectPromise, timeoutPromise]);
 }
 
 function decodeNostrBech32(value: string, prefix: string): string {
