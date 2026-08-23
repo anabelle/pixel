@@ -44,6 +44,8 @@ const PRICING: Record<string, { input: number; output: number; free: boolean }> 
   // Gemini embedding model (free tier)
   'gemini-embedding-001': { input: 0, output: 0, free: true },
   // OpenRouter (free tier)
+  'google/gemma-4-31b-it:free': { input: 0, output: 0, free: true },
+  // openai/gpt-oss-20b:free — dead as of 2026-08-22 (404). Retained for historical log entries.
   'openai/gpt-oss-20b:free': { input: 0, output: 0, free: true },
   // arcee-ai/trinity-large-preview:free — dead as of 2026-06-17 (404). Retained for historical log entries.
   'arcee-ai/trinity-large-preview:free': { input: 0, output: 0, free: true },

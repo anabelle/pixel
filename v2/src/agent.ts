@@ -1354,9 +1354,10 @@ export interface BackgroundLlmOptions {
 export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
   const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000 } = opts;
   const models = [
-    // OpenRouter free tier — was arcee-ai/trinity-large-preview:free (dead as of 2026-06-17, 404).
-    // gpt-oss-20b is the OpenAI open-weights model, reliable + fast for background tasks.
-    makeOpenRouterModel("openai/gpt-oss-20b:free"),
+    // OpenRouter free tier — transient shared-pool slugs, expect deaths:
+    // trinity-large:free (404 2026-06-17) → gpt-oss-20b:free (404 2026-08-22).
+    // The cascade absorbs slug deaths; glm-4.7 (Z.AI direct) is the workhorse.
+    makeOpenRouterModel("google/gemma-4-31b-it:free"),
     getSimpleModel(),
     getFallbackModel(1),
     getFallbackModel(2),
@@ -1416,18 +1417,11 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
     }
 
     if (llmError) {
-      const isRetryable = (
-        llmError.includes("429") || llmError.includes("RESOURCE_EXHAUSTED") ||
-        llmError.includes("quota") || llmError.includes("Insufficient balance") ||
-        llmError.includes("rate limit") || llmError.includes("Usage limit") ||
-        llmError.includes("insufficient_quota") || llmError.includes("model_not_found") ||
-        llmError.includes("provider_error") ||
-        llmError.includes("1308") || llmError.includes("timeout") ||
-        llmError.includes("403") || llmError.includes("PERMISSION_DENIED") ||
-        llmError.includes("denied access") ||
-        llmError.includes("402") || llmError.includes("balance is too low")
-      );
-      if (isRetryable && attempt < models.length - 1) {
+      // A 5-model cascade exists to absorb per-provider failures — continue to
+      // the next model on ANY error while attempts remain. Dead free slugs
+      // return 404 "unavailable for free" which the old retryable-list missed,
+      // silently killing every background call for days.
+      if (attempt < models.length - 1) {
         // Google quota hit — flip to fallback (billed) key
         if (model.provider === "google") {
           setGoogleKeyFallback();
