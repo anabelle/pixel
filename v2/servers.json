@@ -51,6 +51,33 @@
     ]
   },
   "servers": {
+    "pixelvps": {
+      "label": "Pixel VPS — developero relay (forced-command)",
+      "host": "172.18.0.1",
+      "user": "pixel",
+      "key_env": "PIXELVPS_SSH_KEY",
+      "wp_path": null,
+      "capabilities": ["ssh"],
+      "authorized_users": [
+        "wa-573108077316",
+        "wa-224343506325521",
+        "tg-892935151",
+        "developero",
+        "syntropy-admin"
+      ],
+      "authorized_groups": [],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/",
+        "mkfs",
+        "dd\\s+if=",
+        "shutdown",
+        "reboot",
+        "systemctl",
+        "docker\\s+restart",
+        "docker\\s+rm",
+        "docker\\s+stop"
+      ]
+    },
     "tallerubens": {
       "label": "Taller Rubens (WordPress)",
       "host": "68.66.224.4",

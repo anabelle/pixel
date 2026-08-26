@@ -27,7 +27,7 @@ import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
 import { appendToLog } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
 import { textToSpeech, isSuitableForVoice } from "../services/tts.js";
-import { existsSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "fs";
+import { existsSync, rmSync, writeFileSync, readFileSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 
 let sock: WASocket | null = null;
@@ -56,6 +56,54 @@ const WHATSAPP_TEXT_DEDUP_WINDOW_MS = 2_000;
 const recentWhatsAppTextSends = new Map<string, number>();
 const AUTH_DIR = process.env.WHATSAPP_AUTH_DIR ?? "/app/data/whatsapp-auth";
 const MEDIA_DIR = process.env.WHATSAPP_MEDIA_DIR ?? "/app/data/whatsapp-media";
+
+// ── LID alias map ── WhatsApp routes some DMs via LID (@lid) instead of phone JID.
+// Without mapping, the same human gets two isolated conversation threads with no
+// shared context (split-brain, case 2026-08-26: wa-573108077316 vs wa-224343506325521).
+// File format: { "<lidDigits>": "<phoneDigits>" }. Canonical userId is always the phone.
+const LID_ALIAS_FILE = process.env.WHATSAPP_LID_ALIAS_FILE ?? "/app/data/lid-aliases.json";
+let lidAliasCache: { map: Record<string, string>; mtimeMs: number } | null = null;
+
+function loadLidAliases(): Record<string, string> {
+  try {
+    const st = statSync(LID_ALIAS_FILE);
+    if (!lidAliasCache || st.mtimeMs !== lidAliasCache.mtimeMs) {
+      lidAliasCache = { map: JSON.parse(readFileSync(LID_ALIAS_FILE, "utf8")), mtimeMs: st.mtimeMs };
+    }
+    return lidAliasCache.map;
+  } catch {
+    return {};
+  }
+}
+
+/** Canonical userId for a DM jid: LIDs resolve to their phone alias when known */
+export function resolveWaUserId(jid: string): string {
+  const digits = jid.replace(/@(s\.whatsapp\.net|lid|g\.us)$/i, "").split("/")[0];
+  if (/@lid$/i.test(jid)) {
+    const phone = loadLidAliases()[digits];
+    if (phone) return `wa-${phone}`;
+    console.warn(`[whatsapp] UNMAPPED LID inbound (${digits}) — thread wa-${digits} is isolated. If known by phone, add {"${digits}": "<phoneDigits>"} to ${LID_ALIAS_FILE}`);
+  }
+  return `wa-${digits}`;
+}
+
+/** Fire-and-forget: learn phone→LID pairs via onWhatsApp when Baileys exposes them */
+function learnLidForJid(jid: string): void {
+  if (!/@s\.whatsapp\.net$/.test(jid) || typeof sock?.onWhatsApp !== "function") return;
+  sock.onWhatsApp(jid).then((res: any) => {
+    const rawLid = res?.[0]?.lid;
+    if (!rawLid) return;
+    const lidDigits = String(rawLid).replace(/@lid$/i, "");
+    const phoneDigits = jid.replace(/@s\.whatsapp\.net$/, "");
+    const map = loadLidAliases();
+    if (map[lidDigits] !== phoneDigits) {
+      map[lidDigits] = phoneDigits;
+      writeFileSync(LID_ALIAS_FILE, JSON.stringify(map, null, 2));
+      lidAliasCache = null; // invalidate
+      console.log(`[whatsapp] Learned LID alias ${lidDigits} -> ${phoneDigits}`);
+    }
+  }).catch(() => {});
+}
 const MAX_VIDEO_TRANSCRIBE_BYTES = 10 * 1024 * 1024;
 
 type PendingAck = {
@@ -296,6 +344,7 @@ async function sendWhatsAppTextOnce(jid: string, text: string, options?: any): P
     console.log(`[whatsapp] Skipping duplicate outbound text to ${jid}`);
     return;
   }
+  learnLidForJid(jid);
   await sock.sendMessage(jid, { text }, options);
   recentWhatsAppTextSends.set(dedupeKey, Date.now());
 }
@@ -688,7 +737,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       if (candidates.length === 0) continue;
 
       const jid = chat.id;
-      const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@lid", "")}`;
+      const userId = resolveWaUserId(jid);
       console.log(`[whatsapp] History catch-up: ${candidates.length} unread message(s) from ${userId}`);
 
       for (const msg of candidates) {
@@ -863,8 +912,8 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
       const text = extractWhatsAppText(msg.message);
 
       const jid = msg.key.remoteJid!;
-      // User ID: phone number without @s.whatsapp.net
-      const userId = `wa-${jid.replace("@s.whatsapp.net", "").replace("@g.us", "").replace("@lid", "")}`;
+      // Canonical user id (phone number); LIDs resolve via alias map
+      const userId = resolveWaUserId(jid);
       const isGroup = jid.endsWith("@g.us") || (msg.key.participant !== undefined && msg.key.participant !== null);
 
       // Handle audio messages separately (need async transcription)

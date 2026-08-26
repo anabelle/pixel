@@ -28,6 +28,20 @@ fi
 # Empty mailbox = exit silently
 [ ! -s "$MAILBOX" ] && exit 0
 
+# ── Route [for-developero] messages to the developero queue ──
+DEV_MAILBOX="/home/pixel/pixel/v2/data/developero-mailbox.jsonl"
+if grep -q '\[for-developero\]' "$MAILBOX" 2>/dev/null; then
+  grep '\[for-developero\]' "$MAILBOX" >> "$DEV_MAILBOX" || true
+  grep -v '\[for-developero\]' "$MAILBOX" > "$MAILBOX.tmp" || true
+  mv "$MAILBOX.tmp" "$MAILBOX"
+  log "INFO: routed message(s) to developero queue"
+  /home/pixel/pixel/v2/scripts/developero-dispatch.sh >> /home/pixel/pixel/v2/data/developero-dispatch.log 2>&1 &
+  log "INFO: developero dispatch spawned (PID $!)"
+fi
+
+# Remaining mailbox empty = exit (syntropy dispatch has nothing)
+[ ! -s "$MAILBOX" ] && exit 0
+
 MSG_COUNT=$(wc -l < "$MAILBOX" | tr -d ' ')
 log "ALERT: mailbox has $MSG_COUNT message(s), spawning dispatch"
 

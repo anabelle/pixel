@@ -30,7 +30,7 @@ import { parse } from "node-html-parser";
 import { generateImage } from "./image-gen.js";
 import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
-import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage } from "../connectors/whatsapp.js";
+import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage, resolveWaUserId } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
 import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
@@ -3879,10 +3879,15 @@ const sendWhatsAppMessageTool: AgentTool<typeof sendWhatsAppMessageSchema> = {
       ok = await sendWhatsAppMessage(to, message);
     }
     if (ok) {
-      // Log proactive message so Pixel has memory of what it sent
+      // Log proactive message so Pixel has memory of what it sent.
+      // LID targets resolve to the canonical phone thread (alias map).
+      const digits = to.replace(/^wa-/i, "").replace(/^whatsapp-/i, "").replace(/\D/g, "");
+      const isLidTarget = /@lid/i.test(to) || /_lid$/i.test(to);
       const conversationId = isGroup
         ? `wa-group-${to.replace(/^wa-group-/i, "").replace(/^whatsapp-group-/i, "").replace(/@g\.us/i, "")}`
-        : `wa-${to.replace(/^wa-/i, "").replace(/^whatsapp-/i, "").replace(/\D/g, "")}`;
+        : isLidTarget
+          ? resolveWaUserId(`${digits}@lid`)
+          : `wa-${digits}`;
       appendToLog(conversationId, "[proactive message sent via tool]", message, "whatsapp");
       return { content: [{ type: "text" as const, text: `WhatsApp message sent to ${to}` }] };
     }
