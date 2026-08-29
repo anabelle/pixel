@@ -145,6 +145,10 @@ export async function getUserReputation(userId: string): Promise<UserReputation 
   }
 
   const userIds = [canonicalId, ...aliases];
+  // Revenue rows historically store bare pubkeys (canvas/zap paths) while
+  // platform ids carry prefixes (nostr-, tg-, wa-, http-). Query both shapes.
+  const stripPrefix = (id: string) => id.replace(/^(nostr-dm-|nostr-|tg-|wa-|dvm-|http-)/, "");
+  const queryIds = [...new Set([...userIds, ...userIds.map(stripPrefix)])];
   const rows: AggregateRow[] = await db
     .select({
       total_sats: sql<string>`coalesce(sum(${revenue.amountSats}), 0)`,
@@ -153,7 +157,7 @@ export async function getUserReputation(userId: string): Promise<UserReputation 
       last_payment_at: sql<string | null>`max(${revenue.createdAt})`,
     })
     .from(revenue)
-    .where(inArray(revenue.userId, userIds));
+    .where(inArray(revenue.userId, queryIds));
 
   if (!rows || rows.length === 0) return null;
   return rowToReputation(rows[0], userIds, canonicalId, aliases);
