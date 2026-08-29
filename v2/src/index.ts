@@ -34,6 +34,7 @@ import { startTwitter, getTwitterStatus, stopTwitter } from "./connectors/twitte
 import { getConversationStats, appendToLog } from "./conversations.js";
 import { initLightning, createInvoice, verifyPayment, getWalletInfo } from "./services/lightning.js";
 import { initRevenue, recordRevenue, getRevenueStats } from "./services/revenue.js";
+import { initReputation } from "./services/reputation.js";
 import { initUsers, getUserStats } from "./services/users.js";
 import { initIdentity } from "./services/identity.js";
 import { initIdentityClaims } from "./services/identity-claims.js";
@@ -1789,6 +1790,9 @@ async function boot() {
 
     // Initialize revenue tracking
     initRevenue(db);
+
+    // Initialize zap-based reputation scoring
+    initReputation(db);
 
     // Initialize user tracking
     initUsers(db);

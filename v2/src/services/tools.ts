@@ -19,6 +19,7 @@ import { getNostrInstance, sendNostrDm, publishNostrEvent } from "../connectors/
 import { auditToolUse } from "./audit.js";
 import { storeReminder, listReminders, listRemindersAdvanced, cancelReminder, modifyReminder, cancelAllReminders } from "./reminders.js";
 import { memorySave, memorySearch, memoryUpdate, memoryDelete, getMemoryStats } from "./memory.js";
+import { getUserReputation, getTopReputations } from "./reputation.js";
 import { linkSubjects, resolveCanonicalSubject, suggestIdentityLinks } from "./identity.js";
 import { createIdentityClaim, redeemIdentityClaim, listIdentityClaims } from "./identity-claims.js";
 import { readAgentLog, searchAgentLog } from "./logging.js";
@@ -3700,6 +3701,51 @@ const vikingStoriesTool: AgentTool<typeof vikingStoriesSchema> = {
   },
 };
 
+// ─── ZAP-BASED REPUTATION ─────────────────────────────────────
+
+const reputationSchema = Type.Object({
+  subject: Type.Optional(Type.String({ description: "User subject id (e.g. nostr-<pubkey>, tg-<id>). Omit to list the top reputations by score." })),
+  limit: Type.Optional(Type.Number({ description: "Leaderboard size when no subject given (default 10)." })),
+});
+
+const reputationTool: AgentTool<typeof reputationSchema> = {
+  name: "reputation",
+  label: "Payment Reputation",
+  description: "Zap-based reputation scoring: infer user trustworthiness from accumulated invoice/payment history (zaps, L402, x402, DVM jobs, canvas, tips). Without a subject: top reputations by score. With a subject: full score breakdown (volume, consistency, recency, breadth), tier, totals. Cross-platform aliases are merged via the identity graph.",
+  parameters: reputationSchema,
+  execute: async (_id, { subject, limit }) => {
+    try {
+      if (subject) {
+        const rep = await getUserReputation(subject);
+        if (!rep || rep.paymentCount === 0) {
+          auditToolUse("reputation", { subject }, { found: false });
+          return { content: [{ type: "text" as const, text: `No payment history for ${subject} — reputation unknown (newcomer).` }], details: { found: false } };
+        }
+        const text = [
+          `Reputation for ${rep.canonicalId}${rep.aliases.length > 0 ? ` (aliases: ${rep.aliases.join(", ")})` : ""}:`,
+          `Score ${rep.score}/100 — tier: ${rep.tier}`,
+          `- volume: ${rep.breakdown.volume}/50 (${rep.totalSats} sats total)`,
+          `- consistency: ${rep.breakdown.consistency}/25 (${rep.paymentCount} payments)`,
+          `- recency: ${rep.breakdown.recency}/15${rep.lastPaymentAt ? ` (last ${rep.lastPaymentAt.slice(0, 10)})` : ""}`,
+          `- breadth: ${rep.breakdown.breadth}/10`,
+        ].join("\n");
+        auditToolUse("reputation", { subject }, { found: true, score: rep.score, tier: rep.tier });
+        return { content: [{ type: "text" as const, text }], details: { ...rep } };
+      }
+
+      const top = await getTopReputations(Math.min(Math.max(limit ?? 10, 1), 50));
+      const text = top.length > 0
+        ? `Top payment reputations:\n${top.map((r: any, i: number) => `${i + 1}. ${r.userId} — ${r.tier} (${r.score}/100, ${r.paymentCount} payments, ${r.totalSats} sats)`).join("\n")}`
+        : "No payment history recorded yet.";
+      auditToolUse("reputation", {}, { listed: top.length });
+      return { content: [{ type: "text" as const, text }], details: { count: top.length } };
+    } catch (err: any) {
+      auditToolUse("reputation", { subject }, { error: err.message });
+      return { content: [{ type: "text" as const, text: `reputation failed: ${err.message}` }], details: { error: err.message } };
+    }
+  },
+};
+
 // ─── INTROSPECT ───────────────────────────────────────────────
 
 const introspectSchema = Type.Object({
@@ -4329,6 +4375,7 @@ export const pixelTools = [
   vikingSearchTool,
   memCommitTool,
   vikingStoriesTool,
+  reputationTool,
   scheduleAlarmTool,
   listAlarmsTool,
   listAllAlarmsTool,

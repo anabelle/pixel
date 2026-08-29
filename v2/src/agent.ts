@@ -169,6 +169,17 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
     } catch {}
   }
 
+  // Zap-based payment reputation — trust signal from invoice history
+  if (!isGroup) {
+    try {
+      const { getReputationPromptLine } = await import("./services/reputation.js");
+      const repLine = await getReputationPromptLine(userId);
+      if (repLine) {
+        prompt += `\n\n${repLine}`;
+      }
+    } catch {}
+  }
+
   const selfLearningContext = getSelfLearningPromptContext();
   if (selfLearningContext) {
     prompt += `\n\n${selfLearningContext}`;
@@ -369,6 +380,7 @@ export function stripThinkingFromResponse(text: string): string {
       "## Deep semantic memory",
       "## Memory about this user",
       "## Relationship story",
+      "Payment reputation:",
       "## Current context",
       "## Syntropy context",
       "## Group chat behavior",
