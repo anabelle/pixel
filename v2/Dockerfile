@@ -28,8 +28,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN python3 -m venv /opt/openviking-venv && \
     . /opt/openviking-venv/bin/activate && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir openviking==0.2.15
+    pip install --no-cache-dir openviking==0.2.15 cairosvg
     # 2026-08-18: 0.2.6 yanked from PyPI — pinned to latest stable 0.2.x (same API line)
+    # 2026-08-31: cairosvg — SVG→PNG rendering for Pixel's generative art (python-only env)
 
 # ---- Runtime ----
 FROM oven/bun:1-alpine
@@ -39,7 +40,7 @@ FROM oven/bun:1-alpine
 # ffmpeg for audio format conversion (MP3→OGG/Opus for Telegram voice replies)
 # nodejs/npm for pi-compatible extension tooling and self-learning setup
 # python3 + libstdc++ for OpenViking runtime server
-RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm python3 libstdc++
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm python3 libstdc++ cairo
 
 WORKDIR /app
 
