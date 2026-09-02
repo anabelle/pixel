@@ -1473,10 +1473,10 @@ export const nostrPostTool: AgentTool<typeof nostrPostSchema> = {
       event.kind = 1;
       event.content = image_url ? `${content}\n\n${image_url}` : content;
       
-      // Add imeta tag for NIP-94 image metadata if image_url provided
+      // NIP-92 imeta: single space-separated string
       if (image_url) {
         event.tags = [
-          ["imeta", `url ${image_url}`, `m image/jpeg`],
+          ["imeta", `url ${image_url} m image/jpeg`],
         ];
       }
       
@@ -1526,9 +1526,10 @@ export const nostrReplyTool: AgentTool<typeof nostrReplySchema> = {
         reply.tags.push(["p", pubkey]);
       }
       
-      // Add imeta tag for NIP-94 image metadata if image_url provided
+      // NIP-92 imeta: single space-separated string
       if (image_url) {
-        reply.tags.push(["imeta", `url ${image_url}`, `m image/jpeg`]);
+        reply.tags.push(["imeta", `url ${image_url} m image/jpeg`]);
+        reply.content = `${reply.content}\n\n${image_url}`;
       }
       
       await publishNostrEvent(reply);

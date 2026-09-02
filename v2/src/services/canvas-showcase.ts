@@ -69,15 +69,20 @@ Write the note text directly.`,
     // 4. Upload image
     const uploaded = await uploadToBlossom(buffer, "image/png", `canvas-${new Date().toISOString().slice(0, 10)}.png`);
 
-    // 5. Publish note with imeta
+    // 5. Publish note with imeta (NIP-92: single space-separated string)
+    //    Plus the URL in content — the only thing EVERY client renders.
     const instance = getNostrInstance();
     if (!instance) return { posted: false, skipped: "nostr not connected" };
     const { ndk } = instance;
 
+    const w = buffer.readUInt32BE(16);
+    const h = buffer.readUInt32BE(20);
+    const imeta = `url ${uploaded.url} m image/png x ${uploaded.sha256} dim ${w}x${h}`;
+
     const note = new NDKEvent(ndk);
     note.kind = 1;
-    note.content = caption.trim();
-    note.tags = [["imeta", `url ${uploaded.url}`, "m image/png", `x ${buffer.length}`]];
+    note.content = `${caption.trim()}\n\n${uploaded.url}`;
+    note.tags = [["imeta", imeta]];
 
     await publishNostrEvent(note);
     lastShowcaseAt = Date.now();
