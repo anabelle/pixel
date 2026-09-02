@@ -1539,6 +1539,7 @@ async function zapLoop(): Promise<void> {
       reply.content = thanks;
       reply.tags = [
         ["e", targetEventId, "", "reply"],
+        ["e", targetEventId, "", "root"],
       ];
       if (sender) reply.tags.push(["p", sender]);
 
@@ -1829,10 +1830,11 @@ async function spotlightLoop(): Promise<void> {
     const post = new NDKEvent(ndk);
     post.kind = 1;
     post.content = response;
+    // Standard NIP-10 threading — bare quote tags render as context-less notes
     post.tags = [
-      ["e", pick.id],
+      ["e", pick.id, "", "reply"],
       ["p", pick.pubkey],
-      ["q", pick.id],
+      ["e", pick.id, "", "root"],
     ];
     await publishNostrEvent(post);
     appendRecentPost(response, "spotlight");
