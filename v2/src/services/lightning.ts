@@ -17,11 +17,17 @@ const NAKAPAY_DESTINATION_WALLET = process.env.NAKAPAY_DESTINATION_WALLET;
 const NAKAPAY_API_BASE = "https://api.nakapay.app/api/v1";
 const NAKAPAY_MIN_SATS = 21;
 
+// Blink (Galoy) — primary when configured; webhooks (receive.lightning) + pull verify
+const BLINK_API_KEY = process.env.BLINK_API_KEY;
+const BLINK_ENDPOINT = process.env.BLINK_API_ENDPOINT || "https://api.blink.sv/graphql";
+const BLINK_MIN_SATS = 1;
+
 // Cache payment requests for verification
-// Maps paymentHash → { nakapayId, amountSats, description }
+// Maps paymentHash → { provider, amountSats, description, ... }
 interface InvoiceCache {
-  nakapayId: string;
-  verifyUrl: string;
+  provider: "nakapay" | "blink";
+  nakapayId?: string;
+  verifyUrl?: string;
   amountSats: number;
   description?: string;
 }
@@ -38,7 +44,7 @@ function loadInvoiceCache(): void {
       const data = JSON.parse(readFileSync(INVOICE_CACHE_PATH, "utf-8"));
       if (data && typeof data === "object") {
         for (const [hash, entry] of Object.entries(data)) {
-          invoiceCache.set(hash, entry as InvoiceCache);
+          invoiceCache.set(hash, normalizeCacheEntry(entry));
         }
         console.log(`[lightning] Loaded ${invoiceCache.size} cached invoices from disk`);
       }
@@ -65,9 +71,51 @@ function saveInvoiceCache(): void {
   }
 }
 
-/** Check if Nakapay is configured */
-function isNakapayConfigured(): boolean {
-  return !!(NAKAPAY_API_KEY && NAKAPAY_DESTINATION_WALLET);
+/** Check which provider is active: Blink > Nakapay */
+function activeProvider(): "blink" | "nakapay" | null {
+  if (BLINK_API_KEY) return "blink";
+  if (NAKAPAY_API_KEY && NAKAPAY_DESTINATION_WALLET) return "nakapay";
+  return null;
+}
+
+/** Load invoice cache entries from disk (legacy entries default to nakapay) */
+function normalizeCacheEntry(entry: any): InvoiceCache {
+  return { provider: entry.provider || "nakapay", nakapayId: entry.nakapayId, verifyUrl: entry.verifyUrl, amountSats: entry.amountSats, description: entry.description };
+}
+
+/** Blink GraphQL helper */
+async function blinkGraphQL(query: string, variables: Record<string, any> = {}): Promise<any> {
+  const res = await fetch(BLINK_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-KEY": BLINK_API_KEY! },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) {
+    throw new Error(`Blink API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const body = (await res.json()) as { data?: any; errors?: Array<{ message: string }> };
+  if (body.errors?.length) {
+    throw new Error(`Blink GraphQL: ${body.errors.map((e: any) => e.message).join("; ")}`);
+  }
+  return body.data;
+}
+
+/** Resolve the BTC wallet id for Blink invoice creation */
+let blinkWalletId: string | null = null;
+async function resolveBlinkWalletId(): Promise<string> {
+  if (blinkWalletId) return blinkWalletId;
+  if (process.env.BLINK_WALLET_ID) {
+    blinkWalletId = process.env.BLINK_WALLET_ID;
+    return blinkWalletId;
+  }
+  const data = await blinkGraphQL(
+    "query Me { me { defaultAccount { wallets { id walletCurrency } } } }"
+  );
+  const btc = data?.me?.defaultAccount?.wallets?.find((w: any) => w.walletCurrency === "BTC");
+  if (!btc?.id) throw new Error("Blink: no BTC wallet found");
+  const id: string = btc.id;
+  blinkWalletId = id;
+  return id;
 }
 
 /** Invoice with payment tracking info */
@@ -91,18 +139,55 @@ export async function createInvoice(
   amountSats: number,
   comment?: string
 ): Promise<LightningInvoice | null> {
-  if (!isNakapayConfigured()) {
-    console.error("[lightning] Nakapay not configured. Set NAKAPAY_API_KEY and NAKAPAY_DESTINATION_WALLET");
+  const provider = activeProvider();
+  if (!provider) {
+    console.error("[lightning] No provider configured. Set BLINK_API_KEY or NAKAPAY_API_KEY + NAKAPAY_DESTINATION_WALLET");
     return null;
   }
 
   // Enforce minimum
-  if (amountSats < NAKAPAY_MIN_SATS) {
-    console.log(`[lightning] Amount ${amountSats} sats below minimum ${NAKAPAY_MIN_SATS} sats, adjusting`);
-    amountSats = NAKAPAY_MIN_SATS;
+  const minSats = provider === "blink" ? BLINK_MIN_SATS : NAKAPAY_MIN_SATS;
+  if (amountSats < minSats) {
+    console.log(`[lightning] Amount ${amountSats} sats below minimum ${minSats} sats, adjusting`);
+    amountSats = minSats;
   }
 
   try {
+    if (provider === "blink") {
+      const walletId = await resolveBlinkWalletId();
+      const data = await blinkGraphQL(
+        `mutation LnInvoiceCreate($input: LnInvoiceCreateInput!) {
+          lnInvoiceCreate(input: $input) {
+            invoice { paymentRequest paymentHash satoshis }
+            errors { message }
+          }
+        }`,
+        { input: { amount: amountSats, walletId, memo: comment || `Pixel - ${amountSats} sats` } }
+      );
+      const inv = data?.lnInvoiceCreate?.invoice;
+      const errs = data?.lnInvoiceCreate?.errors;
+      if (!inv?.paymentRequest || !inv?.paymentHash) {
+        console.error(`[lightning] Blink create invoice failed: ${errs?.[0]?.message || "no invoice"}`);
+        return null;
+      }
+      console.log(`[lightning] Blink invoice: hash=${inv.paymentHash.slice(0, 16)}... invoice=${inv.paymentRequest.slice(0, 20)}...`);
+
+      if (invoiceCache.size > MAX_VERIFY_CACHE) {
+        const first = invoiceCache.keys().next().value;
+        if (first) invoiceCache.delete(first);
+      }
+      invoiceCache.set(inv.paymentHash, { provider: "blink", amountSats, description: comment });
+      saveInvoiceCache();
+
+      return {
+        paymentRequest: inv.paymentRequest,
+        paymentHash: inv.paymentHash,
+        amountSats,
+        description: comment,
+        expiresAt: undefined,
+      };
+    }
+
     const response = await fetch(`${NAKAPAY_API_BASE}/payment-requests`, {
       method: "POST",
       headers: {
@@ -131,6 +216,7 @@ export async function createInvoice(
         if (first) invoiceCache.delete(first);
       }
       invoiceCache.set(data.paymentHash, {
+        provider: "nakapay",
         nakapayId: data.id,
         verifyUrl: `${NAKAPAY_API_BASE}/payment-requests/${data.id}`,
         amountSats,
@@ -174,7 +260,42 @@ export async function verifyPayment(
   }
 
   try {
-    const response = await fetch(cached.verifyUrl, {
+    if (cached.provider === "blink") {
+      // Documented pull-verify: recent transactions, match by paymentHash.
+      // Preimage (settlementVia.preImage) is the cryptographic proof of payment.
+      const data = await blinkGraphQL(
+        `query PaymentsWithProof($first: Int) {
+          me { defaultAccount { transactions(first: $first) {
+            edges { node {
+              direction
+              status
+              settlementAmount
+              initiationVia { ... on InitiationViaLn { paymentHash } }
+              settlementVia {
+                ... on SettlementViaIntraLedger { preImage }
+                ... on SettlementViaLn { preImage }
+              }
+            } } } } } }`,
+        { first: 20 }
+      );
+      const nodes: any[] = data?.me?.defaultAccount?.transactions?.edges?.map((e: any) => e.node) || [];
+      const tx = nodes.find((n) => n.initiationVia?.paymentHash === paymentHash);
+      if (!tx) {
+        return { paid: false, amountSats: cached.amountSats, description: cached.description };
+      }
+      const isPaid = tx.status === "SUCCESS" && tx.direction === "RECEIVE";
+      if (isPaid) {
+        console.log(`[lightning] Payment confirmed (blink): ${paymentHash.slice(0, 16)}...`);
+      }
+      return {
+        paid: isPaid,
+        preimage: tx.settlementVia?.preImage,
+        amountSats: tx.settlementAmount ?? cached.amountSats,
+        description: cached.description,
+      };
+    }
+
+    const response = await fetch(cached.verifyUrl!, {
       headers: {
         "Authorization": `Bearer ${NAKAPAY_API_KEY}`,
       },
@@ -233,8 +354,19 @@ export async function getWalletInfo(): Promise<{
   description: string;
   active: boolean;
 } | null> {
-  if (!isNakapayConfigured()) {
+  const provider = activeProvider();
+  if (!provider) {
     return null;
+  }
+
+  if (provider === "blink") {
+    return {
+      address: "blink",
+      minSats: BLINK_MIN_SATS,
+      maxSats: 10_000_000,
+      description: "Blink Lightning wallet",
+      active: true,
+    };
   }
 
   return {
@@ -252,9 +384,22 @@ export async function getWalletInfo(): Promise<{
 export async function initLightning(): Promise<boolean> {
   loadInvoiceCache();
 
-  if (!isNakapayConfigured()) {
-    console.log("[lightning] Nakapay not configured. Set NAKAPAY_API_KEY and NAKAPAY_DESTINATION_WALLET");
+  const provider = activeProvider();
+  if (!provider) {
+    console.log("[lightning] No provider configured. Set BLINK_API_KEY or NAKAPAY_API_KEY + NAKAPAY_DESTINATION_WALLET");
     return false;
+  }
+
+  if (provider === "blink") {
+    try {
+      await resolveBlinkWalletId();
+      console.log(`[lightning] Blink initialized (wallet ${blinkWalletId!.slice(0, 8)}...)`);
+      console.log(`[lightning] Min: ${BLINK_MIN_SATS} sats`);
+      return true;
+    } catch (err: any) {
+      console.error(`[lightning] Blink init failed: ${err.message}`);
+      return false;
+    }
   }
 
   nakapayInitialized = true;
