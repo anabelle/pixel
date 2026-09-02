@@ -64,6 +64,36 @@ if [ -d "$EXT_REPO/.git" ]; then
   fi
 fi
 
+# Submodule discipline: push submodules BEFORE the parent so master never
+# references ghost SHAs on GitHub (unpushed submodule commits break Actions
+# checkout — root cause of the sync-from-vps "All Jobs have failed" emails).
+# Submodule repos carry core.sshcommand=/pixel/.ssh/id_rsa (deploy key valid
+# only for the parent repo) — force the account key that can push anabelle/*.
+BLOCK_PARENT_PUSH=0
+for sub in lnpixels pixel-agent pixel-landing syntropy-core; do
+  sd="$REPO_DIR/$sub"
+  [ -e "$sd/.git" ] || continue
+  if ! GIT_SSH_COMMAND="ssh -i $HOME/.ssh/8servidores_deploy -o IdentitiesOnly=yes" \
+       git -C "$sd" fetch --quiet 2>/dev/null; then
+    log "WARN: submodule $sub fetch failed; deferring parent push"
+    BLOCK_PARENT_PUSH=1
+    continue
+  fi
+  git -C "$sd" rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1 || continue
+  if ! git -C "$sd" merge-base --is-ancestor @{u} HEAD 2>/dev/null; then
+    log "WARN: submodule $sub diverged from origin — needs human; deferring parent push"
+    BLOCK_PARENT_PUSH=1
+  elif [ "$(git -C "$sd" rev-parse HEAD)" != "$(git -C "$sd" rev-parse @{u})" ]; then
+    if GIT_SSH_COMMAND="ssh -i $HOME/.ssh/8servidores_deploy -o IdentitiesOnly=yes" \
+       git -C "$sd" push origin HEAD >/dev/null 2>&1; then
+      log "OK: pushed submodule $sub"
+    else
+      log "WARN: submodule $sub push failed; deferring parent push"
+      BLOCK_PARENT_PUSH=1
+    fi
+  fi
+done
+
 # Ensure we have an upstream
 if ! git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
   log "SKIP: no upstream configured"
@@ -88,6 +118,10 @@ if git merge-base --is-ancestor HEAD @{u}; then
   git pull --ff-only
 elif git merge-base --is-ancestor @{u} HEAD; then
   # Local strictly ahead of origin — push our commits
+  if [ "$BLOCK_PARENT_PUSH" -eq 1 ]; then
+    log "SKIP: parent push deferred (submodule sync incomplete — see warnings above)"
+    exit 0
+  fi
   log "UPDATE: local is ahead of origin, pushing"
   git push origin HEAD --no-verify >/dev/null 2>&1 \
     && log "OK: pushed local commits to origin" \
