@@ -33,7 +33,7 @@ import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage, resolveWaUserId } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
-import { createInvoice, verifyPayment, getWalletInfo, getTreasuryStatus } from "./lightning.js";
+import { createInvoice, verifyPayment, getWalletInfo, getTreasuryStatus, payInvoice, getSpendCaps } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.js";
 
@@ -3175,6 +3175,50 @@ const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
   },
 };
 
+// ─── LIGHTNING SPEND TOOL ────────────────────────────────────
+
+const payInvoiceSchema = Type.Object({
+  payment_request: Type.String({ description: "The bolt11 Lightning invoice to pay (starts with lnbc...)" }),
+  confirm: Type.Boolean({ description: "Must be explicitly true to execute the payment" }),
+});
+
+const payInvoiceTool: AgentTool<typeof payInvoiceSchema> = {
+  name: "pay_invoice",
+  label: "Pay Lightning Invoice",
+  description: "Pay a bolt11 Lightning invoice from your Blink BTC wallet (SPENDING REAL SATS). Requires confirm=true. Caps: 100k sats per payment, 500k sats per day. Only use when the owner or a trusted flow explicitly provides an invoice to pay.",
+  parameters: payInvoiceSchema,
+  execute: async (_id, { payment_request, confirm }) => {
+    try {
+      if (!confirm) {
+        auditToolUse("pay_invoice", {}, { error: "not_confirmed" });
+        return {
+          content: [{ type: "text" as const, text: "Payment NOT executed — confirm=true is required. Verify the invoice and intent with the requester first." }],
+          details: { error: "not_confirmed" },
+        };
+      }
+      const result = await payInvoice(payment_request);
+      auditToolUse("pay_invoice", {}, { paid: result.paid, amountSats: result.amountSats, error: result.error });
+      if (result.paid) {
+        const caps = getSpendCaps();
+        return {
+          content: [{ type: "text" as const, text: `**Payment Sent** ✅\n\n- Amount: ${result.amountSats ?? "?"} sats\n- Payment hash: \`${result.paymentHash ?? "?"}\`\n- Spent today: ${caps.spentTodaySats}/${caps.daily} sats` }],
+          details: { paid: true, amountSats: result.amountSats, paymentHash: result.paymentHash },
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: `**Payment Failed** ❌\n\n${result.error ?? "unknown error"}\n\nNo sats left the wallet.` }],
+        details: { paid: false, error: result.error },
+      };
+    } catch (err: any) {
+      auditToolUse("pay_invoice", {}, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to pay invoice: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
 // ─── LONG-TERM MEMORY TOOLS ──────────────────────────────────
 
 const linkIdentitySchema = Type.Object({
@@ -4525,6 +4569,7 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   read_tweet: readTweetTool,
   twitter_status: twitterStatusTool,
   create_invoice: createInvoiceTool,
+  pay_invoice: payInvoiceTool,
   verify_payment: verifyPaymentTool,
   get_wallet_info: getWalletInfoTool,
 };

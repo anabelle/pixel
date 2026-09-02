@@ -410,6 +410,80 @@ export async function getTreasuryStatus(): Promise<TreasuryStatus> {
 }
 
 /**
+ * Pay a Lightning invoice (bolt11) from the Blink BTC wallet.
+ * Guardrails: per-tx and daily sats caps; failures never throw.
+ */
+export interface PaymentResult {
+  paid: boolean;
+  status?: string;
+  amountSats?: number;
+  paymentHash?: string;
+  error?: string;
+}
+
+const SPEND_MAX_PER_TX = parseInt(process.env.SPEND_MAX_PER_TX ?? String(100_000), 10);
+const SPEND_MAX_DAILY = parseInt(process.env.SPEND_MAX_DAILY ?? String(500_000), 10);
+let spentToday = { date: new Date().toISOString().slice(0, 10), sats: 0 };
+
+export function getSpendCaps(): { perTx: number; daily: number; spentTodaySats: number } {
+  const today = new Date().toISOString().slice(0, 10);
+  if (spentToday.date !== today) spentToday = { date: today, sats: 0 };
+  return { perTx: SPEND_MAX_PER_TX, daily: SPEND_MAX_DAILY, spentTodaySats: spentToday.sats };
+}
+
+export async function payInvoice(paymentRequest: string): Promise<PaymentResult> {
+  if (!BLINK_API_KEY) return { paid: false, error: "Blink not configured (BLINK_API_KEY)" };
+  if (!paymentRequest.trim().toLowerCase().startsWith("lnbc")) {
+    return { paid: false, error: "Not a bolt11 invoice (expected lnbc...)" };
+  }
+
+  const caps = getSpendCaps();
+  if (caps.spentTodaySats >= SPEND_MAX_DAILY) {
+    return { paid: false, error: `Daily spend cap reached (${SPEND_MAX_DAILY} sats spent today)` };
+  }
+
+  try {
+    const walletId = await resolveBlinkWalletId();
+    const data = await blinkGraphQL(
+      `mutation LnInvoicePaymentCreate($input: LnInvoicePaymentCreateInput!) {
+        lnInvoicePaymentCreate(input: $input) {
+          status
+          errors { message }
+          transaction {
+            settlementAmount
+            direction
+            settlementVia { ... on SettlementViaLn { preImage paymentHash } }
+          }
+        }
+      }`,
+      { input: { paymentRequest: paymentRequest.trim(), walletId } }
+    );
+    const res = data?.lnInvoicePaymentCreate;
+    const errs = res?.errors;
+    if (errs?.length) {
+      return { paid: false, error: errs.map((e: any) => e.message).join("; ") };
+    }
+    const ok = res?.status === "SUCCESS";
+    const tx = res?.transaction;
+    const amountSats = tx ? Math.abs(tx.settlementAmount ?? 0) : undefined;
+    if (ok && amountSats !== undefined) {
+      spentToday.sats += amountSats;
+      console.log(`[lightning] Paid invoice: hash=${tx?.settlementVia?.paymentHash?.slice(0, 16) ?? "?"} amount=${amountSats} sats (today total: ${spentToday.sats})`);
+    }
+    return {
+      paid: ok,
+      status: res?.status,
+      amountSats,
+      paymentHash: tx?.settlementVia?.paymentHash,
+      error: ok ? undefined : `Payment status: ${res?.status ?? "unknown"}`,
+    };
+  } catch (err: any) {
+    console.error("[lightning] payInvoice failed:", err.message);
+    return { paid: false, error: err.message };
+  }
+}
+
+/**
  * Get wallet info (min/max amounts, description)
  */
 export async function getWalletInfo(): Promise<{
