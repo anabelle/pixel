@@ -24,7 +24,7 @@ nano .env
 - `ZAI_API_KEY`: Z.AI Coding Lite API key (GLM-4.7/4.5-air)
 - `GEMINI_API_KEY`: Google Gemini key (fallback + vision)
 - `TELEGRAM_BOT_TOKEN`: Telegram bot integration
-- `NAKAPAY_API_KEY` (if canvas LN payments)
+- `BLINK_API_KEY` (canvas LN payments — Blink/Galoy provider)
 
 **AI Provider Setup (Current: Z.AI primary + Gemini fallback):**
 ```env
