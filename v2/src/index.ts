@@ -230,9 +230,7 @@ function isTrustedLocalRequest(c: any): boolean {
   const host = getRequestHost(c);
   if (["localhost", "127.0.0.1", "::1"].includes(host)) return true;
 
-  const forwardedFor = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwardedFor && ["127.0.0.1", "::1"].includes(forwardedFor)) return true;
-
+  // X-Forwarded-For is client-spoofable (nginx appends, attackers prepend) — never trust it.
   return false;
 }
 
@@ -1934,7 +1932,8 @@ React naturally and authentically. You could:
 
 You have tools available including posting to Nostr if you want to share publicly. Be genuine, not overly enthusiastic for small sales. Keep it brief.`,
         userPrompt: message,
-        tools: pixelTools,
+        // Buyer-controlled content flows through this prompt: NO shell/fs/messaging tools.
+        tools: pixelTools.filter(t => ["nostr_post", "nostr_reply"].includes(t.name)),
         label: "canvas-notification",
         timeoutMs: 30000,
       });

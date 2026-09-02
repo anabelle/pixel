@@ -1117,20 +1117,15 @@ async function checkAndReplyToMentions(): Promise<void> {
         const reply = new NDKEvent(ndk);
         reply.kind = 1;
         reply.content = response;
-        reply.tags = [
-          ["e", event.id, "", "reply"],
-          ["p", event.pubkey],
-        ];
-
-        // Add root tag
+        // NIP-10: prefer the thread's real root if present
         const rootTag = event.tags.find(
           (t) => t[0] === "e" && t[3] === "root"
         );
-        if (rootTag) {
-          reply.tags.push(["e", rootTag[1], rootTag[2] || "", "root"]);
-        } else {
-          reply.tags.push(["e", event.id, "", "root"]);
-        }
+        reply.tags = [
+          ["e", rootTag ? rootTag[1] : event.id, rootTag?.[2] || "", "root"],
+          ["e", event.id, "", "reply"],
+          ["p", event.pubkey],
+        ];
 
         await publishNostrEvent(reply);
         markReplied(event.id);
@@ -1396,7 +1391,7 @@ async function notificationLoop(): Promise<void> {
     // Circuit breaker: skip fetch entirely when relays are confirmed unreachable
     if (isNostrCircuitOpen()) return;
 
-    const { pubkey } = instance;
+    const { ndk, pubkey } = instance;
     const since = Math.floor(Date.now() / 1000) - 6 * 60 * 60;
 
     const rawEvents = await rawFetchEvents({
@@ -1477,9 +1472,9 @@ async function notificationLoop(): Promise<void> {
       reply.kind = 1;
       reply.content = response;
       reply.tags = [
+        ["e", event.id, "", "root"],
         ["e", event.id, "", "reply"],
         ["p", event.pubkey],
-        ["e", event.id, "", "root"],
       ];
 
       await publishNostrEvent(reply);
@@ -1538,8 +1533,8 @@ async function zapLoop(): Promise<void> {
       reply.kind = 1;
       reply.content = thanks;
       reply.tags = [
-        ["e", targetEventId, "", "reply"],
         ["e", targetEventId, "", "root"],
+        ["e", targetEventId, "", "reply"],
       ];
       if (sender) reply.tags.push(["p", sender]);
 
@@ -1832,9 +1827,9 @@ async function spotlightLoop(): Promise<void> {
     post.content = response;
     // Standard NIP-10 threading — bare quote tags render as context-less notes
     post.tags = [
+      ["e", pick.id, "", "root"],
       ["e", pick.id, "", "reply"],
       ["p", pick.pubkey],
-      ["e", pick.id, "", "root"],
     ];
     await publishNostrEvent(post);
     appendRecentPost(response, "spotlight");
@@ -1989,9 +1984,9 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
     // Standard NIP-10 reply threading — bare quote tags (q + markerless e) render as
     // context-less standalone notes in clients that can't fetch the quoted event.
     quote.tags = [
+      ["e", item.eventId, "", "root"],
       ["e", item.eventId, "", "reply"],
       ["p", item.pubkey],
-      ["e", item.eventId, "", "root"],
     ];
     await publishNostrEvent(quote);
   } else {
@@ -1999,9 +1994,9 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
     reply.kind = 1;
     reply.content = response;
     reply.tags = [
+      ["e", item.eventId, "", "root"],
       ["e", item.eventId, "", "reply"],
       ["p", item.pubkey],
-      ["e", item.eventId, "", "root"],
     ];
     await publishNostrEvent(reply);
   }
