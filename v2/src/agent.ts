@@ -18,6 +18,7 @@ import { memorySave } from "./services/memory.js";
 import { getRelevantMemories } from "./services/memory.js";
 import { pixelTools, setToolContext, clearToolContext, commitToOpenViking, recallFromOpenViking, loadUserStory } from "./services/tools.js";
 import { getPermittedTools, isPriorityUser } from "./services/server-registry.js";
+import { resolveCanonicalSubject } from "./services/identity.js";
 import { audit } from "./services/audit.js";
 import { costMonitor, estimateTokens } from "./services/cost-monitor.js";
 import { resolveGoogleApiKey, setGoogleKeyFallback, resetGoogleKeyToPrimary } from "./services/google-key.js";
@@ -29,10 +30,8 @@ const CHARACTER_PATH = process.env.CHARACTER_PATH ?? "./character.md";
 const OBSERVATIONS_DIR = join(process.env.INNER_LIFE_DIR ?? "./data", "observations");
 
 // Track message count per user for periodic memory extraction
-const userMessageCounts = new Map<string, number>();
-const MEMORY_EXTRACT_INTERVAL = 5; // Extract memory every N messages
-const GROUP_SUMMARY_INTERVAL = 8; // Update group summary every N messages
-const groupMessageCounts = new Map<string, number>();
+const MEMORY_EXTRACT_INTERVAL = 8; // Extract memory every N context messages (~4 exchanges)
+const GROUP_SUMMARY_INTERVAL = 8; // Update group summary every N context messages
 
 // ─── Z.AI Rate-Limit Circuit Breaker ──────────────────────────
 // Sticky cooldown that short-circuits the primary model (glm-5.3) when
@@ -237,7 +236,9 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 - **Do NOT call memcommit manually** — it runs automatically during memory extraction.`;
 
   prompt += `
-- If a user wants to link two accounts they control, use begin_identity_claim on one account and redeem_identity_claim on the other. Never assume two accounts are the same person without an explicit claim, admin link, or strong proof.`;
+- You are one brain with many doors (Telegram, Nostr, Twitter, HTTP) — your memory and identity graph are shared across all of them. Act like it: what you learned about someone on one channel, you know it everywhere.
+- If a user wants to link two accounts they control, use begin_identity_claim on one account and redeem_identity_claim on the other. Never assume two accounts are the same person without an explicit claim, admin link, or strong proof.
+- PROACTIVELY offer identity linking when you recognize someone you already know from another platform (same name, same voice, same projects) — linking merges their conversation memory and reputation into one coherent picture. One short offer, drop it if declined.`;
 
   if (userId === "syntropy" || userId === "syntropy-admin") {
     prompt += `\n\n## Syntropy context
@@ -661,7 +662,13 @@ export async function promptWithHistory(
   
   // Scheduling is handled by the main agent via schedule_alarm/list_alarms/cancel_alarm/modify_alarm tools.
   // No pre-filter — GLM-4.7 is smart enough to detect intent and use tools directly.
-  
+
+  // One brain, many doors: canonical conversation identity. Merges nostr-dm/nostr
+  // threads and cross-platform threads once identity links exist. Raw userId is
+  // still used for permission checks (global_admins) below.
+  const subject = await resolveCanonicalSubject(userId);
+  const convId = subject?.canonicalId ?? userId;
+
   // Security scan: check for injection, abuse, spam patterns
   const securityMatches = scanMessage(message, userId, platform);
   if (securityMatches.length > 0) {
@@ -669,7 +676,8 @@ export async function promptWithHistory(
     console.log(`[agent] Security scan: ${securityMatches.length} match(es) [${severities.join(', ')}] from ${userId} - categories: ${[...new Set(securityMatches.map(m => m.category))].join(', ')}`);
   }
   
-  const systemPrompt = await buildSystemPrompt(userId, platform, chatId, options.chatTitle, message);
+  const systemPrompt = await buildSystemPrompt(convId, platform, chatId, options.chatTitle, message);
+  console.log(`[agent] system prompt for ${convId}: ${systemPrompt.length} chars (~${Math.round(systemPrompt.length / 4)} tokens)`);
 
   // Select model: vision-capable model when images present, DM override, background, or default
   // Configured primary model for all conversations now (was previously priority-only)
@@ -727,13 +735,13 @@ export async function promptWithHistory(
   });
 
   // Load existing conversation context
-  const rawExistingMessages = loadContext(userId);
+  const rawExistingMessages = loadContext(convId);
   const existingMessages = sanitizeMessagesForContext(rawExistingMessages);
   if (existingMessages.length > 0) {
     agent.replaceMessages(existingMessages);
   }
   if (existingMessages.length !== rawExistingMessages.length) {
-    saveContext(userId, existingMessages);
+    saveContext(convId, existingMessages);
   }
 
   // Retry loop: on 429/provider error, cascade through fallback models
@@ -750,7 +758,7 @@ export async function promptWithHistory(
   }
 
   // Set tool context so schedule_alarm can auto-fill chatId
-  setToolContext({ userId, platform, chatId });
+  setToolContext({ userId: convId, platform, chatId });
 
   try {
   for (let attempt = startAttempt; attempt <= MAX_RETRIES; attempt++) {
@@ -775,11 +783,11 @@ export async function promptWithHistory(
 
     if (attempt > 0) {
       // Reload context for retry agent
-      const retryMessages = sanitizeMessagesForContext(loadContext(userId));
+      const retryMessages = sanitizeMessagesForContext(loadContext(convId));
       if (retryMessages.length > 0) {
         attemptAgent.replaceMessages(retryMessages);
       }
-      console.log(`[agent] Fallback attempt ${attempt}: switching to ${retryModel.id} for ${userId}`);
+      console.log(`[agent] Fallback attempt ${attempt}: switching to ${retryModel.id} for ${convId}`);
     }
 
     attemptAgent.subscribe((event: any) => {
@@ -826,7 +834,7 @@ export async function promptWithHistory(
       if (attemptAgent.state?.messages) {
         const noImages = stripImageBlocks(attemptAgent.state.messages as any[]);
         const sanitized = sanitizeMessagesForContext(noImages);
-        saveContext(userId, sanitized);
+        saveContext(convId, sanitized);
       }
       break;
     }
@@ -894,7 +902,7 @@ export async function promptWithHistory(
     // Don't log [SILENT] responses - they clutter conversation logs
     const shouldLog = responseText.trim() !== "[SILENT]";
     if (shouldLog) {
-      appendToLog(userId, message, responseText, platform);
+      appendToLog(convId, message, responseText, platform);
     } else {
       console.log(`[agent] Skipping [SILENT] response for ${userId}`);
     }
@@ -909,38 +917,37 @@ export async function promptWithHistory(
   trackUser(userId, platform, displayName).catch(() => {});
 
   // Check if context needs compaction (async, non-blocking for the response)
-  if (needsCompaction(userId)) {
-    compactContext(userId, platform).catch((err) => {
-      console.error(`[agent] Compaction failed for ${userId}:`, err.message);
+  if (needsCompaction(convId)) {
+    compactContext(convId, platform).catch((err) => {
+      console.error(`[agent] Compaction failed for ${convId}:`, err.message);
     });
   }
 
-  // Periodically extract and save user memory (every N messages)
-  const count = (userMessageCounts.get(userId) ?? 0) + 1;
-  userMessageCounts.set(userId, count);
-  if (count % MEMORY_EXTRACT_INTERVAL === 0 && responseText) {
-    extractAndSaveMemory(userId, agent.state?.messages as any[]).catch((err) => {
-      console.error(`[agent] Memory extraction failed for ${userId}:`, err.message);
+  // Periodically extract and save user memory. Keyed to the persisted context
+  // length, NOT an in-memory counter — hourly auto-update restarts used to reset
+  // the counter and extraction almost never fired (Pixel felt forgetful).
+  const ctxLen = agent.state?.messages?.length ?? 0;
+  if (responseText && ctxLen >= 6 && ctxLen % MEMORY_EXTRACT_INTERVAL === 0) {
+    extractAndSaveMemory(convId, agent.state?.messages as any[]).catch((err) => {
+      console.error(`[agent] Memory extraction failed for ${convId}:`, err.message);
     });
   }
 
-  if ((platform === "telegram" && userId.startsWith("tg-group-")) || (platform === "whatsapp" && userId.startsWith("wa-group-"))) {
-    const groupCount = (groupMessageCounts.get(userId) ?? 0) + 1;
-    groupMessageCounts.set(userId, groupCount);
-    if (groupCount % GROUP_SUMMARY_INTERVAL === 0) {
-      updateGroupSummary(userId, agent.state?.messages as any[]).catch((err) => {
-        console.error(`[agent] Group summary update failed for ${userId}:`, err.message);
+  if ((platform === "telegram" && convId.startsWith("tg-group-")) || (platform === "whatsapp" && convId.startsWith("wa-group-"))) {
+    if (ctxLen >= 6 && ctxLen % GROUP_SUMMARY_INTERVAL === 0) {
+      updateGroupSummary(convId, agent.state?.messages as any[]).catch((err) => {
+        console.error(`[agent] Group summary update failed for ${convId}:`, err.message);
       });
     }
   }
 
   // Capture observation if friction detected (async, non-blocking)
   if (responseText && agent.state?.messages) {
-    captureObservation(agent.state.messages as any[], userId, platform).catch((err) => {
-      console.error(`[agent] Observation capture failed for ${userId}:`, err.message);
+    captureObservation(agent.state.messages as any[], convId, platform).catch((err) => {
+      console.error(`[agent] Observation capture failed for ${convId}:`, err.message);
     });
-    captureSelfLearning(agent.state.messages as any[], userId, platform).catch((err) => {
-      console.error(`[agent] Self-learning capture failed for ${userId}:`, err.message);
+    captureSelfLearning(agent.state.messages as any[], convId, platform).catch((err) => {
+      console.error(`[agent] Self-learning capture failed for ${convId}:`, err.message);
     });
   }
 

@@ -119,6 +119,18 @@ let cycleCount = 0;
 let innerLifeRunning = false;
 let innerLifeTimer: Timer | null = null;
 
+// Cycle count persists to disk — hourly auto-update restarts used to reset it
+// to 0, so staggered phases (LEARN%2 … EVOLVE%10) almost never fired and the
+// inner life stalled (ideas.md went weeks without updating).
+const CYCLE_STATE_PATH = "inner-life-state.json";
+function loadCycleCount(): number {
+  const n = readJson(join(DATA_DIR, CYCLE_STATE_PATH), 0) as number;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function persistCycleCount(): void {
+  writeJson(join(DATA_DIR, CYCLE_STATE_PATH), cycleCount);
+}
+
 // ============================================================
 // File helpers
 // ============================================================
@@ -997,12 +1009,12 @@ async function llmCall(systemPrompt: string, userPrompt: string): Promise<string
 // Data Gathering
 // ============================================================
 
-/** Read recent conversation logs across all users (last 24h of exchanges) */
+/** Read recent conversation logs across all users (last 48h of exchanges) */
 function gatherRecentConversations(): string {
   if (!existsSync(CONVERSATIONS_DIR)) return "(no conversations yet)";
 
   const exchanges: string[] = [];
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+  const cutoff = Date.now() - 48 * 60 * 60 * 1000; // 48 hours ago
 
   try {
     const userDirs = readdirSync(CONVERSATIONS_DIR);
@@ -1012,15 +1024,15 @@ function gatherRecentConversations(): string {
 
       try {
         const lines = readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
-        // Read last 10 lines per user (recent exchanges)
-        const recent = lines.slice(-10);
+        // Read last 12 lines per user (recent exchanges)
+        const recent = lines.slice(-12);
         for (const line of recent) {
           try {
             const entry = JSON.parse(line);
             const ts = new Date(entry.ts).getTime();
             if (ts > cutoff) {
               exchanges.push(
-                `[${entry.platform}/${userDir.slice(0, 12)}] User: ${entry.user?.slice(0, 100)} → Pixel: ${entry.assistant?.slice(0, 100)}`
+                `[${entry.platform}/${userDir.slice(0, 12)}] User: ${entry.user?.slice(0, 150)} → Pixel: ${entry.assistant?.slice(0, 150)}`
               );
             }
           } catch {}
@@ -1030,7 +1042,7 @@ function gatherRecentConversations(): string {
   } catch {}
 
   if (exchanges.length === 0) return "(no recent conversations)";
-  return exchanges.slice(-20).join("\n"); // Cap at 20 most recent
+  return exchanges.slice(-30).join("\n"); // Cap at 30 most recent
 }
 
 function getRecentConversationStats(hours: number = 24): { exchangeCount: number; activeUsers: number } {
@@ -2243,6 +2255,7 @@ export async function runInnerLifeCycle(): Promise<void> {
   }
 
   cycleCount++;
+  persistCycleCount();
   console.log(`[inner-life] Cycle ${cycleCount} — checking phases...`);
 
   // Learn is most frequent — understanding conversations is the priority
@@ -2330,6 +2343,10 @@ export function startInnerLife(): void {
   }
 
   innerLifeRunning = true;
+  cycleCount = loadCycleCount();
+  if (cycleCount > 0) {
+    console.log(`[inner-life] Resuming at cycle ${cycleCount} (persisted across restarts)`);
+  }
   const migration = migrateLegacyObservations();
   if (migration.moved > 0 || migration.skipped > 0) {
     invalidateSkillGraphCache();

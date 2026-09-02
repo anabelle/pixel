@@ -14,7 +14,6 @@ import NDK, {
   NDKFilter,
 } from "@nostr-dev-kit/ndk";
 import { promptWithHistory } from "../agent.js";
-import { appendToLog } from "../conversations.js";
 import { extractImageUrls, fetchImages } from "../services/vision.js";
 import { getUnsafeReason } from "../services/content-filter.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
@@ -1023,10 +1022,9 @@ export async function startNostr(): Promise<void> {
         ["p", event.pubkey],
       ];
 
-      await publishNostrEvent(reply);
-      markReplied(event.id); // Mark as replied in shared set
-      appendToLog(`nostr-${event.pubkey}`, content, response, "nostr");
-      console.log(`[nostr] Replied to ${event.pubkey.slice(0, 8)}...`);
+        await publishNostrEvent(reply);
+        markReplied(event.id); // Mark as replied in shared set
+        console.log(`[nostr] Replied to ${event.pubkey.slice(0, 8)}...`);
     } catch (err: any) {
       console.error(`[nostr] Reply error:`, err.message);
       markReplied(event.id); // Don't retry failed replies
@@ -1080,7 +1078,6 @@ export async function startNostr(): Promise<void> {
         reply.tags = [["p", event.pubkey]];
 
         await publishNostrEvent(reply);
-        appendToLog(`nostr-dm-${event.pubkey}`, decrypted, response, "nostr-dm");
         console.log(`[nostr] DM replied to ${event.pubkey.slice(0, 8)}...`);
       } catch (err: any) {
         console.error(`[nostr] DM error:`, err.message);
