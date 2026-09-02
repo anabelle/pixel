@@ -256,9 +256,9 @@ log "ALERT: $MSG_COUNT message(s) in mailbox, building prompt"
 
 MESSAGES=""
 while IFS= read -r line; do
-  msg=$(echo "$line" | jq -r '.message // empty' 2>/dev/null)
+  msg=$(echo "$line" | jq -r '.message // .summary // empty' 2>/dev/null)
   priority=$(echo "$line" | jq -r '.priority // "normal"' 2>/dev/null)
-  ts=$(echo "$line" | jq -r '.timestamp // "unknown"' 2>/dev/null)
+  ts=$(echo "$line" | jq -r '.timestamp // .ts // "unknown"' 2>/dev/null)
   if [ -n "$msg" ]; then
     MESSAGES="${MESSAGES}[${ts}] (priority: ${priority}) ${msg}\n"
   fi

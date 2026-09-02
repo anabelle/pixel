@@ -37,6 +37,11 @@ export const TRUSTED_USERS = [
   'syntropy-admin',
   'syntropy',
   'pixel-self',
+  // Internal runtime pipelines — prompts originate from trusted code, not
+  // external input. forge-identity regenerates character/monologue docs whose
+  // markdown prompts contain backtick-quoted tool names; the broad command-
+  // substitution pattern flagged them as HIGH commandInjection (2026-09-02).
+  'pixel-forge',
 ];
 
 /**
