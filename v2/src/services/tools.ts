@@ -1849,13 +1849,22 @@ export const gitCloneTool: AgentTool<typeof gitCloneSchema> = {
     ]);
     const exitCode = await proc.exited;
 
+    // Redactar credenciales antes de que el output entre al contexto del LLM
+    const redact = (s: string) => effectiveToken ? s.replaceAll(effectiveToken, "[REDACTED]") : s;
+
     if (exitCode !== 0) {
-      auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { error: stderr, exitCode });
-      throw new Error(`Git clone failed: ${stderr}`);
+      auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { error: redact(stderr), exitCode });
+      throw new Error(`Git clone failed: ${redact(stderr)}`);
+    }
+
+    // El token queda en .git/config del remote: limpiar para no persistir credenciales
+    if (effectiveToken) {
+      const clean = Bun.spawn(["git", "-C", target, "remote", "set-url", "origin", url], { cwd: "/app" });
+      await clean.exited;
     }
 
     const result = {
-      content: [{ type: "text" as const, text: `Cloned to ${target}\n${stdout}${stderr}` }],
+      content: [{ type: "text" as const, text: redact(`Cloned to ${target}\n${stdout}${stderr}`) }],
       details: { target, url },
     };
     auditToolUse("git_clone", { url, targetDir, token: !!effectiveToken }, { target, url });

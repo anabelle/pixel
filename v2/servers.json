@@ -28,13 +28,6 @@
       "clawstr_notifications",
       "clawstr_upvote",
       "clawstr_search",
-      "git_status",
-      "git_diff",
-      "git_log",
-      "git_show",
-      "git_branch",
-      "git_clone",
-      "git_pull",
       "update_missions",
       "update_monologue",
       "post_tweet",
@@ -57,7 +50,9 @@
       "user": "pixel",
       "key_env": "PIXELVPS_SSH_KEY",
       "wp_path": null,
-      "capabilities": ["ssh"],
+      "capabilities": [
+        "ssh"
+      ],
       "authorized_users": [
         "wa-573108077316",
         "wa-224343506325521",
@@ -84,7 +79,10 @@
       "user": "talleru",
       "key_env": "TALLERUBENS_SSH_KEY",
       "wp_path": "~/public_html",
-      "capabilities": ["ssh", "wp"],
+      "capabilities": [
+        "ssh",
+        "wp"
+      ],
       "authorized_users": [
         "wa-573153353120",
         "wa-573214100915",
@@ -110,7 +108,10 @@
       "user": "niwa",
       "key_env": "AMBIENTENIWA_SSH_KEY",
       "wp_path": "~/public_html",
-      "capabilities": ["ssh", "wp"],
+      "capabilities": [
+        "ssh",
+        "wp"
+      ],
       "authorized_users": [
         "wa-50672330211",
         "wa-143430835556577"
