@@ -5,6 +5,7 @@ import { audit } from "./audit.js";
 import { sendTelegramMessage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage } from "../connectors/whatsapp.js";
 import { sendNostrDm } from "../connectors/nostr.js";
+import { getPermittedTools } from "./server-registry.js";
 import { join } from "path";
 
 // Late-bound reference to promptWithHistory to avoid circular import
@@ -337,10 +338,13 @@ function appendReport(text: string): void {
   }
 }
 
-function allowedTools(names?: string[]) {
+function allowedTools(names?: string[], userId?: string) {
   if (!names || names.length === 0) return [];
   const wanted = new Set(names);
-  return pixelTools.filter((t) => wanted.has(t.name));
+  const candidates = pixelTools.filter((t) => wanted.has(t.name));
+  // Defense-in-depth: cap the toolset to what the originating user's tier permits,
+  // so a public-tier user can never reach fs/shell tools through a background job
+  return getPermittedTools(userId || "anonymous", candidates);
 }
 
 export function enqueueJob(prompt: string, toolsAllowed?: string[], callback?: JobCallback): JobEntry {
@@ -526,7 +530,7 @@ async function runNextJob(): Promise<void> {
   saveJobs(jobs);
   logJob(next);
 
-  const tools = allowedTools(next.toolsAllowed);
+  const tools = allowedTools(next.toolsAllowed, next.internal ? "pixel-self" : next.callbackUserId);
   let output = "";
 
   try {

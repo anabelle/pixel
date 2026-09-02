@@ -1010,23 +1010,18 @@ export async function startNostr(): Promise<void> {
       }
 
       // Reply as kind 1 with proper threading tags
+      // NIP-10: root tag must come FIRST, reply marker second
+      const rootTag =
+        event.tags.find((t) => t[0] === "e" && t[3] === "root") ||
+        null;
       const reply = new NDKEvent(ndk);
       reply.kind = 1;
       reply.content = response;
       reply.tags = [
+        ["e", rootTag ? rootTag[1] : event.id, rootTag?.[2] || "", "root"],
         ["e", event.id, "", "reply"],
         ["p", event.pubkey],
       ];
-
-      // Add root tag if the original was already a reply
-      const rootTag = event.tags.find(
-        (t) => t[0] === "e" && t[3] === "root"
-      );
-      if (rootTag) {
-        reply.tags.push(["e", rootTag[1], rootTag[2] || "", "root"]);
-      } else {
-        reply.tags.push(["e", event.id, "", "root"]);
-      }
 
       await publishNostrEvent(reply);
       markReplied(event.id); // Mark as replied in shared set

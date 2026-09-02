@@ -1091,6 +1091,12 @@ export const webFetchTool: AgentTool<typeof webFetchSchema> = {
   description: "Fetch a URL and return the response. For web research, checking APIs, reading documentation.",
   parameters: webFetchSchema,
   execute: async (_id, { url, method, extract_text }) => {
+    if (isForbiddenFetchTarget(url)) {
+      return {
+        content: [{ type: "text" as const, text: `Blocked: "${url}" targets an internal/private address. web_fetch only reaches public internet hosts.` }],
+        details: { status: 0 },
+      };
+    }
     try {
       const res = await fetch(url, {
         method: method ?? "GET",
@@ -1288,9 +1294,14 @@ export const researchTaskTool: AgentTool<typeof researchTaskSchema> = {
       `- Recommended next steps`,
     ].join("\n");
 
+    const jobTools = internal
+      ? ["web_search", "web_fetch", "read_file", "write_file"] // pixel-self is elevated
+      : getPermittedTools(ctx.userId, ["web_search", "web_fetch", "read_file", "write_file"].map(name => ({ name })))
+          .map(t => t.name);
+
     const job = enqueueJob(
       prompt,
-      ["web_search", "web_fetch", "read_file", "write_file"],
+      jobTools,
       internal
         ? { platform: "internal", chatId: "", userId: "pixel-self", label: topic, internal: true }
         : {
@@ -2000,7 +2011,8 @@ export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
 
 // ─── SERVER REGISTRY ──────────────────────────────────────────
 
-import { resolveServer, resolveServerKey, listServers as listRegisteredServers, isCommandBlocked, isCommandGloballyBlocked, isServerAuthorized, isGlobalAdmin } from "./server-registry.js";
+import { resolveServer, resolveServerKey, listServers as listRegisteredServers, isCommandBlocked, isCommandGloballyBlocked, isServerAuthorized, isGlobalAdmin, getPermittedTools } from "./server-registry.js";
+import { isForbiddenFetchTarget } from "./fetch-guard.js";
 
 const listServersSchema = Type.Object({});
 
