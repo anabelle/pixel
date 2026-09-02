@@ -1904,10 +1904,19 @@ async function boot() {
     console.error("[boot] Skill graph init failed:", err.message);
   }
 
-  try {
-    await startWhatsApp();
-  } catch (err: any) {
-    console.error("[boot] WhatsApp failed to start:", err.message);
+  // Gate: number banned by Meta (2026-09-02). Disable via WHATSAPP_DISABLED=1
+  // (env_file, needs container recreate) OR touch v2/data/whatsapp-disabled
+  // (volume, applies on restart). Remove both when a new number is paired.
+  const waDisabled =
+    process.env.WHATSAPP_DISABLED === "1" || existsSync("/app/data/whatsapp-disabled");
+  if (waDisabled) {
+    console.log("[boot] WhatsApp disabled (banned number / manual gate) — skipping connector");
+  } else {
+    try {
+      await startWhatsApp();
+    } catch (err: any) {
+      console.error("[boot] WhatsApp failed to start:", err.message);
+    }
   }
 
   try {
