@@ -28,11 +28,13 @@ jobs:
         id: check
         run: |
           AUTHOR="${{ github.event.head_commit.author.name }}"
+          EMAIL="${{ github.event.head_commit.author.email }}"
           MESSAGE="${{ github.event.head_commit.message }}"
           
-          # Skip if authored by Syntropy or has skip marker
-          if [[ "$AUTHOR" == *"Syntropy"* ]] || [[ "$MESSAGE" == *"[skip cd]"* ]] || [[ "$MESSAGE" == *"[skip ci]"* ]]; then
-            echo "Skipping deploy: commit from Syntropy or has skip marker"
+          # Skip bots (por nombre, email o marcador). El autor por defecto del repo
+          # es Syntropy Bot — cualquier auto-commit debe saltar el deploy.
+          if [[ "$AUTHOR" == *"Syntropy"* ]] || [[ "$EMAIL" == *"syntropy"* ]] || [[ "$MESSAGE" == *"[skip cd]"* ]] || [[ "$MESSAGE" == *"[skip ci]"* ]] || [[ "$MESSAGE" == *"auto-commit"* ]]; then
+            echo "Skipping deploy: bot commit or skip marker"
             echo "should_deploy=false" >> $GITHUB_OUTPUT
           else
             echo "Human commit detected, proceeding with deploy"
@@ -80,8 +82,22 @@ jobs:
             set -e
             cd /home/pixel/pixel || exit 1
             
-            echo "📥 Fetching latest code..."
+            # Guard: NO pisar trabajo en curso. El VPS es el árbol de trabajo vivo
+            # de agentes — un reset --hard sobre cambios locales destruye trabajo.
             git fetch origin master
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "⏸️  ABORT: parent tiene cambios locales sin commit — deploy diferido"
+              exit 1
+            fi
+            for sub in lnpixels pixel-agent pixel-landing syntropy-core; do
+              [ -e "$sub/.git" ] || continue
+              if ! git -C "$sub" diff --quiet 2>/dev/null || ! git -C "$sub" diff --cached --quiet 2>/dev/null; then
+                echo "⏸️  ABORT: submodule $sub tiene cambios locales sin commit — deploy diferido"
+                exit 1
+              fi
+            done
+            
+            echo "📥 Fetching latest code..."
             git reset --hard origin/master
             
             echo "📦 Updating submodules..."
