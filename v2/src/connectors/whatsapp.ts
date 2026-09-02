@@ -310,6 +310,8 @@ interface WaBatchEntry {
   groupJid: string;
   conversationId: string;
   quotedMessage?: any;
+  /** Sender individual id of the last queued message — auth on flush */
+  lastSenderId?: string;
 }
 const waGroupBuffers = new Map<string, WaBatchEntry>();
 
@@ -327,6 +329,14 @@ const waDmBuffers = new Map<string, WaDmBatchEntry>();
 function buildQuotedMessageOptions(quotedMessage?: any) {
   if (!quotedMessage) return undefined;
   return { quoted: quotedMessage };
+}
+
+/** Individual sender identity from a group message — AUTHORIZATION (group membership ≠ admin) */
+function waSenderAuthId(msg: any): string | undefined {
+  const p = msg?.key?.participant;
+  if (!p) return undefined;
+  const digits = String(p).replace("@s.whatsapp.net", "").replace("@lid", "").replace(/\D/g, "");
+  return digits ? `wa-${digits}` : undefined;
 }
 
 async function sendWhatsAppTextOnce(jid: string, text: string, options?: any): Promise<void> {
@@ -449,6 +459,8 @@ function queueGroupMessage(groupJid: string, conversationId: string, line: strin
   const entry = waGroupBuffers.get(groupJid) ?? { items: [], timer: null, groupJid, conversationId, quotedMessage };
   entry.items.push(line);
   if (quotedMessage) entry.quotedMessage = quotedMessage;
+  const sid = waSenderAuthId(quotedMessage);
+  if (sid) entry.lastSenderId = sid;
 
   if (entry.items.length > WA_BATCH_MAX) {
     entry.items = entry.items.slice(-WA_BATCH_MAX);
@@ -486,7 +498,7 @@ async function flushGroupMessages(groupJid: string): Promise<void> {
     await sock?.sendPresenceUpdate("composing", groupJid);
 
     const rawResponse = await promptWithHistory(
-      { userId: entry.conversationId, platform: "whatsapp", chatId: groupJid },
+      { userId: entry.conversationId, platform: "whatsapp", chatId: groupJid, authUserId: entry.lastSenderId },
       prompt
     );
 
@@ -944,7 +956,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             const formatted = `${senderName}: [voice message, ${duration}s]: ${transcription}`;
 
             const rawResponse = await promptWithHistory(
-              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              { userId: conversationId, platform: "whatsapp", chatId: jid, authUserId: waSenderAuthId(msg) },
               formatted
             );
 
@@ -1092,7 +1104,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             const conversationId = `wa-group-${jid.replace("@g.us", "")}`;
 
             const rawResponse = await promptWithHistory(
-              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              { userId: conversationId, platform: "whatsapp", chatId: jid, authUserId: waSenderAuthId(msg) },
               formatted
             );
 
@@ -1180,7 +1192,7 @@ async function connectToWhatsApp(phoneNumber: string): Promise<void> {
             await sock!.sendPresenceUpdate("composing", jid);
 
             const rawResponse = await promptWithHistory(
-              { userId: conversationId, platform: "whatsapp", chatId: jid },
+              { userId: conversationId, platform: "whatsapp", chatId: jid, authUserId: waSenderAuthId(msg) },
               line,
               [{ type: "image", data: base64, mimeType }]
             );

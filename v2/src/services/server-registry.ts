@@ -137,16 +137,17 @@ export function isServerAuthorized(serverName: string, userId: string | undefine
 
 /**
  * Check if a userId has elevated (server_admin) access.
- * True for: global admins, users authorized on ANY server, members of authorized groups.
+ * Solo usuarios individuales: los grupos son contexto de conversación, no privilegio.
  */
 export function isElevatedUser(userId: string | undefined): boolean {
   if (!userId) return false;
   if (isGlobalAdmin(userId)) return true;
 
+  // Pertenecer a un grupo (wa-group-*/tg-group-*) NO otorga tier admin:
+  // los conectores pasan el sender real como authUserId.
   const config = loadConfig();
   for (const server of Object.values(config.servers)) {
     if (server.authorized_users.includes(userId)) return true;
-    if (server.authorized_groups.includes(userId)) return true;
   }
 
   return false;
@@ -154,7 +155,6 @@ export function isElevatedUser(userId: string | undefined): boolean {
 
 /**
  * Check if a userId should get priority model access.
- * True for: global admins, users authorized on ANY server, members of authorized groups.
  */
 export function isPriorityUser(userId: string | undefined): boolean {
   if (!userId) return false;
@@ -163,7 +163,6 @@ export function isPriorityUser(userId: string | undefined): boolean {
   const config = loadConfig();
   for (const server of Object.values(config.servers)) {
     if (server.authorized_users.includes(userId)) return true;
-    if (server.authorized_groups.includes(userId)) return true;
   }
 
   return false;

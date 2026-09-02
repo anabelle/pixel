@@ -623,6 +623,12 @@ export interface PixelAgentOptions {
   displayName?: string;
   /** Override model selection: "background" uses getSimpleModel() */
   modelOverride?: "background" | undefined;
+  /**
+   * Identity used for AUTHORIZATION when it differs from userId (context).
+   * In groups, userId is the conversation id (shared memory) but privileges
+   * must come from the individual sender — group membership ≠ admin.
+   */
+  authUserId?: string;
 }
 
 /**
@@ -677,7 +683,8 @@ export async function promptWithHistory(
   }
 
   // Filter tools based on user authorization level
-  const permittedTools = getPermittedTools(userId, pixelTools);
+  // authUserId (individual sender) takes precedence over the group conversation id
+  const permittedTools = getPermittedTools(options.authUserId ?? userId, pixelTools);
   const toolsForModel = permittedTools;
   console.log(`[agent] User ${userId} authorized for ${permittedTools.length}/${pixelTools.length} tools | model: ${selectedModel?.id ?? "unknown"}`);
 
@@ -1334,7 +1341,7 @@ async function captureSelfLearning(messages: any[], userId: string, platform: st
 export async function createPixelAgent(options: PixelAgentOptions): Promise<Agent> {
   const { userId, platform } = options;
   const systemPrompt = await buildSystemPrompt(userId, platform, options.chatId?.toString(), options.chatTitle);
-  const permittedTools = getPermittedTools(userId, pixelTools);
+  const permittedTools = getPermittedTools(options.authUserId ?? userId, pixelTools);
 
   const agent = new Agent({
     initialState: {

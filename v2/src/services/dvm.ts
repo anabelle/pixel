@@ -122,6 +122,12 @@ async function waitForPayment(paymentHash: string): Promise<boolean> {
 
 /** Start the NIP-90 DVM handler */
 export function startDvm(ndk: NDK, ourPubkey: string): void {
+  // Rate limit por pubkey (token bucket): el DVM es público y cada job consume
+  // tokens de API. 5/hora sostenido, burst 3 — uso humano OK, granja frenada.
+  const DVM_RATE_HOURLY = 5;
+  const DVM_RATE_BURST = 3;
+  const dvmBuckets = new Map<string, { tokens: number; last: number }>();
+
   // Subscribe to text generation job requests (kind 5050)
   const filter: NDKFilter = {
     kinds: [5050 as number],
@@ -137,6 +143,18 @@ export function startDvm(ndk: NDK, ourPubkey: string): void {
     // Skip already processed jobs
     if (processedJobs.has(event.id)) return;
     processedJobs.add(event.id);
+
+    // Rate limit por pubkey (antes de cualquier trabajo)
+    const dvmBucket = dvmBuckets.get(event.pubkey) ?? { tokens: DVM_RATE_BURST, last: Date.now() };
+    dvmBucket.tokens = Math.min(DVM_RATE_BURST, dvmBucket.tokens + ((Date.now() - dvmBucket.last) / 3_600_000) * DVM_RATE_HOURLY);
+    dvmBucket.last = Date.now();
+    if (dvmBucket.tokens < 1) {
+      console.log(`[dvm] RATE LIMITED pubkey=${event.pubkey.slice(0, 8)} job=${event.id.slice(0, 8)}`);
+      try { await sendFeedback(ndk, event, "error", "rate limited: max 5 jobs/hour per pubkey"); } catch { /* best-effort */ }
+      return;
+    }
+    dvmBucket.tokens -= 1;
+    dvmBuckets.set(event.pubkey, dvmBucket);
 
     // Evict old entries from cache
     if (processedJobs.size > MAX_PROCESSED_CACHE) {

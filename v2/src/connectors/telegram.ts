@@ -371,7 +371,7 @@ export async function startTelegram(): Promise<void> {
         : senderName;
 
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle, authUserId: isGroupChat ? `tg-${ctx.from.id}` : undefined },
         formatted,
         [{ type: "image", data: base64, mimeType }]
       );
@@ -454,7 +454,7 @@ export async function startTelegram(): Promise<void> {
       appendToLog(conversationId, formatted, "", "telegram");
 
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle, authUserId: isGroupChat ? `tg-${ctx.from.id}` : undefined },
         formatted
       );
 
@@ -543,7 +543,7 @@ export async function startTelegram(): Promise<void> {
           const formatted = isGroupChat ? `${senderName}: ${caption} (sent audio file: ${title})` : `${caption} (sent audio file: ${title})`;
           appendToLog(conversationId, formatted, "", "telegram");
           const response = await promptWithHistory(
-            { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle: isGroupChat ? (ctx.chat as any).title ?? undefined : senderName },
+            { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle: isGroupChat ? (ctx.chat as any).title ?? undefined : senderName, authUserId: isGroupChat ? `tg-${ctx.from.id}` : undefined },
             formatted
           );
           if (response && !response.includes("[SILENT]")) {
@@ -568,7 +568,7 @@ export async function startTelegram(): Promise<void> {
       appendToLog(conversationId, formatted, "", "telegram");
 
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle, authUserId: isGroupChat ? `tg-${ctx.from.id}` : undefined },
         formatted
       );
 
@@ -653,7 +653,7 @@ export async function startTelegram(): Promise<void> {
       appendToLog(conversationId, formatted, "", "telegram");
 
       const response = await promptWithHistory(
-        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle },
+        { userId: conversationId, platform: "telegram", chatId: ctx.chat?.id ?? ctx.from?.id, chatTitle, authUserId: isGroupChat ? `tg-${ctx.from.id}` : undefined },
         formatted
       );
 
