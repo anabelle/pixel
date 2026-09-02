@@ -8,7 +8,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     env_file:
-      - .env
+      - .env.canvas
     volumes:
       # Mount directory instead of individual files for SQLite WAL mode compatibility
       - ./data/lnpixels:/app/data
@@ -46,8 +46,6 @@ services:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://127.0.0.1:3000/api}
     ports:
       - "127.0.0.1:3002:3002"
-    env_file:
-      - .env
     environment:
       - NODE_ENV=production
       - HOSTNAME=0.0.0.0
@@ -81,8 +79,6 @@ services:
         - NEXT_PUBLIC_BITCOIN_ADDRESS=${NEXT_PUBLIC_BITCOIN_ADDRESS:-bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za}
     ports:
       - "127.0.0.1:3001:3001"
-    env_file:
-      - .env
     environment:
       - NODE_ENV=production
       - HOSTNAME=0.0.0.0
