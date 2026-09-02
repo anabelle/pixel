@@ -345,6 +345,71 @@ export function consumeInvoice(paymentHash: string): boolean {
 }
 
 /**
+ * Treasury status — live balances + progress toward the owner-set 1 BTC target.
+ * Caches 5 minutes to avoid API hammering (Blink GraphQL + mempool.space).
+ */
+export interface TreasuryStatus {
+  blinkSats: number | null;
+  onchainSats: number | null;
+  totalSats: number | null;
+  targetSats: number;
+  progressPct: number | null;
+  note: string;
+}
+
+const TREASURY_TARGET_SATS = 100_000_000; // 1 BTC — owner mission, Sep 2 2026
+const ONCHAIN_ADDRESS = process.env.ONCHAIN_ADDRESS || "bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za";
+let treasuryCache: { at: number; data: TreasuryStatus } | null = null;
+
+export async function getTreasuryStatus(): Promise<TreasuryStatus> {
+  if (treasuryCache && Date.now() - treasuryCache.at < 5 * 60_000) {
+    return treasuryCache.data;
+  }
+
+  let blinkSats: number | null = null;
+  let onchainSats: number | null = null;
+
+  if (BLINK_API_KEY) {
+    try {
+      const data = await blinkGraphQL(
+        "query Me { me { defaultAccount { wallets { walletCurrency balance } } } }"
+      );
+      const btc = data?.me?.defaultAccount?.wallets?.find((w: any) => w.walletCurrency === "BTC");
+      if (btc) blinkSats = btc.balance ?? 0;
+    } catch (err: any) {
+      console.error(`[lightning] Treasury blink balance failed: ${err.message}`);
+    }
+  }
+
+  try {
+    const res = await fetch(`https://mempool.space/api/address/${ONCHAIN_ADDRESS}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const d: any = await res.json();
+      const s = d.chain_stats || {};
+      const m = d.mempool_stats || {};
+      onchainSats = (s.funded_txo_sum ?? 0) - (s.spent_txo_sum ?? 0) + ((m.funded_txo_sum ?? 0) - (m.spent_txo_sum ?? 0));
+    }
+  } catch (err: any) {
+    console.error(`[lightning] Treasury onchain lookup failed: ${err.message}`);
+  }
+
+  const parts: number[] = [blinkSats, onchainSats].filter((n): n is number => n !== null);
+  const totalSats = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
+  const data: TreasuryStatus = {
+    blinkSats,
+    onchainSats,
+    totalSats,
+    targetSats: TREASURY_TARGET_SATS,
+    progressPct: totalSats !== null ? Number(((totalSats / TREASURY_TARGET_SATS) * 100).toFixed(4)) : null,
+    note: `Owner mission: reach 1 BTC treasury. Lifetime revenue moved through wallets is NOT double-counted — only current liquid balances count.`,
+  };
+  treasuryCache = { at: Date.now(), data };
+  return data;
+}
+
+/**
  * Get wallet info (min/max amounts, description)
  */
 export async function getWalletInfo(): Promise<{

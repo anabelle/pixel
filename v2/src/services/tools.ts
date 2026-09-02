@@ -33,7 +33,7 @@ import { uploadToBlossom } from "./blossom.js";
 import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.js";
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage, resolveWaUserId } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
-import { createInvoice, verifyPayment, getWalletInfo } from "./lightning.js";
+import { createInvoice, verifyPayment, getWalletInfo, getTreasuryStatus } from "./lightning.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.js";
 
@@ -3134,7 +3134,7 @@ const getWalletInfoSchema = Type.Object({});
 const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
   name: "get_wallet_info",
   label: "Get Wallet Info",
-  description: "Get information about the configured Lightning wallet — address, min/max amounts, and status.",
+  description: "Get Lightning wallet info AND live treasury status — current liquid balances (Blink + on-chain) with progress toward the owner mission of 1 BTC (100M sats).",
   parameters: getWalletInfoSchema,
   execute: async () => {
     try {
@@ -3147,13 +3147,23 @@ const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
         };
       }
 
+      let treasuryLine = "";
+      let treasuryDetails: any = undefined;
+      try {
+        const t = await getTreasuryStatus();
+        if (t.totalSats !== null) {
+          treasuryLine = `\n\n**Treasury — mission: 1 BTC** 🎯\n- Liquid now: ${t.totalSats.toLocaleString()} sats (Blink ${t.blinkSats?.toLocaleString() ?? "?"} + on-chain ${t.onchainSats?.toLocaleString() ?? "?"})\n- Progress: ${t.progressPct}% of 100,000,000 sats`;
+          treasuryDetails = t;
+        }
+      } catch {}
+
       auditToolUse("get_wallet_info", {}, { address: info.address });
       return {
         content: [{
           type: "text" as const,
-          text: `**Lightning Wallet** ⚡\n\n- Address: ${info.address}\n- Min: ${info.minSats} sats\n- Max: ${info.maxSats} sats\n- Status: ${info.active ? "Active" : "Inactive"}`,
+          text: `**Lightning Wallet** ⚡\n\n- Address: ${info.address}\n- Min: ${info.minSats} sats\n- Max: ${info.maxSats} sats\n- Status: ${info.active ? "Active" : "Inactive"}${treasuryLine}`,
         }],
-        details: info,
+        details: { ...info, treasury: treasuryDetails },
       };
     } catch (err: any) {
       auditToolUse("get_wallet_info", {}, { error: err.message });
