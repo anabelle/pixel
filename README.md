@@ -50,7 +50,6 @@ docker compose -f v2/docker-compose.yml ps
 
 ## 📚 Documentation
 - **[V2 Master Briefing](./v2/AGENTS.md)** — source of truth
-- **[Technical Guide](./docs/TECH_GUIDE.md)** — commands & troubleshooting
 - **[Deployment](./DEPLOYMENT.md)** — VPS operations
 - **[Continuity](./CONTINUITY.md)** — current system state
 
