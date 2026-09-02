@@ -3002,6 +3002,24 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
 
 // ─── LIGHTNING INVOICE TOOLS ──────────────────────────────────
 
+/** Token-bucket rate limit for public invoice creation (burst 3, 6/hour per user) */
+const invoiceBuckets = new Map<string, { tokens: number; last: number }>();
+const INVOICE_RATE_HOURLY = 6;
+const INVOICE_RATE_BURST = 3;
+function invoiceRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const b = invoiceBuckets.get(userId) ?? { tokens: INVOICE_RATE_BURST, last: now };
+  b.tokens = Math.min(INVOICE_RATE_BURST, b.tokens + ((now - b.last) / 3_600_000) * INVOICE_RATE_HOURLY);
+  b.last = now;
+  if (b.tokens < 1) {
+    invoiceBuckets.set(userId, b);
+    return true;
+  }
+  b.tokens -= 1;
+  invoiceBuckets.set(userId, b);
+  return false;
+}
+
 const createInvoiceSchema = Type.Object({
   amount_sats: Type.Number({ description: "Amount in satoshis (minimum 1 sat)" }),
   description: Type.Optional(Type.String({ description: "Optional description for the invoice" })),
@@ -3014,11 +3032,19 @@ const createInvoiceTool: AgentTool<typeof createInvoiceSchema> = {
   parameters: createInvoiceSchema,
   execute: async (_id, { amount_sats, description }) => {
     try {
+      const { userId } = getToolContext();
+      if (userId && invoiceRateLimited(userId)) {
+        auditToolUse("create_invoice", { amount_sats }, { error: "rate_limited" });
+        return {
+          content: [{ type: "text" as const, text: "Invoice rate limit reached (max 6/hour). Reuse the last invoice or wait a bit." }],
+          details: { error: "rate_limited" },
+        };
+      }
       const invoice = await createInvoice(amount_sats, description);
       if (!invoice) {
         auditToolUse("create_invoice", { amount_sats }, { error: "Lightning not configured" });
         return {
-          content: [{ type: "text" as const, text: "Failed to create invoice — Lightning not configured. Check LIGHTNING_ADDRESS env var." }],
+          content: [{ type: "text" as const, text: "Failed to create invoice — Lightning not configured. Check BLINK_API_KEY env var." }],
           details: { error: "not_configured" },
         };
       }
@@ -3116,7 +3142,7 @@ const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
       if (!info) {
         auditToolUse("get_wallet_info", {}, { error: "not_configured" });
         return {
-          content: [{ type: "text" as const, text: "Lightning wallet not configured. Set LIGHTNING_ADDRESS env var." }],
+          content: [{ type: "text" as const, text: "Lightning wallet not configured. Set BLINK_API_KEY env var." }],
           details: { error: "not_configured" },
         };
       }

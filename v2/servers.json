@@ -30,11 +30,14 @@
       "clawstr_search",
       "update_missions",
       "update_monologue",
-      "post_tweet",
-      "search_tweets",
-      "read_tweet",
-      "twitter_status"
-    ],
+    "post_tweet",
+    "search_tweets",
+    "read_tweet",
+    "twitter_status",
+    "create_invoice",
+    "verify_payment",
+    "get_wallet_info"
+  ],
     "server_admin": [
       "ssh",
       "wp",
