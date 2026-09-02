@@ -1984,10 +1984,12 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
     const quote = new NDKEvent(ndk);
     quote.kind = 1;
     quote.content = response;
+    // Standard NIP-10 reply threading — bare quote tags (q + markerless e) render as
+    // context-less standalone notes in clients that can't fetch the quoted event.
     quote.tags = [
-      ["e", item.eventId],
+      ["e", item.eventId, "", "reply"],
       ["p", item.pubkey],
-      ["q", item.eventId],
+      ["e", item.eventId, "", "root"],
     ];
     await publishNostrEvent(quote);
   } else {
