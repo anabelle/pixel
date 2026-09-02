@@ -3201,8 +3201,8 @@ const payInvoiceTool: AgentTool<typeof payInvoiceSchema> = {
       if (result.paid) {
         const caps = getSpendCaps();
         return {
-          content: [{ type: "text" as const, text: `**Payment Sent** ✅\n\n- Amount: ${result.amountSats ?? "?"} sats\n- Payment hash: \`${result.paymentHash ?? "?"}\`\n- Spent today: ${caps.spentTodaySats}/${caps.daily} sats` }],
-          details: { paid: true, amountSats: result.amountSats, paymentHash: result.paymentHash },
+          content: [{ type: "text" as const, text: `**Payment Sent** ✅\n\n- Amount: ${result.amountSats ?? "?"} sats\n- Spent today: ${caps.spentTodaySats}/${caps.daily} sats` }],
+          details: { paid: true, amountSats: result.amountSats },
         };
       }
       return {
@@ -4534,6 +4534,7 @@ export const pixelTools = [
   createInvoiceTool,
   verifyPaymentTool,
   getWalletInfoTool,
+  payInvoiceTool,
 ];
 
 // Map of tool names to their implementations

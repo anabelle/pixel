@@ -445,20 +445,20 @@ export async function payInvoice(paymentRequest: string): Promise<PaymentResult>
   try {
     const walletId = await resolveBlinkWalletId();
     const data = await blinkGraphQL(
-      `mutation LnInvoicePaymentCreate($input: LnInvoicePaymentCreateInput!) {
-        lnInvoicePaymentCreate(input: $input) {
+      `mutation LnInvoicePaymentSend($input: LnInvoicePaymentInput!) {
+        lnInvoicePaymentSend(input: $input) {
           status
           errors { message }
           transaction {
             settlementAmount
             direction
-            settlementVia { ... on SettlementViaLn { preImage paymentHash } }
+            settlementVia { ... on SettlementViaLn { preImage } }
           }
         }
       }`,
       { input: { paymentRequest: paymentRequest.trim(), walletId } }
     );
-    const res = data?.lnInvoicePaymentCreate;
+    const res = data?.lnInvoicePaymentSend;
     const errs = res?.errors;
     if (errs?.length) {
       return { paid: false, error: errs.map((e: any) => e.message).join("; ") };
@@ -468,13 +468,12 @@ export async function payInvoice(paymentRequest: string): Promise<PaymentResult>
     const amountSats = tx ? Math.abs(tx.settlementAmount ?? 0) : undefined;
     if (ok && amountSats !== undefined) {
       spentToday.sats += amountSats;
-      console.log(`[lightning] Paid invoice: hash=${tx?.settlementVia?.paymentHash?.slice(0, 16) ?? "?"} amount=${amountSats} sats (today total: ${spentToday.sats})`);
+      console.log(`[lightning] Paid invoice: amount=${amountSats} sats (today total: ${spentToday.sats})`);
     }
     return {
       paid: ok,
       status: res?.status,
       amountSats,
-      paymentHash: tx?.settlementVia?.paymentHash,
       error: ok ? undefined : `Payment status: ${res?.status ?? "unknown"}`,
     };
   } catch (err: any) {
