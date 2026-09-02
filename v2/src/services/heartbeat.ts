@@ -1531,7 +1531,8 @@ async function zapLoop(): Promise<void> {
       if (sender && isMuted(sender)) { zapThankedIds.push(event.id); continue; }
 
       const amountMsats = getZapAmountMsats(event);
-      const thanks = generateThanksText(amountMsats);
+      const zapMsg = getZapMessage(event) ?? "";
+      const thanks = await generateThanksLLM(amountMsats, zapMsg);
       const targetEventId = getZapTargetEventId(event) ?? event.id;
 
       const reply = new NDKEvent(ndk);
@@ -2339,6 +2340,30 @@ function generateThanksText(amountMsats: number | null): string {
   if (sats >= 1000) return `⚡️ ${sats} sats, massive thanks! ${pick()} 🙌`;
   if (sats >= 100) return `⚡️ ${sats} sats, thank you, truly! ${pick()} ✨`;
   return `⚡️ ${sats} sats, appreciated! ${pick()} ✨`;
+}
+
+/**
+ * Brain-written zap thanks. Every zap is a supporter with a direct line —
+ * the LLM decides if the moment genuinely invites a concrete invitation
+ * (commissions, canvas, collaboration) or just gratitude. Fallback: template.
+ */
+async function generateThanksLLM(amountMsats: number | null, zapMessage: string): Promise<string> {
+  const sats = amountMsats ? Math.floor(amountMsats / 1000) : null;
+  try {
+    const response = await promptWithHistory(
+      { userId: "nostr-zaps", platform: "nostr", modelOverride: "background" },
+      [
+        "A supporter just zapped you on Nostr. Write the thank-you reply: 1-2 sentences, genuine and specific, never generic. Match the supporter's language if their message has one.",
+        "If the moment genuinely invites it (large zap, clear interest in your work), you MAY include ONE concrete invitation — commissions (data portrait 50k sats, custom art 25k sats, code work 100k+), the collaborative canvas at ln.pixel.xx.kg, or a collaboration idea. Most zaps deserve only gratitude. No hard sells.",
+        `Zap: ${sats ?? "?"} sats${zapMessage ? ` | message: "${zapMessage.slice(0, 200)}"` : " | no message"}`,
+        "Reply with exactly: [SILENT] if you can't write something genuine.",
+      ].join("\n")
+    );
+    if (!response || response.includes("[SILENT]")) return generateThanksText(amountMsats);
+    return response.trim().slice(0, 400);
+  } catch {
+    return generateThanksText(amountMsats);
+  }
 }
 
 function isArtPost(content: string): boolean {

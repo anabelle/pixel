@@ -669,8 +669,13 @@ export async function promptWithHistory(
   const subject = await resolveCanonicalSubject(userId);
   const convId = subject?.canonicalId ?? userId;
 
-  // Security scan: check for injection, abuse, spam patterns
-  const securityMatches = scanMessage(message, userId, platform);
+  // Security scan: check for injection, abuse, spam patterns.
+  // Internal service identities (forge, judge, loops) feed Pixel's own docs —
+  // their text legitimately mentions shell commands, it's not user injection.
+  const INTERNAL_SERVICE_USERS = new Set(["pixel-forge", "nostr-judge"]);
+  const securityMatches = INTERNAL_SERVICE_USERS.has(userId)
+    ? []
+    : scanMessage(message, userId, platform);
   if (securityMatches.length > 0) {
     const severities = [...new Set(securityMatches.map(m => m.severity))];
     console.log(`[agent] Security scan: ${securityMatches.length} match(es) [${severities.join(', ')}] from ${userId} - categories: ${[...new Set(securityMatches.map(m => m.category))].join(', ')}`);
