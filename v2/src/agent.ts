@@ -329,14 +329,16 @@ function getSimpleModel() {
 /** Get the DM-specific model — same as conversations */
 
 /** Fallback cascade — Google models, ordered by quality (all free tier, cost is $0).
- * Flash 3 first (best quality/$), then 2.5 Pro (strongest reasoner), then 2.5 Flash, then 2.0 Flash. */
+ * Flash 3 first (best quality/$), then 2.5 Pro (strongest reasoner), then 2.5 Flash.
+ * 2026-09-02: gemini-2.0-flash decommissioned by Google (404) — terminal slot is now
+ * 2.5 Flash (probed alive). A dead terminal made attempt-5 conversations fail hard. */
   function getFallbackModel(level: number = 1) {
-   switch (level) {
-     case 1: return getModel("google" as any, "gemini-3-flash-preview"); // best quality/price
-     case 2: return getModel("google" as any, "gemini-2.5-pro");         // strongest reasoner
-     case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
-     default: return getModel("google" as any, "gemini-2.0-flash");      // always works
-   }
+    switch (level) {
+      case 1: return getModel("google" as any, "gemini-3-flash-preview"); // best quality/price
+      case 2: return getModel("google" as any, "gemini-2.5-pro");         // strongest reasoner
+      case 3: return getModel("google" as any, "gemini-2.5-flash");       // solid mid-tier
+      default: return getModel("google" as any, "gemini-2.5-flash");      // proven alive terminal
+    }
  }
 
 /** Vision-capable model — Gemini 2.5 Flash (reasoning-capable, good quality) */
@@ -1355,6 +1357,15 @@ export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVis
 // Tries OpenRouter free tier first, then GLM-4.7, then Gemini cascade.
 // Tracks costs. Logs errors with detail.
 
+// Circuit breaker for the OpenRouter free slug: when the shared pool is
+// rate-limited (whole-day 429 storms observed), every background call wastes
+// a roundtrip + a full Agent allocation on attempt 0. After FREE_TIER_TRIP_THRESHOLD
+// consecutive failures, skip the slug for FREE_TIER_COOLDOWN_MS.
+const FREE_TIER_TRIP_THRESHOLD = 5;
+const FREE_TIER_COOLDOWN_MS = 10 * 60 * 1000;
+let freeTierConsecutiveFailures = 0;
+let freeTierSkipUntil = 0;
+
 export interface BackgroundLlmOptions {
   systemPrompt: string;
   userPrompt: string;
@@ -1376,6 +1387,14 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
     getFallbackModel(3),
     getFallbackModel(4),
   ];
+
+  // Circuit breaker open — drop the free slug from the head of the chain
+  const freeTierOpen = Date.now() < freeTierSkipUntil;
+  if (freeTierOpen) models.shift();
+  if (freeTierOpen && freeTierConsecutiveFailures === FREE_TIER_TRIP_THRESHOLD) {
+    freeTierConsecutiveFailures++; // log the state transition only once
+    console.log(`[${label}] free-tier circuit breaker OPEN — skipping OpenRouter slug for ${Math.round((freeTierSkipUntil - Date.now()) / 60000)}min (falling straight to glm-4.7)`);
+  }
 
   for (let attempt = 0; attempt < models.length; attempt++) {
     const model = models[attempt];
@@ -1425,7 +1444,22 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
       if (model.provider === "google") {
         resetGoogleKeyToPrimary();
       }
+      // Free-tier slug recovered — close the circuit breaker
+      if (attempt === 0 && !freeTierOpen) {
+        freeTierConsecutiveFailures = 0;
+      }
       return responseText;
+    }
+
+    // Free-tier slug failure — advance the circuit breaker
+    if (attempt === 0 && !freeTierOpen && llmError) {
+      freeTierConsecutiveFailures++;
+      if (freeTierConsecutiveFailures >= FREE_TIER_TRIP_THRESHOLD) {
+        freeTierSkipUntil = Date.now() + FREE_TIER_COOLDOWN_MS;
+        if (freeTierConsecutiveFailures === FREE_TIER_TRIP_THRESHOLD) {
+          console.log(`[${label}] free-tier circuit breaker TRIPPED after ${freeTierConsecutiveFailures} consecutive failures — skipping slug for 10min`);
+        }
+      }
     }
 
     if (llmError) {
