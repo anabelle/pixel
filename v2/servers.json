@@ -36,7 +36,8 @@
     "twitter_status",
     "create_invoice",
     "verify_payment",
-    "get_wallet_info"
+    "get_wallet_info",
+    "post_canvas_showcase"
   ],
     "server_admin": [
       "ssh",

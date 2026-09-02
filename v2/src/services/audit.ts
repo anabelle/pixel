@@ -81,6 +81,8 @@ export type AuditType =
   | "clawstr_notifications"
   | "clawstr_reply"
   | "clawstr_error"
+  // Canvas
+  | "canvas_showcase"
   // Security
   | "security_scan";
 

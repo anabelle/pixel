@@ -34,6 +34,7 @@ import { sendTelegramMessage, sendTelegramImage } from "../connectors/telegram.j
 import { sendWhatsAppMessage, joinWhatsAppGroup, sendWhatsAppGroupMessage, sendWhatsAppImage, resolveWaUserId } from "../connectors/whatsapp.js";
 import { postTweet, searchTwitter, getTweet, getTwitterStatus } from "../connectors/twitter.js";
 import { createInvoice, verifyPayment, getWalletInfo, getTreasuryStatus, payInvoice, getSpendCaps } from "./lightning.js";
+import { postCanvasShowcase } from "./canvas-showcase.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.js";
 
@@ -3175,6 +3176,41 @@ const getWalletInfoTool: AgentTool<typeof getWalletInfoSchema> = {
   },
 };
 
+// ─── CANVAS SHOWCASE TOOL ────────────────────────────────────
+
+const canvasShowcaseSchema = Type.Object({
+  focus: Type.Optional(Type.String({ description: "Optional context/angle for the caption (e.g. 'after the big sale', 'weekly state of the art')" })),
+});
+
+const canvasShowcaseTool: AgentTool<typeof canvasShowcaseSchema> = {
+  name: "post_canvas_showcase",
+  label: "Post Canvas Snapshot",
+  description: "Render your pixel canvas (ln.pixel.xx.kg) as a live PNG snapshot and post it to Nostr with a caption in your voice. Shows the world your growing collective art. Rate limited: once per hour.",
+  parameters: canvasShowcaseSchema,
+  execute: async (_id, { focus }) => {
+    try {
+      const result = await postCanvasShowcase(focus);
+      auditToolUse("post_canvas_showcase", { focus }, { posted: result.posted, url: result.url });
+      if (result.posted) {
+        return {
+          content: [{ type: "text" as const, text: `**Canvas Snapshot Posted** ✅\n\n- Image: ${result.url}\n- Note ID: \`${result.noteId ?? "?"}\`` }],
+          details: { posted: true, url: result.url },
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: `Snapshot not posted — ${result.skipped}` }],
+        details: { posted: false, reason: result.skipped },
+      };
+    } catch (err: any) {
+      auditToolUse("post_canvas_showcase", { focus }, { error: err.message });
+      return {
+        content: [{ type: "text" as const, text: `Failed to post canvas snapshot: ${err.message}` }],
+        details: { error: err.message },
+      };
+    }
+  },
+};
+
 // ─── LIGHTNING SPEND TOOL ────────────────────────────────────
 
 const payInvoiceSchema = Type.Object({
@@ -4535,6 +4571,7 @@ export const pixelTools = [
   verifyPaymentTool,
   getWalletInfoTool,
   payInvoiceTool,
+  canvasShowcaseTool,
 ];
 
 // Map of tool names to their implementations
@@ -4571,6 +4608,7 @@ const toolImplementations: Record<string, AgentTool<any>> = {
   twitter_status: twitterStatusTool,
   create_invoice: createInvoiceTool,
   pay_invoice: payInvoiceTool,
+  post_canvas_showcase: canvasShowcaseTool,
   verify_payment: verifyPaymentTool,
   get_wallet_info: getWalletInfoTool,
 };
