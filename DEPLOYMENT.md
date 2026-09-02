@@ -21,7 +21,7 @@ nano .env
 ```
 
 **Required Production Keys:**
-- `ZAI_API_KEY`: Z.AI Coding Lite API key (GLM-4.7/4.5-air)
+- `ZAI_API_KEY`: Z.AI Coding Lite API key (GLM-5.3/4.7)
 - `GEMINI_API_KEY`: Google Gemini key (fallback + vision)
 - `TELEGRAM_BOT_TOKEN`: Telegram bot integration
 - `BLINK_API_KEY` (canvas LN payments — Blink/Galoy provider)
@@ -29,7 +29,7 @@ nano .env
 **AI Provider Setup (Current: Z.AI primary + Gemini fallback):**
 ```env
 AI_PROVIDER=zai
-AI_MODEL=glm-4.7
+AI_MODEL=glm-5.3
 ZAI_API_KEY=...
 GEMINI_API_KEY=...
 ```
@@ -67,7 +67,8 @@ curl http://localhost:3002             # V1 Canvas
 
 ### Automated Backups
 Databases are stored in `./data/`.
-- **Manual:** `cp data/pixels.db backups/pixels-$(date +%Y%m%d).db`
+- **Canvas (V1):** `developero/bin/backup-canvas.sh` (cron 4:17am, backup online WAL-safe vía API, retención 30d). NUNCA `cp` en frío: WAL activo pierde datos (path real `data/lnpixels/pixels.db`).
+- **V2 Postgres:** `v2/scripts/backup-pixel-v2.sh` (cron 3:30am, pg_dump -Fc, rotación 30d).
 
 ## 🛡️ Deployment Safety Rules
 
@@ -106,3 +107,4 @@ docker run --rm -v /home/pixel/pixel:/data alpine chown -R 1000:1000 /data/<path
 | **V2 Pixel** | `v2-pixel-1` | 4000 | Primary agent brain |
 | **V2 Postgres** | `v2-postgres-v2-1` | 5433 | Agent DB |
 | **Nginx** | `pixel-nginx` | 80/443 | Reverse proxy |
+| **Nostr relay** | `strfry-relay` | 7777 | Nostr relay (crítico para acars.pub) |

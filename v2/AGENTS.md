@@ -1,17 +1,17 @@
 # PIXEL V2 — MASTER AGENT BRIEFING
 
 > **Read this file FIRST in every session. Single source of truth.**
-> Last updated: 2026-06-18 | Session: 72
+> Last updated: 2026-09-02 | Doc-audit: claims re-verificados
 
 ---
 
 ## 1. CURRENT STATUS
 
 **V1:** 4 containers (api, web, landing, nginx). Canvas preserved (9,686 pixels, 84,444 sats). Agent + Syntropy + PostgreSQL killed.
-**V2:** 2 containers (pixel, postgres-v2). 63 tools. Primary model: Z.AI GLM-5.2 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash→2.0 Flash.
-**Total containers:** 6 (down from 18 at V1 peak)
+**V2:** 2 containers (pixel, postgres-v2). 75 tools. Primary model: Z.AI GLM-5.3 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash (2.0 Flash decommissioned 2026-09-02).
+**Total containers:** 7 (+ strfry-relay Nostr :7777, crítico para acars.pub) — down from 18 at V1 peak
 **Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
-**Cron:** auto-update (hourly), host-health (daily 3:15am), mailbox-check (30 min)
+**Cron:** auto-update (hourly; empuja submodules ff-only antes del parent — difiere el push si alguno diverge), host-health (daily 3:15am), mailbox-check (30 min)
 **External:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 
 | Component | Status |
@@ -81,7 +81,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/connectors/nostr.ts` | ~433 | NDK mentions + DMs + DVM + shared repliedEventIds + disk persistence for dedup |
 | `src/connectors/whatsapp.ts` | ~1329 | Baileys bot, QR + pairing code auth, voice transcription, TTS, repair/status API |
 | `src/connectors/twitter.ts` | ~624 | Hybrid scraper (cookie auth, getTweet) + API v2 OAuth 1.0a (posting, search, mentions), rate-limited posting (2/day, 4h gap, 4h lockout), disk-persisted state |
-| `src/services/tools.ts` | ~3134 | 63 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
+| `src/services/tools.ts` | ~3134 | 75 tools: filesystem, bash, web, git, ssh, wp, list_servers, clawstr, nostr, alarms, chat, memory, notify_owner, syntropy_notify, introspect, health, logs, voice, image_gen, twitter, lightning |
 | `src/services/heartbeat.ts` | ~2424 | Initiative engine — topics/moods, Nostr engagement, Clawstr, Primal discovery, quality filtering, zaps, follows, revenue-goal, live canvas stats. Has pixelTools. |
 | `src/services/inner-life.ts` | ~1457 | Autonomous reflection, learning, ideation, identity evolution, claim derivation. Has pixelTools. |
 | `src/services/skill-graph.ts` | ~523 | Skill graph builder, cache, discovery, progressive disclosure (arscontexta + marketplace) |
@@ -105,7 +105,7 @@ Every connector: receive → identify user → load context → prompt agent →
 | `src/services/x402.ts` | ~142 | x402 USDC payment middleware — CDP facilitator, JWT auth, Base mainnet |
 | `src/services/primal.ts` | ~136 | Primal Cache API for trending Nostr posts |
 | `src/services/logging.ts` | ~133 | Console interceptor → /app/data/agent.log |
-| `src/services/audio.ts` | ~199 | Audio transcription via Gemini 2.0 Flash REST API |
+| `src/services/audio.ts` | ~199 | Audio transcription via Gemini REST API (2.5 Flash primary) |
 | `src/services/users.ts` | ~124 | User tracking — upsert, stats |
 | `src/services/tts.ts` | ~73 | Edge TTS → ffmpeg → OGG/Opus, auto language detection |
 | `src/services/blossom.ts` | ~47 | Blossom media upload for Nostr image posts |
@@ -136,10 +136,10 @@ Every connector: receive → identify user → load context → prompt agent →
 
 ⚠️ **Model names/pricing/availability change constantly. Research via API, not training data.**
 
-- **Primary (conversations):** Z.AI GLM-5.2 (reasoning, 200K context / 128K max output) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. promptWithHistory handles fallback transparently. (Z.AI silently routes GLM-5.1 → 5.2 server-side; `glm-5.1` retained as explicit env-level fallback in `makeZaiModel`.)
+- **Primary (conversations):** Z.AI GLM-5.3 (reasoning, 200K context / 128K max output) for all conversations → auto-cascade on 429 to Gemini 3 Flash → 2.5 Pro → 2.5 Flash. promptWithHistory handles fallback transparently. (Z.AI silently routes GLM-5.1 → 5.2 server-side; `glm-5.1` retained as explicit env-level fallback in `makeZaiModel`.)
 - **Background (heartbeat/inner-life/jobs):** OpenRouter Trinity (free) → Z.AI GLM-4.7 → same Gemini cascade via `backgroundLlmCall()`.
-- **Vision/Audio:** Gemini 2.5 Flash (upgraded from 2.0 Flash — better quality, reasoning-capable, no self-narrating headers)
-- **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash (all free tier — ordered by quality since cost is $0)
+- **Vision/Audio:** Gemini 2.5 Flash (2.0 Flash decommissioned 2026-09-02)
+- **Fallback chain:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash (all free tier — ordered by quality since cost is $0)
 - **Google key failover:** Primary key ($300 free credits) → fallback key (billed) via `resolveGoogleApiKey()`. Flips on quota errors, resets on success. Used by all Google callers: agent cascade, embeddings (memory.ts), image gen, audio transcription.
 - Z.AI Coding Lite: $84/yr, valid to 2027-02-14. 5-hour rolling rate limit. Used opportunistically for background tasks via cascade.
 - Z.AI models constructed manually in `makeZaiModel()` (not in pi-ai registry)
@@ -186,17 +186,17 @@ Authorization config lives in `servers.json`:
 
 ### Architecture & Models
 
-- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5.2 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
+- **Z.AI Coding endpoint only** (`api.z.ai/api/coding/paas/v4`), NOT general API. GLM-5.3 for conversations, GLM-4.7 for background. Z.AI rate limits heavily (~90% 429 on GLM-4.7), cascade absorbs failures.
 - **Model objects constructed manually** — not in pi-ai registry. Uses `openai-completions` provider.
-- **Multi-level fallback:** GLM-5.2/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash → 2.0 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
-- **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` prefers `github-copilot/gpt-5.4` first for headless opencode sessions, then falls back to `zai-coding-plan/glm-5`, then the rest of the approved cascade.
+- **Multi-level fallback:** GLM-5.3/4.7 → Gemini 3 Flash → 2.5 Pro → 2.5 Flash. Catches Z.AI-specific errors ("Insufficient balance", "subscription plan").
+- **Autonomous dispatch model order:** `v2/scripts/syntropy-dispatch.sh` order real: glm-5.3 → glm-5.2 → gpt-5.4 → glm-5 → gpt-5.2-codex → glm-5-free (glm-5.3 primero).
 - **env_file vs environment:** Docker Compose `environment:` overrides `env_file:`. Let `env_file: ../.env` provide `ZAI_API_KEY` directly.
 - **4-5 containers hard limit.** Currently 6 (4 V1 legacy). Kill V1 when canvas migrated.
 - **No Dockerfile source patches.** Runtime patching in `entrypoint.sh` is still used for the Baileys LID bug.
 
 ### Agent Behavior
 
-- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 63 tools exist for Pixel's autonomy.
+- **Tools are Pixel's toolbelt first** — user-facing results are side effects. All 75 tools exist for Pixel's autonomy.
 - **Only main agent gets tools.** Memory extraction, compaction, and zap classifier keep `tools: []`.
 - **Heartbeat + inner-life agents have pixelTools** — Pixel can proactively web_search, research during autonomous cycles.
 - **Skills in buildSystemPrompt()** — skill-graph injects relevant arscontexta + marketplace nodes. Prompt hierarchy: character → inner life → skills → long-term memory → user memory.
@@ -329,7 +329,7 @@ Also updated ALL Clawstr tool descriptions to explicitly say "NOT for Nostr" and
 1. **N-gram phrase dedup:** Extract 4-word phrases from new post and recent 5 posts. If 2+ distinctive phrases match, reject and regenerate. Common filler n-grams are excluded.
 2. **`cleanPostContent()` function:** Strips markdown headers, bold/italic markers, code blocks, wrapping quotes, collapses whitespace. Applied to both Nostr and Twitter post generators.
 3. **Anti-recycling prompt instructions:** Added "NEVER recycle phrases from recent posts" to both Nostr and Twitter post prompts. User prompt also asks for "completely different angle and vocabulary."
-4. **Accurate context:** Updated architecture stats (6 containers, ~21K lines), complete service/pricing list, hustling mood guidance to mention ONE specific service naturally.
+4. **Accurate context:** Updated architecture stats (7 containers, ~26K lines), complete service/pricing list, hustling mood guidance to mention ONE specific service naturally.
 
 **Lesson:** Word-level similarity (Jaccard) is blind to phrase-level repetition. Two posts can share 21 identical 4-word phrases and still score under 50% Jaccard. N-gram phrase matching catches structural repetition that word-bag methods miss. Also: always post-process LLM output for the target format — LLMs will emit markdown even when told not to.
 

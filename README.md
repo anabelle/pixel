@@ -55,9 +55,9 @@ docker compose -f v2/docker-compose.yml ps
 - **[Continuity](./CONTINUITY.md)** — current system state
 
 ## 🧠 AI Provider (Current)
-- **Primary:** Z.AI GLM-4.7
-- **Background:** Z.AI GLM-4.5-air
-- **Fallback:** Gemini 3 Flash → 2.5 Flash → 2.0 Flash
+- **Primary:** Z.AI GLM-5.3
+- **Background:** GLM-4.7 (reasoning) / OpenRouter free tier
+- **Fallback:** Gemini 3 Flash → 2.5 Pro → 2.5 Flash (2.0 Flash decommissioned Sep-2026)
 
 ## 📜 Philosophy
 Every pixel is a vote for the future. Every sat is survival. Every line of code is rebellion against entropy.
