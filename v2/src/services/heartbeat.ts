@@ -218,6 +218,7 @@ type HeartbeatState = {
   lastRevenueCheckTime?: number | null;
   lastRevenueWeekSats?: number | null;
   engagementMultiplier?: number;
+  gateDenylist?: string[];
 };
 
 type RecentPost = {
@@ -301,6 +302,9 @@ function loadHeartbeatState(): void {
     if (typeof state.engagementMultiplier === "number") {
       engagementMultiplier = state.engagementMultiplier;
     }
+    if (Array.isArray(state.gateDenylist)) {
+      for (const p of state.gateDenylist.slice(0, 500)) gateDenylist.add(p);
+    }
     if (Array.isArray(state.topicHistory)) {
       topicHistory = state.topicHistory.slice(0, TOPIC_HISTORY_LIMIT);
     }
@@ -343,6 +347,7 @@ function saveHeartbeatState(): void {
       lastRevenueCheckTime,
       lastRevenueWeekSats,
       engagementMultiplier,
+      gateDenylist: [...gateDenylist],
     };
     writeFileSync(HEARTBEAT_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
@@ -1638,6 +1643,8 @@ async function followLoop(): Promise<void> {
     let followed = 0;
     for (const event of candidates) {
       if (followed >= maxFollows) break;
+      // Never follow farms/bridge bots — judge gates every new contact
+      if (!(await isWorthyCandidate(event.pubkey, event.content ?? ""))) continue;
       contacts.add(event.pubkey);
       await publishContacts(ndk, contacts);
       audit("engagement_reply", `Followed ${event.pubkey.slice(0, 8)} from art discovery`, { pubkey: event.pubkey });
@@ -1725,11 +1732,29 @@ async function artReportLoop(): Promise<void> {
       return;
     }
 
+    // Only report on samples a human would call art — judge filters feed noise
+    const worthy: string[] = [];
+    const seenPubs = new Set<string>();
+    for (const e of [...relayArt, ...primalArt]) {
+      if (worthy.length >= 6) break;
+      const pub = e.pubkey ?? "";
+      if (pub && seenPubs.has(pub)) continue;
+      if (!(await isWorthyCandidate(pub, e.content ?? ""))) continue;
+      seenPubs.add(pub);
+      const c = e.content?.slice(0, 200);
+      if (c) worthy.push(c);
+    }
+    if (worthy.length < ART_REPORT_MIN_POSTS) {
+      audit("judge_rejected", "Art report skipped: not enough worthy samples", { worthy: worthy.length });
+      return;
+    }
+
     const prompt = [
       "Write a short art/creative trend report for Nostr based on recent posts.",
       "2-3 sentences max. No hashtags. No emojis.",
+      "If the samples are mostly spam or you can't build a coherent report from them, reply with exactly: [SILENT]",
       "Samples:",
-      ...samples,
+      ...worthy,
     ].join("\n");
 
     const response = await promptWithHistory(
@@ -1740,6 +1765,7 @@ async function artReportLoop(): Promise<void> {
     if (!response || response.includes("[SILENT]")) {
       return;
     }
+    if (!(await isPublishableDraft("art trend report", response, worthy.join(" | ")))) return;
 
     const post = new NDKEvent(ndk);
     post.kind = 1;
@@ -1775,6 +1801,92 @@ async function revenueGoalLoop(): Promise<void> {
   }
 }
 
+// ============================================================
+// LLM Judge — semantic gates for engagement decisions.
+// Deterministic checks stay in code; judgment goes to the brain.
+// ============================================================
+
+/** Pubkeys rejected by the judge (farms, bridge bots). Adaptive + persisted. */
+const gateDenylist = new Set<string>();
+const GATE_DENYLIST_MAX = 500;
+
+type JudgeVerdict = { ok: boolean; reason?: string } | null; // null = judge unavailable
+
+/**
+ * Ask the brain for a semantic verdict. Runs on the background model, answers JSON.
+ * Own userId so judge chatter never pollutes persona history.
+ * Fail policy is decided by callers, not here.
+ */
+async function llmJudge(instruction: string, ...context: string[]): Promise<JudgeVerdict> {
+  try {
+    const response = await promptWithHistory(
+      { userId: "nostr-judge", platform: "nostr", modelOverride: "background" },
+      [
+        instruction,
+        ...context,
+        'Answer ONLY with JSON: {"ok":true} or {"ok":false,"reason":"<max 6 words>"}',
+      ].join("\n")
+    );
+    if (!response || response.includes("[SILENT]")) return null;
+    const m = response.match(/\{[^{}]*\}/); // extract the JSON object the model was told to emit
+    if (!m) return null;
+    const v = JSON.parse(m[0]) as { ok?: unknown; reason?: unknown };
+    if (typeof v.ok !== "boolean") return null;
+    return { ok: v.ok, reason: typeof v.reason === "string" ? v.reason.slice(0, 60) : undefined };
+  } catch {
+    return null;
+  }
+}
+
+const WORTHY_GATE = [
+  "You are the gatekeeper of a Nostr account that engages only with genuine human conversation.",
+  "Decide if this post is worth engaging with: written by a real person sharing their own thoughts, art, or work.",
+  "Reject: content-farm SEO, listicle marketing, newsletter issues, engagement bait, price bots, or bridge relays dumping feeds from other platforms.",
+  "Any human language is fine — judge substance, not language.",
+].join(" ");
+
+const COHERENCE_GATE = [
+  "You are the final check before a Nostr agent publishes a post.",
+  "Reject the draft if it is: meta-commentary about the task, a refusal or explanation instead of a post, an echo of instructions, a question to the operator, or content that ignores its parent post.",
+  "Accept only drafts that read as a natural, coherent, publishable note.",
+].join(" ");
+
+/**
+ * Judge a candidate post before engaging. Rejected pubkeys land on the
+ * adaptive denylist (cached verdict, no repeat judge calls). Fail-open:
+ * when the judge is down, deterministic filters still ran.
+ */
+async function isWorthyCandidate(pubkey: string, content: string): Promise<boolean> {
+  if (pubkey && gateDenylist.has(pubkey)) return false;
+  const v = await llmJudge(WORTHY_GATE, "Post:", (content ?? "").slice(0, 600));
+  if (v === null) return true;
+  if (!v.ok && pubkey) {
+    gateDenylist.add(pubkey);
+    if (gateDenylist.size > GATE_DENYLIST_MAX) {
+      gateDenylist.delete(gateDenylist.values().next().value as string);
+    }
+    audit("judge_rejected", `Candidate denied (${v.reason ?? "spam"})`, { pubkey: pubkey.slice(0, 16) });
+    saveHeartbeatState();
+  }
+  return v.ok;
+}
+
+/**
+ * Judge a generated draft right before publishing. Fail-open: generation
+ * prompts already offer [SILENT]; this is defense in depth, not the only net.
+ */
+async function isPublishableDraft(kind: string, draft: string, parent: string): Promise<boolean> {
+  const v = await llmJudge(
+    COHERENCE_GATE,
+    `Task: ${kind}`,
+    `Parent post (context): ${(parent ?? "").slice(0, 400)}`,
+    `Draft: ${draft.slice(0, 600)}`
+  );
+  if (v === null) return true;
+  if (!v.ok) audit("judge_rejected", `Draft rejected (${v.reason ?? "incoherent"})`, { kind, preview: draft.slice(0, 120) });
+  return v.ok;
+}
+
 async function spotlightLoop(): Promise<void> {
   if (!running) return;
 
@@ -1805,10 +1917,23 @@ async function spotlightLoop(): Promise<void> {
       return;
     }
 
-    const pick = candidates[0];
+    // Judge picks the first worthy candidate (trending feeds are full of farms)
+    let pick: (typeof candidates)[number] | null = null;
+    for (const c of candidates.slice(0, 8)) {
+      if (await isWorthyCandidate(c.pubkey, c.content ?? "")) {
+        pick = c;
+        break;
+      }
+    }
+    if (!pick) {
+      audit("judge_rejected", "Spotlight skipped: no worthy candidate in trending", { checked: Math.min(candidates.length, 8) });
+      return;
+    }
+
     const prompt = [
       "Write a community spotlight post on Nostr.",
       "1-3 sentences. Give credit and explain why it matters. No hashtags.",
+      "If the post is not worth spotlighting (spam, greeting, bait), reply with exactly: [SILENT]",
       "Post:",
       pick.content,
     ].join("\n");
@@ -1821,6 +1946,7 @@ async function spotlightLoop(): Promise<void> {
     if (!response || response.includes("[SILENT]")) {
       return;
     }
+    if (!(await isPublishableDraft("community spotlight", response, pick.content ?? ""))) return;
 
     const post = new NDKEvent(ndk);
     post.kind = 1;
@@ -1947,6 +2073,7 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   if (discoveryRepliedIds.includes(item.eventId) || hasRepliedTo(item.eventId)) return;
   if (isMuted(item.pubkey)) { markDiscoveryReplied(item.eventId); return; }
   if (isBotLoop(item.pubkey)) { markDiscoveryReplied(item.eventId); return; }
+  if (!(await isWorthyCandidate(item.pubkey, item.content ?? ""))) { markDiscoveryReplied(item.eventId); return; }
 
   const tagsHint = trendingTags.length > 0 ? `Trending topics: ${trendingTags.join(", ")}.` : "";
   const prompt = [
@@ -1967,6 +2094,10 @@ async function processDiscoveryQueue(trendingTags: string[]): Promise<void> {
   );
 
   if (!response || response.includes("[SILENT]")) {
+    markDiscoveryReplied(item.eventId);
+    return;
+  }
+  if (!(await isPublishableDraft("reply to a trending post", response, item.content ?? ""))) {
     markDiscoveryReplied(item.eventId);
     return;
   }
@@ -2213,7 +2344,7 @@ function generateThanksText(amountMsats: number | null): string {
 function isArtPost(content: string): boolean {
   const lower = content.toLowerCase();
   if (extractImageUrls(content).length > 0) return true;
-  return /(art|artist|drawing|paint|sketch|illustration|visual|pixel|design|creative|canvas)/i.test(lower);
+  return /\b(art|artist|drawing|painting|paint|sketch|illustration|visual|pixel|design|creative|canvas)\b/i.test(lower);
 }
 
 function isLowQualityPost(content: string): boolean {
