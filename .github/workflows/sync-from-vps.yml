@@ -1,12 +1,10 @@
 name: Sync from VPS
 
 # This workflow syncs changes that Syntropy makes on the VPS back to GitHub
-# It runs on a schedule and does NOT trigger deploy (uses [skip cd] marker)
+# Manual-only: redundant with direct VPS pushes; scheduled runs disabled
+# 2026-09-03 (cron removed: GH_TOKEN expired, every-6h failure spam)
 
 on:
-  schedule:
-    # Every 6 hours
-    - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       force:
