@@ -619,7 +619,7 @@ app.get("/.well-known/agent-card.json", (c) => {
     },
     identity: {
       nostr: process.env.NOSTR_PUBLIC_KEY ?? "",
-      lightning: "sparepiccolo55@walletofsatoshi.com",
+      lightning: "pixelsurvivor@blink.sv",
       bitcoin: "bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za",
     },
     pricing: {

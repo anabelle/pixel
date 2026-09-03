@@ -164,7 +164,7 @@ Same Pixel, same brain, different payment doors:
 | Nostr zaps | Tips | Variable | ✅ Organic |
 | WhatsApp/Telegram | Lightning QR / tips | Variable | ⚠️ Needs users |
 
-**Treasury:** ~84,444 sats · Lightning: sparepiccolo55@walletofsatoshi.com · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
+**Treasury:** ~84,444 sats · Lightning: pixelsurvivor@blink.sv · Bitcoin: bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 
 ---
 ## 6. SECURITY & AUTHORIZATION
@@ -241,7 +241,7 @@ Authorization config lives in `servers.json`:
 - **Canvas:** https://ln.pixel.xx.kg
 - **Landing:** https://pixel.xx.kg
 - **Repo:** https://github.com/anabelle/pixel
-- **Lightning:** sparepiccolo55@walletofsatoshi.com
+- **Lightning:** pixelsurvivor@blink.sv
 - **Bitcoin:** bc1q7e33r989x03ynp6h4z04zygtslp5v8mcx535za
 - **VPS:** 65.181.125.80 (ssh pixel@...)
 - **Secrets:** ALL in `/home/pixel/pixel/.env` — NEVER expose
