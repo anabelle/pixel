@@ -207,6 +207,22 @@ function runMitigation(reason: string, currentHeap: number = 0): void {
     }
   }
 
+  // Bun does not expose global.gc — its native API is Bun.gc(). The sync
+  // full GC is the most effective mitigation for the transient LLM-pipeline
+  // allocations behind spike signatures (large system prompts, streaming
+  // buffers, OpenViking commit serialization). Without this, mitigation was
+  // cache-clear only, and recovery waited on idle GC — which is why spikes
+  // "did not recover after mitigation" (2026-09-02/03 patterns).
+  try {
+    const bunGc = (globalThis as any).Bun?.gc;
+    if (typeof bunGc === "function") {
+      bunGc(true);
+      cleared.push("Bun.gc(true)");
+    }
+  } catch {
+    // ignore
+  }
+
   audit(
     "heap_mitigation",
     `Heap mitigation (${reason}) — cleared: ${cleared.length ? cleared.join(", ") : "(none registered)"}`,
