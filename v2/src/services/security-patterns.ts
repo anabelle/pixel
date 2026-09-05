@@ -186,7 +186,10 @@ export const SECURITY_PATTERNS: SecurityPattern[] = [
       /eval\s*\(/i,
       /exec\s*\(/i,
       /\$\([^)]+\)/, // $(command) substitution
-      /`[^`]+`/, // `command` substitution
+      // Backtick spans flagged ONLY when they contain shell-command tokens —
+      // bare `` `some phrase` `` is everyday markdown quoting in chat and
+      // flagged benign nostr/telegram conversation as HIGH (2026-09-05).
+      /`[^`]*(?:sudo|rm\s+-rf|curl|wget|nc\s|sh\s-c|bash|chmod|chown|killall|mkfs|dd\s+if|&&|\|\||\||;|\$\(|>\s*\/dev\/)[^`]*`/i,
     ],
   },
 ];
