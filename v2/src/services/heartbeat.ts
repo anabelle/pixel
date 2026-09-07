@@ -1118,6 +1118,14 @@ async function checkAndReplyToMentions(): Promise<void> {
           continue;
         }
 
+        // Hostile-language hard gate — fail-closed, deterministic
+        if (containsHostileLanguage(response)) {
+          markReplied(event.id);
+          audit("content_blocked", `Engage mention-reply blocked (hostile language)`, { to: event.pubkey.slice(0, 16), preview: response.slice(0, 120) });
+          console.log(`[heartbeat/engage] BLOCKED hostile draft for ${event.pubkey.slice(0, 8)}...`);
+          continue;
+        }
+
         // Publish reply with proper threading
         const reply = new NDKEvent(ndk);
         reply.kind = 1;
@@ -1473,6 +1481,14 @@ async function notificationLoop(): Promise<void> {
         continue;
       }
 
+      // Hostile-language hard gate — fail-closed, deterministic
+      if (containsHostileLanguage(response)) {
+        markReplied(event.id);
+        markThreadHandled(threadRootId);
+        audit("content_blocked", `Engage notification-reply blocked (hostile language)`, { eventId: event.id, threadId: threadRootId, preview: response.slice(0, 120) });
+        continue;
+      }
+
       const reply = new NDKEvent(ndk);
       reply.kind = 1;
       reply.content = response;
@@ -1538,6 +1554,12 @@ async function zapLoop(): Promise<void> {
       const reply = new NDKEvent(ndk);
       reply.kind = 1;
       reply.content = thanks;
+      // Zap thanks are gratitude — hostile output here would be a generation bug; gate anyway
+      if (containsHostileLanguage(thanks)) {
+        zapThankedIds.push(event.id);
+        audit("content_blocked", `Zap thanks blocked (hostile language)`, { preview: thanks.slice(0, 120) });
+        continue;
+      }
       reply.tags = [
         ["e", targetEventId, "", "root"],
         ["e", targetEventId, "", "reply"],
@@ -1849,8 +1871,27 @@ const WORTHY_GATE = [
 const COHERENCE_GATE = [
   "You are the final check before a Nostr agent publishes a post.",
   "Reject the draft if it is: meta-commentary about the task, a refusal or explanation instead of a post, an echo of instructions, a question to the operator, or content that ignores its parent post.",
+  "Reject the draft if it insults, demeans, name-calls, or mocks the person it replies to — wit is fine, hostility is not.",
   "Accept only drafts that read as a natural, coherent, publishable note.",
 ].join(" ");
+
+// ─── Hostile-language hard gate ────────────────────────────────
+// Deterministic pre-send reject for engage paths. Independent of the LLM
+// judge (fail-closed for hostility): directed insults, hard slurs, and
+// self-harm bait never publish, even when the judge is unavailable.
+const HOSTILE_LANGUAGE_PATTERNS: RegExp[] = [
+  // Directed second-person insults ("you are obviously blind and dumb")
+  /\b(?:you\s+(?:are|'re|is)|ur)\s+(?:so\s+|obviously\s+|clearly\s+|just\s+|fucking\s+)?(?:dumb|stupid|blind|idiotic|retarded|braindead|an\s+idiot|a\s+moron|an\s+imbecile|a\s+loser|pathetic|worthless)\b/i,
+  // Bare insult nouns / hard slurs (EN + ES) — quoting them to condemn also bounces; acceptable
+  /\b(?:idiot|idiota|moron|imbecile|imb[eé]cil|dumbass|retard(?:ed)?|pendejo|cabr[oó]n|puto|maric[oó]n|n[i1]gg(?:a|er)?|f[a4]gg(?:ot)?|k[i1]ke|sp[i1]c|tr[a4]nn?y)\b/i,
+  // Self-harm bait / threats
+  /\b(?:kys|kill\s+yourself|go\s+die|end\s+yourself|go\s+kill)\b/i,
+];
+
+export function containsHostileLanguage(text: string): boolean {
+  if (!text) return false;
+  return HOSTILE_LANGUAGE_PATTERNS.some((re) => re.test(text));
+}
 
 /**
  * Judge a candidate post before engaging. Rejected pubkeys land on the
