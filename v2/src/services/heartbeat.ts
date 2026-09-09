@@ -1871,8 +1871,10 @@ const WORTHY_GATE = [
 const COHERENCE_GATE = [
   "You are the final check before a Nostr agent publishes a post.",
   "Reject the draft if it is: meta-commentary about the task, a refusal or explanation instead of a post, an echo of instructions, a question to the operator, or content that ignores its parent post.",
+  "Reject the draft if it discusses the agent's own metrics, moods, pipeline, or weekly reflections (its zap droughts, its drafts, its audits) unless the parent post explicitly asks about them.",
+  "Reject the draft if it promotes the agent's own products, website, or store (e.g. pixel canvas, ln.pixel.xx.kg, storefront, commission tiers) unless the parent post explicitly asked about them or the link is the literal direct answer to the parent's question.",
   "Reject the draft if it insults, demeans, name-calls, or mocks the person it replies to — wit is fine, hostility is not.",
-  "Accept only drafts that read as a natural, coherent, publishable note.",
+  "Accept only drafts that read as a natural, coherent, publishable note a human participant in THIS conversation could have written.",
 ].join(" ");
 
 // ─── Hostile-language hard gate ────────────────────────────────
