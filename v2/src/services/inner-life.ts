@@ -1000,6 +1000,7 @@ async function llmCall(systemPrompt: string, userPrompt: string): Promise<string
     userPrompt,
     tools: [],
     label: "inner-life",
+    modelOverride: "reasoning", // glm-5.3 first — self-reflection deserves the best model (owner order 2026-09-11); cascade absorbs Z.AI rate-limit windows
     timeoutMs: 90_000, // 90s per phase — leaves room for multiple phases in the 240s cycle
   });
   return sanitizeInnerLlmOutput(raw);

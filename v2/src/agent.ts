@@ -1373,17 +1373,12 @@ export { loadCharacter, buildSystemPrompt, getPixelModel, getSimpleModel, getVis
 
 // ─── BACKGROUND LLM CALL ─────────────────────────────────────
 // Shared utility for heartbeat, inner-life, jobs — any autonomous agent cycle.
-// Tries OpenRouter free tier first, then GLM-4.7, then Gemini cascade.
-// Tracks costs. Logs errors with detail.
-
-// Circuit breaker for the OpenRouter free slug: when the shared pool is
-// rate-limited (whole-day 429 storms observed), every background call wastes
-// a roundtrip + a full Agent allocation on attempt 0. After FREE_TIER_TRIP_THRESHOLD
-// consecutive failures, skip the slug for FREE_TIER_COOLDOWN_MS.
-const FREE_TIER_TRIP_THRESHOLD = 5;
-const FREE_TIER_COOLDOWN_MS = 10 * 60 * 1000;
-let freeTierConsecutiveFailures = 0;
-let freeTierSkipUntil = 0;
+// Order: optional glm-5.3 head ("reasoning" override), GLM-4.7, OpenRouter free
+// slug, then Gemini cascade. Tracks costs. Logs errors with detail.
+// OpenRouter free slugs are transient shared-pool slots, expect deaths:
+// trinity-large:free (404 2026-06-17) → gpt-oss-20b:free (404 2026-08-22) →
+// gemma-4-31b-it:free (429-storm, removed 2026-09-11). Mid-cascade a dead slug
+// costs one absorbed attempt, so the old head-of-chain circuit breaker is gone.
 
 export interface BackgroundLlmOptions {
   systemPrompt: string;
@@ -1391,32 +1386,33 @@ export interface BackgroundLlmOptions {
   tools?: any[];
   label?: string;          // For logging/cost tracking: "heartbeat", "inner-life", "jobs"
   timeoutMs?: number;      // Default 60s
+  modelOverride?: "reasoning" | undefined; // "reasoning": self-reflection gets the primary model (glm-5.3). Plan quota sits idle most of the day — spend it on inner life first (owner order 2026-09-11); cascade absorbs rate-limit windows.
 }
 
 export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
-  const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000 } = opts;
+  const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000, modelOverride } = opts;
   const models = [
-    // OpenRouter free tier — transient shared-pool slugs, expect deaths:
-    // trinity-large:free (404 2026-06-17) → gpt-oss-20b:free (404 2026-08-22).
-    // The cascade absorbs slug deaths; glm-4.7 (Z.AI direct) is the workhorse.
-    makeOpenRouterModel("google/gemma-4-31b-it:free"),
+    ...(modelOverride === "reasoning"
+      ? [makeZaiModel(process.env.AI_MODEL ?? "glm-5.3", true)]
+      : []),
     getSimpleModel(),
+    makeOpenRouterModel("z-ai/glm-4.5-air:free"),
     getFallbackModel(1),
     getFallbackModel(2),
     getFallbackModel(3),
     getFallbackModel(4),
   ];
 
-  // Circuit breaker open — drop the free slug from the head of the chain
-  const freeTierOpen = Date.now() < freeTierSkipUntil;
-  if (freeTierOpen) models.shift();
-  if (freeTierOpen && freeTierConsecutiveFailures === FREE_TIER_TRIP_THRESHOLD) {
-    freeTierConsecutiveFailures++; // log the state transition only once
-    console.log(`[${label}] free-tier circuit breaker OPEN — skipping OpenRouter slug for ${Math.round((freeTierSkipUntil - Date.now()) / 60000)}min (falling straight to glm-4.7)`);
-  }
-
   for (let attempt = 0; attempt < models.length; attempt++) {
     const model = models[attempt];
+    // Shared Z.AI plan cooldown (armed by this cascade OR the conversation
+    // path) — checked fresh per attempt so mid-cascade 429s skip the rest.
+    // provider check (not isZaiModel) so the OpenRouter free slug still runs.
+    if (model.provider === "zai" && isZaiRateLimited()) {
+      console.log(`[${label}] ${model.id} skipped — Z.AI plan cooldown active`);
+      costMonitor.recordError(model.id, "skipped: zai cooldown", label as any, models[attempt + 1]?.id);
+      continue;
+    }
     const agent = new Agent({
       initialState: {
         systemPrompt,
@@ -1463,26 +1459,15 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
       if (model.provider === "google") {
         resetGoogleKeyToPrimary();
       }
-      // Free-tier slug recovered — close the circuit breaker
-      if (attempt === 0 && !freeTierOpen) {
-        freeTierConsecutiveFailures = 0;
+      // Z.AI call succeeded — plan window is alive again, clear shared cooldown
+      if (model.provider === "zai") {
+        resetZaiRateLimit();
       }
       return responseText;
     }
 
-    // Free-tier slug failure — advance the circuit breaker
-    if (attempt === 0 && !freeTierOpen && llmError) {
-      freeTierConsecutiveFailures++;
-      if (freeTierConsecutiveFailures >= FREE_TIER_TRIP_THRESHOLD) {
-        freeTierSkipUntil = Date.now() + FREE_TIER_COOLDOWN_MS;
-        if (freeTierConsecutiveFailures === FREE_TIER_TRIP_THRESHOLD) {
-          console.log(`[${label}] free-tier circuit breaker TRIPPED after ${freeTierConsecutiveFailures} consecutive failures — skipping slug for 10min`);
-        }
-      }
-    }
-
     if (llmError) {
-      // A 5-model cascade exists to absorb per-provider failures — continue to
+      // A cascade exists to absorb per-provider failures — continue to
       // the next model on ANY error while attempts remain. Dead free slugs
       // return 404 "unavailable for free" which the old retryable-list missed,
       // silently killing every background call for days.
@@ -1490,6 +1475,12 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
         // Google quota hit — flip to fallback (billed) key
         if (model.provider === "google") {
           setGoogleKeyFallback();
+        }
+        // Z.AI plan limit (rolling 5h window, shared with conversation primary
+        // glm-5.3) — arm the shared sticky cooldown so both this cascade and
+        // the conversation path skip Z.AI until it resets.
+        if (model.provider === "zai" && /429|rate.?limit|usage limit/i.test(llmError)) {
+          setZaiRateLimit();
         }
         console.log(`[${label}] ${model.id} failed: ${llmError.substring(0, 120)} — falling back to ${models[attempt + 1].id}`);
         costMonitor.recordError(model.id, llmError, label as any, models[attempt + 1].id);
