@@ -557,8 +557,85 @@ export async function sendNostrDm(
   }
 }
 
+// ============================================================
+// Reply content dedup — publish-path guard
+// The dual reply paths (mention subscription + heartbeat engage) can race:
+// both check repliedEventIds before either marks, producing two published
+// variants of the same reply seconds apart. Event-id dedup can't catch that
+// race outcome; this gate compares CONTENT at the publish chokepoint.
+// ============================================================
+
+const REPLY_DEDUP_PATH = "/app/data/nostr-reply-dedup.json";
+const REPLY_DEDUP_MAX = 50;
+const REPLY_DEDUP_WINDOW_MS = 2 * 60 * 60 * 1000; // 2h
+
+interface PublishedReply { content: string; parentId: string; id: string; ts: number }
+let recentPublishedReplies: PublishedReply[] = [];
+
+function loadReplyDedup(): void {
+  if (!existsSync(REPLY_DEDUP_PATH)) return;
+  try {
+    const arr = JSON.parse(readFileSync(REPLY_DEDUP_PATH, "utf-8"));
+    if (Array.isArray(arr)) recentPublishedReplies = arr.slice(-REPLY_DEDUP_MAX);
+    console.log(`[nostr] Loaded ${recentPublishedReplies.length} recent replies for content dedup`);
+  } catch { /* ignore */ }
+}
+
+function saveReplyDedup(): void {
+  try {
+    writeFileSync(REPLY_DEDUP_PATH, JSON.stringify(recentPublishedReplies.slice(-REPLY_DEDUP_MAX)));
+  } catch { /* ignore */ }
+}
+
+function normalizeForDedup(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Content-level duplicate check for replies. Exported for testing.
+ *  Two rules, calibrated on the 2026-09-10/11 incidents (dual-path race
+ *  published paraphrased variants: jaccard 0.23-0.30, zero shared 3-grams —
+ *  similarity thresholds can NOT catch semantic paraphrases):
+ *  1. SAME parent already replied within the window → block, regardless of
+ *     content. One published reply per parent is the human-expected invariant;
+ *     a thread continuation replies to the newest event, not the same one.
+ *  2. EXACT normalized match to any recent reply (any parent) → block. */
+export function isDuplicateReply(content: string, parentId: string | null): { dup: boolean; reason: string } {
+  const now = Date.now();
+  recentPublishedReplies = recentPublishedReplies.filter((r) => now - r.ts < REPLY_DEDUP_WINDOW_MS);
+  const norm = normalizeForDedup(content);
+  for (const r of recentPublishedReplies) {
+    if (parentId && r.parentId === parentId) {
+      return { dup: true, reason: `already replied to parent ${r.parentId.slice(0, 8)} with ${r.id.slice(0, 8)} (${Math.round((now - r.ts) / 60000)}min ago)` };
+    }
+    if (normalizeForDedup(r.content) === norm) {
+      return { dup: true, reason: `exact duplicate of reply ${r.id.slice(0, 8)} to ${r.parentId.slice(0, 8)} (${Math.round((now - r.ts) / 60000)}min ago)` };
+    }
+  }
+  return { dup: false, reason: "" };
+}
+
+function recordPublishedReply(event: NDKEvent): void {
+  const replyTag = event.tags.find((t) => t[0] === "e" && t[3] === "reply");
+  if (!replyTag) return; // root posts have their own dedup in heartbeat
+  recentPublishedReplies.push({ content: event.content ?? "", parentId: replyTag[1], id: event.id, ts: Date.now() });
+  if (recentPublishedReplies.length > REPLY_DEDUP_MAX) {
+    recentPublishedReplies = recentPublishedReplies.slice(-REPLY_DEDUP_MAX);
+  }
+  saveReplyDedup();
+}
+
 /** Publish a Nostr event with one reconnect retry for transient relay failures. */
 export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTimeoutMs?: number }): Promise<void> {
+  // Content-level reply dedup — hard gate before any network work.
+  if (event.kind === 1 && event.tags?.some((t) => t[0] === "e" && t[3] === "reply")) {
+    const replyTag = event.tags.find((t) => t[0] === "e" && t[3] === "reply")!;
+    const verdict = isDuplicateReply(event.content ?? "", replyTag[1]);
+    if (verdict.dup) {
+      console.warn(`[nostr] Duplicate reply blocked: ${verdict.reason}`);
+      throw new Error(`Duplicate reply blocked: ${verdict.reason}`);
+    }
+  }
+
   // Strip relay hints pointing to dead relays from event tags.
   stripDeadRelayHints(event);
 
@@ -583,6 +660,7 @@ export async function publishNostrEvent(event: NDKEvent, options?: { reconnectTi
       } else {
         await event.publish();
       }
+      recordPublishedReply(event);
       return;
     } catch (err: any) {
       lastError = err;
@@ -913,6 +991,7 @@ export async function startNostr(): Promise<void> {
   // Load previously replied event IDs from disk (survives container restarts)
   loadRepliedIds();
   loadHandledThreads();
+  loadReplyDedup();
 
   const nsec = process.env.NOSTR_PRIVATE_KEY;
   if (!nsec) {
