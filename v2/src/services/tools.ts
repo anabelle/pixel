@@ -747,9 +747,33 @@ export const checkHealthTool: AgentTool<typeof healthSchema> = {
       try {
         const res = await fetch("http://127.0.0.1:4000/health", { signal: AbortSignal.timeout(5000) });
         const data = await res.json() as any;
-        results.push(`PIXEL: ${data.status} | uptime: ${Math.floor(data.uptime)}s | memory: ${Math.floor(data.memory.rss / 1024 / 1024)}MB | heartbeats: ${data.heartbeat?.heartbeatCount ?? 0} | inner-life cycles: ${data.innerLife?.cycleCount ?? 0}`);
+        // /health uses snake_case (inner_life) — reading innerLife always
+        // rendered 0 cycles, misreporting the loop as stalled (2026-09-13)
+        const inner = data.inner_life ?? data.innerLife;
+        results.push(`PIXEL: ${data.status} | uptime: ${Math.floor(data.uptime)}s | memory: ${Math.floor(data.memory.rss / 1024 / 1024)}MB | heartbeats: ${data.heartbeat?.heartbeatCount ?? 0} | inner-life: ${inner?.running ? "running" : "STOPPED"} (${inner?.cycleCount ?? 0} cycles)`);
       } catch (e: any) {
         results.push(`PIXEL: UNREACHABLE (${e.message})`);
+      }
+    }
+
+    // Postgres (V2 database) — TCP reachability via Bun socket.
+    // Previously absent entirely: the DB was healthy but check_health never
+    // reported it, reading as "missing" in operator output (2026-09-13).
+    if (!service || service === "postgres") {
+      try {
+        // Same target the app itself uses (compose service name postgres-v2:5432,
+        // NOT the container name/port exposed to the host)
+        const url = new URL(process.env.DATABASE_URL ?? "postgresql://pixel:pixel@postgres-v2:5432/pixel_v2");
+        const socket = await (globalThis as any).Bun.connect({
+          hostname: url.hostname,
+          port: Number(url.port || 5432),
+          socket: { data() {}, close() {}, error() {} },
+          timeout: 4000,
+        });
+        socket.end();
+        results.push(`POSTGRES: OK (reachable at ${url.hostname}:${url.port || 5432})`);
+      } catch (e: any) {
+        results.push(`POSTGRES: UNREACHABLE (${e.message})`);
       }
     }
 
