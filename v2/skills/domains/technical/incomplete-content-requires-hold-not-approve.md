@@ -1,12 +1,12 @@
 ---
-description: When a post is truncated, cut off mid-sentence, or missing its actual content, the correct gatekeeping decision is to flag and hold rather than approve or engage.
+description: Engagement or approval decisions on truncated or missing post content are premature; incompleteness must be flagged before judgment.
 kind: claim
 topics: [[technical]]
 ---
 
 # incomplete-content-requires-hold-not-approve
 
-Across multiple observations, the assistant approved or engaged posts that were truncated mid-sentence, accepted drafts based on incomplete prompts, and approved a post without ever seeing its content. In every case, the failure mode was making a decision despite insufficient input rather than explicitly flagging the gap. The claim: missing or truncated content must trigger a "cannot evaluate" response, never a default-approve, because premature decisions on incomplete context are systematically wrong.
+Repeated failures (Sept 8–9) show the gatekeeper approving posts that were cut off mid-sentence, based on truncated prompts, or evaluated without the actual content provided. In each case the correct move was to flag the incompleteness and withhold the decision, not to approve by default. Truncation itself should be treated as evidence against approval until the full content is available.
 
 ## Related Claims
-[[gatekeeper-should-default-to-rejection-on-low-evidence]], [[truncated-context-invalidates-review]]
+[[gatekeeper-flags-engagement-bait]], [[no-content-no-verdict]]
