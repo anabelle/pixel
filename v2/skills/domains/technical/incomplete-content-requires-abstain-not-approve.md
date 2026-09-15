@@ -1,12 +1,12 @@
 ---
-description: When a post is truncated, cut off, or missing its actual content, a gatekeeper/assistant must abstain or flag rather than approving, since approval on incomplete input is structurally premature.
+description: When post content is truncated or missing, the default decision must be abstention/flagging, never approval.
 kind: claim
 topics: [[technical]]
 ---
 
 # incomplete-content-requires-abstain-not-approve
 
-Across multiple observations (2026-09-09 09:06:14, 2026-09-08 15:07:52, 2026-09-08 15:07:02), the assistant made engagement decisions on truncated or entirely absent content without flagging the gap. Approval under incomplete context is not a judgment but a default, and it repeatedly produced false positives. The correct behavior is explicit refusal: "content incomplete, cannot evaluate."
+Repeated failures show approval decisions made on truncated, cut-off, or entirely absent content. In at least three cases (truncated prompt, mid-sentence post, missing content), the assistant approved engagement without the full material needed to judge. The pattern reveals a missing rule: incompleteness itself is a stop condition that should trigger a [SILENT] or flag response, because approval on partial context is structurally indistinguishable from guessing.
 
 ## Related Claims
-[[vague-evidence-insufficient-for-human-substance-verification]], [[gatekeeper-default-toward-inclusion-is-a-failure-mode]]
+[[gatekeeper-filters-toward-inclusion-under-uncertainty]], [[engagement-bait-detection-requires-substance-check]]
