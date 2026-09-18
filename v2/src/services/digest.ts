@@ -273,6 +273,7 @@ async function sendDigest(): Promise<void> {
 /** Schedule the next digest */
 function scheduleNextDigest(): void {
   if (!running) return;
+  if (process.env.DIGEST_PERIODIC === "false") return; // periodic digest disabled (owner opt-out 2026-09-18)
   digestTimer = setTimeout(sendDigest, DIGEST_INTERVAL_MS);
   const nextHours = Math.round(DIGEST_INTERVAL_MS / (60 * 60 * 1000));
   console.log(`[digest] Next digest in ~${nextHours} hours`);
@@ -288,6 +289,11 @@ export function startDigest(): void {
   running = true;
 
   console.log(`[digest] Starting (first digest in ~${Math.round(STARTUP_DIGEST_DELAY_MS / 60_000)} minutes)`);
+
+  if (process.env.DIGEST_PERIODIC === "false") {
+    console.log("[digest] Periodic digest DISABLED (DIGEST_PERIODIC=false); instant alerts remain active");
+    return; // no first digest, no timer
+  }
 
   // Delay first digest to let all services boot
   digestTimer = setTimeout(sendDigest, STARTUP_DIGEST_DELAY_MS);

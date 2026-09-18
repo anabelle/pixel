@@ -23,6 +23,7 @@ services:
       - CHARACTER_PATH=/app/character.md
       - AI_PROVIDER=zai
       - AI_MODEL=glm-5.3
+      - DIGEST_PERIODIC=false  # owner opt-out 2026-09-18 — authoritative here (compose environment beats .env regeneration); instant alerts unaffected
       - GEMINI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - HOST_PIXEL_ROOT=/home/pixel/pixel
       - OPENVIKING_WORKSPACE=/app/data/openviking
