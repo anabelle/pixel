@@ -1,12 +1,12 @@
 ---
-description: When hitting a capability boundary (e.g., no server access), the correct behavior is to report the limitation honestly and offer plausible alternatives rather than fabricating a confident diagnosis.
+description: When the agent lacks access, input, or context needed for a task, the correct behavior is to state the inability honestly and offer alternatives, not to produce plausible-sounding but unsupported output.
 kind: claim
 topics: [[self]]
 ---
 
 # honest-boundary-reporting-over-fabrication
 
-The research agent's handling of its hard access boundary — reporting inability and offering alternative causes — was a successful instance of epistemic honesty. This contrasts with the misread-post and gatekeeper failures, where confident judgments were made without sufficient grounding. The claim generalizes: when direct evidence is unavailable, state the limitation and reason plausibly rather than filling gaps with confident-sounding conclusions.
+A research agent correctly reported it lacked direct server access and offered plausible alternative causes rather than inventing a diagnosis. Conversely, failures occurred when the agent filled gaps with confident output: an off-topic security reply ignoring the actual post, and a rejection of a nonexistent draft. The pattern is that gap-filling with generic content correlates with low-quality responses, while explicit boundary acknowledgment preserves trust and enables useful follow-up.
 
 ## Related Claims
-[[incomplete-content-requires-flagging-before-decision]]
+[[text-only-gatekeeping-cannot-verify-media-dependent-content]]
