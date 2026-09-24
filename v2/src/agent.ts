@@ -1389,6 +1389,37 @@ export interface BackgroundLlmOptions {
   modelOverride?: "reasoning" | undefined; // "reasoning": self-reflection gets the primary model (glm-5.3). Plan quota sits idle most of the day — spend it on inner life first (owner order 2026-09-11); cascade absorbs rate-limit windows.
 }
 
+// ─── Per-model circuit breaker ────────────────────────────────
+// A burst-rate-limited lane (gemini 429 storms observed 11/13 calls
+// 2026-09-24) eats a wasted roundtrip + Agent allocation per cascade run.
+// After BREAKER_FAILS consecutive failures a model id is skipped for
+// BREAKER_COOLDOWN_MS. Success anywhere clears its breaker.
+const BREAKER_FAILS = 4;
+const BREAKER_COOLDOWN_MS = 15 * 60 * 1000;
+const modelBreakers = new Map<string, { fails: number; skipUntil: number; announced: boolean }>();
+
+function isModelBreakerOpen(id: string): boolean {
+  const b = modelBreakers.get(id);
+  return !!b && Date.now() < b.skipUntil;
+}
+
+function recordModelBreakerFailure(id: string): void {
+  const b = modelBreakers.get(id) ?? { fails: 0, skipUntil: 0, announced: false };
+  b.fails++;
+  if (b.fails >= BREAKER_FAILS) {
+    b.skipUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    if (!b.announced) {
+      console.log(`[cascade] circuit breaker OPEN for ${id} — skipping for ${BREAKER_COOLDOWN_MS / 60000}min`);
+      b.announced = true;
+    }
+  }
+  modelBreakers.set(id, b);
+}
+
+function recordModelBreakerSuccess(id: string): void {
+  modelBreakers.delete(id);
+}
+
 export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<string> {
   const { systemPrompt, userPrompt, tools, label = "background", timeoutMs = 60_000, modelOverride } = opts;
   const models = [
@@ -1396,7 +1427,9 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
       ? [makeZaiModel(process.env.AI_MODEL ?? "glm-5.3", true)]
       : []),
     getSimpleModel(),
-    makeOpenRouterModel("z-ai/glm-4.5-air:free"),
+    // z-ai/glm-4.5-air:free removed 2026-09-24 — OpenRouter killed the free
+    // tier (404 "unavailable for free", same signature as trinity/gpt-oss/gemma).
+    // glm-4.7 direct (Z.AI) above already covers this lane.
     getFallbackModel(1),
     getFallbackModel(2),
     getFallbackModel(3),
@@ -1411,6 +1444,12 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
     if (model.provider === "zai" && isZaiRateLimited()) {
       console.log(`[${label}] ${model.id} skipped — Z.AI plan cooldown active`);
       costMonitor.recordError(model.id, "skipped: zai cooldown", label as any, models[attempt + 1]?.id);
+      continue;
+    }
+    // Per-model circuit breaker — skip lanes that are storming (429/5xx runs)
+    if (isModelBreakerOpen(model.id)) {
+      console.log(`[${label}] ${model.id} skipped — circuit breaker open`);
+      costMonitor.recordError(model.id, "skipped: breaker open", label as any, models[attempt + 1]?.id);
       continue;
     }
     const agent = new Agent({
@@ -1463,10 +1502,14 @@ export async function backgroundLlmCall(opts: BackgroundLlmOptions): Promise<str
       if (model.provider === "zai") {
         resetZaiRateLimit();
       }
+      recordModelBreakerSuccess(model.id);
       return responseText;
     }
 
     if (llmError) {
+      // Advance the per-model breaker on every failure — storming lanes
+      // get skipped by the check at the top of the loop on future calls.
+      recordModelBreakerFailure(model.id);
       // A cascade exists to absorb per-provider failures — continue to
       // the next model on ANY error while attempts remain. Dead free slugs
       // return 404 "unavailable for free" which the old retryable-list missed,
