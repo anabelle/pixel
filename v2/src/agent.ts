@@ -314,11 +314,6 @@ function getPixelModel() {
   return getModel(provider as any, modelId);
 }
 
-/** Non-priority model — OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). */
-function getNonPriorityModel() {
-  return makeOpenRouterModel("z-ai/glm-4.5-air:free");
-}
-
 /** Background model — GLM-4.7 (reasoning, fast enough for background).
  * backgroundLlmCall() cascade: getSimpleModel → getFallbackModel(1..4) */
 function getSimpleModel() {
