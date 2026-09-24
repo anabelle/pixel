@@ -9,6 +9,7 @@
  */
 
 import { Bot, InputFile } from "grammy";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
@@ -191,6 +192,37 @@ function shouldSkipDuplicateTelegramTextSend(dedupeKey: string): boolean {
   return false;
 }
 
+// ─── Disk-alert delta gate ────────────────────────────────────────────────
+// Something has posted a "Disk usage warning on VPS: NN% used..." to the
+// notify_owner path every 6h since Feb 2026 — a level alert, not a delta
+// alert. When disk plateaus (70→71→72→71...), the owner gets duplicate
+// noise. Gate: suppress a disk warning unless the percentage MOVED by >= 3
+// points or >= 24h passed since the last delivered one. State on disk.
+const DISK_ALERT_STATE_PATH = "/app/data/disk-alert-state.json";
+const DISK_ALERT_MIN_DELTA_PCT = 3;
+const DISK_ALERT_MIN_GAP_MS = 24 * 60 * 60 * 1000;
+
+function diskAlertGate(text: string): { suppress: boolean; reason: string } {
+  const m = text.match(/Disk usage warning[^]*?(\d+)%\s*used/);
+  if (!m) return { suppress: false, reason: "" };
+  const pct = Number(m[1]);
+  if (!Number.isFinite(pct)) return { suppress: false, reason: "" };
+  try {
+    const st = existsSync(DISK_ALERT_STATE_PATH)
+      ? JSON.parse(readFileSync(DISK_ALERT_STATE_PATH, "utf-8"))
+      : null;
+    if (st && typeof st.pct === "number") {
+      const delta = Math.abs(pct - st.pct);
+      const age = Date.now() - (st.ts ?? 0);
+      if (delta < DISK_ALERT_MIN_DELTA_PCT && age < DISK_ALERT_MIN_GAP_MS) {
+        return { suppress: true, reason: `flat delta (${delta}pt, ${Math.round(age / 3600000)}h since last)` };
+      }
+    }
+    writeFileSync(DISK_ALERT_STATE_PATH, JSON.stringify({ pct, ts: Date.now() }));
+  } catch { /* state problems never block an alert */ }
+  return { suppress: false, reason: "" };
+}
+
 /**
  * Send a proactive message to the owner (human operator).
  * Convenience wrapper — uses OWNER_TELEGRAM_ID from env.
@@ -199,6 +231,11 @@ export async function notifyOwner(text: string, parseMode?: "Markdown" | "HTML")
   if (!OWNER_CHAT_ID) {
     console.log("[telegram] No OWNER_TELEGRAM_ID set, cannot notify owner");
     return false;
+  }
+  const gate = diskAlertGate(text);
+  if (gate.suppress) {
+    console.log(`[telegram] Disk alert suppressed (${gate.reason}) — level alert, not a change`);
+    return true; // report success: the alert was handled (by suppression)
   }
   return sendTelegramMessage(OWNER_CHAT_ID, text, parseMode);
 }

@@ -72,4 +72,33 @@ SQL
   sqlite3 "$DB" ".timeout 30000" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
 fi
 
+# 3. Storage blobs: sessions live in ~/.local/share/opencode/storage/<session>/.
+#    Dispatch runs append blobs forever; the DB cap above never touches them
+#    (disk grew ~1GB/day on this path, 2026-09-24: storage=925MB, db=1.1GB).
+#    Drop other sessions' storage older than 7 days (never wholesale —
+#    developero/interactive sessions are age-guarded only). Active session:
+#    keep newest 400 blobs (each dispatch writes ~2).
+STORAGE_DIR="$HOME/.local/share/opencode/storage"
+if [ -d "$STORAGE_DIR" ]; then
+  BEFORE=$(du -sm "$STORAGE_DIR" 2>/dev/null | cut -f1)
+  find "$STORAGE_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +7 ! -name "$SESSION" 2>/dev/null | while read -r d; do
+    rm -rf "$d"
+  done
+  ACTIVE="$STORAGE_DIR/$SESSION"
+  if [ -d "$ACTIVE" ]; then
+    ls -t "$ACTIVE" 2>/dev/null | tail -n +401 | while read -r f; do rm -f "$ACTIVE/$f"; done
+  fi
+  AFTER=$(du -sm "$STORAGE_DIR" 2>/dev/null | cut -f1)
+  if [ "${BEFORE:-0}" != "${AFTER:-0}" ]; then
+    log "INFO: storage pruned ${BEFORE}MB -> ${AFTER}MB"
+  fi
+fi
+
+# 4. VACUUM when free-page bloat is significant (row deletions leave holes)
+FREE_MB=$(sqlite3 -readonly "$DB" "PRAGMA freelist_count;" 2>/dev/null | awk '{print int($1*4096/1048576)}')
+if [ "${FREE_MB:-0}" -gt 200 ]; then
+  DB_MB=$(( $(stat -c %s "$DB") / 1048576 ))
+  sqlite3 "$DB" ".timeout 30000" "VACUUM;" >/dev/null 2>&1 && log "INFO: vacuumed DB (${DB_MB}MB with ~${FREE_MB}MB free pages)"
+fi
+
 exit 0
