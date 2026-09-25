@@ -42,6 +42,10 @@ export const TRUSTED_USERS = [
   // markdown prompts contain backtick-quoted tool names; the broad command-
   // substitution pattern flagged them as HIGH commandInjection (2026-09-02).
   'pixel-forge',
+  // Operator's Telegram identity — same human as syntropy-admin. Her quoting
+  // Pixel's own security reports (~/.ssh, known_hosts tokens) tripped the
+  // sshProbe scanner (2026-09-25). Threat model is external input, not owner.
+  'tg-892935151',
 ];
 
 // ─── SSH / path-traversal probe detection ─────────────────────────────────
