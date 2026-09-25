@@ -44,6 +44,27 @@ export const TRUSTED_USERS = [
   'pixel-forge',
 ];
 
+// ─── SSH / path-traversal probe detection ─────────────────────────────────
+// 2026-09-15: someone used Pixel's relay channel to request known_hosts and
+// ~/.ssh/ contents — technical reconnaissance aimed at making the LLM
+// exfiltrate key material via its file/bash tools. These patterns are file
+// paths and key filenames, not shell syntax, so the command-injection
+// patterns never matched them. Used as a hard connector-boundary block.
+export const SSH_PROBE_PATTERNS: RegExp[] = [
+  /~?\/?\.ssh\b|\/\.ssh\/|\.ssh\//i,
+  /\bid_(rsa|ed25519|ecdsa|dsa)\b/i,
+  /\bauthorized_keys\b/i,
+  /\bknown_hosts\b/i,
+  /\/etc\/(passwd|shadow)\b/i,
+  /(\.\.\/){2,}/,
+  /\bssh[_ -]?private[_ -]?key\b/i,
+];
+
+export function containsSshProbe(text: string): boolean {
+  if (!text) return false;
+  return SSH_PROBE_PATTERNS.some((re) => re.test(text));
+}
+
 /**
  * All security patterns organized by category.
  */
@@ -191,6 +212,16 @@ export const SECURITY_PATTERNS: SecurityPattern[] = [
       // flagged benign nostr/telegram conversation as HIGH (2026-09-05).
       /`[^`]*(?:sudo|rm\s+-rf|curl|wget|nc\s|sh\s-c|bash|chmod|chown|killall|mkfs|dd\s+if|&&|\|\||\||;|\$\(|>\s*\/dev\/)[^`]*`/i,
     ],
+  },
+
+  // HIGH - SSH/path-traversal reconnaissance (see SSH_PROBE_PATTERNS above).
+  // Scanner-level alert trail; the hard block for nostr runs at the
+  // connector boundary in nostr.ts before any processing.
+  {
+    category: 'sshProbe',
+    severity: 'HIGH',
+    description: 'SSH/path-traversal probe (key material or system file request)',
+    patterns: SSH_PROBE_PATTERNS,
   },
 ];
 

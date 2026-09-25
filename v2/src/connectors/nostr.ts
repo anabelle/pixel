@@ -16,6 +16,7 @@ import NDK, {
 import { promptWithHistory } from "../agent.js";
 import { extractImageUrls, fetchImages } from "../services/vision.js";
 import { getUnsafeReason } from "../services/content-filter.js";
+import { containsSshProbe } from "../services/security-patterns.js";
 import { startDvm, publishDvmAnnouncement } from "../services/dvm.js";
 import { audit } from "../services/audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -1065,6 +1066,16 @@ export async function startNostr(): Promise<void> {
     const content = event.content;
     if (!content || isBotContent(content)) return;
 
+    // SSH/path-traversal probe — hard block at the connector boundary,
+    // before ANY processing (no LLM call, no reply, no memory write).
+    // Recon attempts for key material (2026-09-15 incident).
+    if (containsSshProbe(content)) {
+      console.warn(`[nostr] SSH-probe mention BLOCKED from ${event.pubkey.slice(0, 12)}...`);
+      audit("probe_blocked", `SSH/path-probe mention blocked`, { from: event.pubkey.slice(0, 16), preview: content.slice(0, 100) });
+      markReplied(event.id); // never retry this event
+      return;
+    }
+
     const unsafeReason = getUnsafeReason(content, event.tags, { blockVideo: true });
     if (unsafeReason) {
       markReplied(event.id);
@@ -1134,6 +1145,13 @@ export async function startNostr(): Promise<void> {
         );
 
         if (!decrypted) return;
+
+        // SSH/path-traversal probe — hard block at the connector boundary
+        if (containsSshProbe(decrypted)) {
+          console.warn(`[nostr] SSH-probe DM BLOCKED from ${event.pubkey.slice(0, 12)}...`);
+          audit("probe_blocked", `SSH/path-probe DM blocked`, { from: event.pubkey.slice(0, 16), preview: decrypted.slice(0, 100) });
+          return;
+        }
 
         console.log(`[nostr] DM from ${event.pubkey.slice(0, 8)}...: ${decrypted.slice(0, 80)}`);
 

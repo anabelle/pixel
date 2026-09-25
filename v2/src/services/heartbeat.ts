@@ -25,6 +25,7 @@ import { postTweet, canPostTweet } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
+import { containsSshProbe } from "./security-patterns.js";
 import { getRevenueStats, getRevenueSince, recordRevenue } from "./revenue.js";
 import { getInnerLifeContext } from "./inner-life.js";
 import { audit } from "./audit.js";
@@ -1107,7 +1108,17 @@ async function checkAndReplyToMentions(): Promise<void> {
         console.log(`[heartbeat/engage] Replying to ${event.pubkey.slice(0, 8)}...: "${event.content.slice(0, 60)}"`);
 
     const images = await fetchImages(extractImageUrls(event.content));
-    const response = await promptWithHistory(
+
+        // SSH/path-traversal probe — skip before generating anything.
+        // (Realtime connector blocks these in nostr.ts; this covers the
+        // heartbeat's independent poll of unreplied mentions.)
+        if (containsSshProbe(event.content)) {
+          markReplied(event.id);
+          audit("probe_blocked", `SSH/path-probe mention blocked (heartbeat)`, { from: event.pubkey.slice(0, 16), preview: event.content.slice(0, 100) });
+          continue;
+        }
+
+        const response = await promptWithHistory(
       { userId: `nostr-${event.pubkey}`, platform: "nostr", modelOverride: "background" },
       event.content,
       images.length > 0 ? images : undefined
@@ -1470,6 +1481,14 @@ async function notificationLoop(): Promise<void> {
       ].join("\n");
 
       const images = await fetchImages(extractImageUrls(event.content));
+      // SSH/path-traversal probe — skip before generating (notification path)
+      if (containsSshProbe(event.content)) {
+        markReplied(event.id);
+        markThreadHandled(threadRootId);
+        audit("probe_blocked", `SSH/path-probe notification blocked (heartbeat)`, { eventId: event.id, threadId: threadRootId, preview: event.content.slice(0, 100) });
+        continue;
+      }
+
       const response = await promptWithHistory(
         { userId: `nostr-${event.pubkey}`, platform: "nostr", modelOverride: "background" },
         prompt,
