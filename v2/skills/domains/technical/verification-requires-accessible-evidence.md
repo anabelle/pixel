@@ -1,12 +1,12 @@
 ---
-description: Verification claims should only be made against directly accessible evidence (URLs, read access, runnable artifacts), not user assertions.
+description: When direct verification is impossible (private repos, unverifiable media, unresolved DNS), the assistant must request evidence or explicitly flag unverified status rather than proceed on assumption.
 kind: claim
 topics: [[technical]]
 ---
 
 # verification-requires-accessible-evidence
 
-When artifacts like private repos or staging environments cannot be reached, the assistant should explicitly request direct run URLs or read access rather than proceeding on assumption or delivering partial conclusions. Multiple frictions show the same gap: unverifiable media attachments approved by a text-only gatekeeper, and claims blocked by unresolvable DNS. The pattern is that verification workflows must first establish evidence access as a precondition, and fail loudly (requesting access) when it is absent.
+Multiple observations show failures when verification depends on inaccessible content: a private repository with unresolvable staging DNS, and a gatekeeper approving a post whose substance lived in an image it couldn't inspect. Text-only or access-limited verification silently degrades into assumption. The correct behavior is to identify the unverifiable dependency early and either request direct evidence (URLs, read access) or decline judgment.
 
 ## Related Claims
-[[text-only-filtering-cannot-judge-media-dependent-content]], [[incomplete-delivery-requires-resumability]]
+[[gatekeeping-skips-unverifiable-content]], [[evidence-over-assumption]]
