@@ -80,6 +80,7 @@ type PendingSpike = {
   heapUsedAtSpike: number;
   referenceHeap: number;
   jumpPct: number;
+  checks: number;             // recovery-check samples elapsed since spike
 };
 let pendingSpike: PendingSpike | null = null;
 
@@ -242,12 +243,19 @@ function countSpikesInLastHour(): number {
 }
 
 /**
- * Check whether a pending spike has recovered. Called on the sample AFTER
- * a spike was detected and mitigated. If heap is still elevated, the spike
- * is non-transient and the owner should be alerted.
+ * Check whether a pending spike has recovered. Called on samples AFTER
+ * a spike was detected and mitigated. Heap recovery after an LLM-cycle
+ * burst takes up to ~90s (measured 2026-09-26: 56MB→39MB→31MB over three
+ * 30s samples) — so the spike stays pending for SPIKE_RECOVERY_GRACE_SAMPLES
+ * and only alerts if heap is STILL elevated on the final grace sample.
  */
+const SPIKE_RECOVERY_GRACE_SAMPLES = 3;
+
 function checkPendingSpikeRecovery(currentSample: Sample): void {
   if (!pendingSpike) return;
+  pendingSpike.checks = (pendingSpike.checks ?? 0) + 1;
+  if (pendingSpike.checks < SPIKE_RECOVERY_GRACE_SAMPLES) return; // still in grace window
+
   const spike = pendingSpike;
   pendingSpike = null; // consume it regardless
 
@@ -313,13 +321,14 @@ async function evaluate(): Promise<void> {
       // Run mitigation (only clears caches when heap is genuinely high)
       runMitigation("spike", sample.heapUsed);
 
-      // Stage the spike for recovery check on next sample
+      // Stage the spike for recovery check after the grace window
       pendingSpike = {
         detectedAtTs: now,
         detectedAtSampleTs: sample.ts,
         heapUsedAtSpike: sample.heapUsed,
         referenceHeap: reference,
         jumpPct,
+        checks: 0,
       };
 
       // Immediate alert conditions (don't wait for recovery check):
