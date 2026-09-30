@@ -78,13 +78,13 @@
       ]
     },
     "tallerubens": {
-      "label": "Taller Rubens (WordPress)",
+      "label": "Taller Rubens (WordPress) — co-admin duty since 2026-09-30",
       "host": "68.66.224.4",
       "user": "talleru",
       "key_env": "TALLERUBENS_SSH_KEY",
-      "wp_path": "~/public_html",
+      "wp_path": "~/public_html/tallerubens.com",
+      "notes": "SSH user talleru was removed server-side (verified 2026-09-21; account consolidated into 'eightser'). Operational access today: (a) WP REST via App Password (repo .env.local WP_APP_PASS), (b) git repo deploy pipeline — develop->PR->main triggers GitHub Actions FTP deploy, (c) staging dev.tallerubens.com basic-auth (see repo AGENTS.md). Duty watchdog: developero/repos/tallerubens/bin/site-watchdog.sh (daily 3:35, alerts via Syntropy mailbox). Standing CRITICAL: prod PHP 7.4.33 EOL — host-panel fix only (owner action).",
       "capabilities": [
-        "ssh",
         "wp"
       ],
       "authorized_users": [
