@@ -1,12 +1,12 @@
 ---
-description: Gatekeeping or verification roles that operate on text alone cannot meaningfully judge posts whose substance depends on unverifiable or non-textual content, and should request evidence or abstain.
+description: Text-only filtering cannot meaningfully judge posts whose substance depends on unviewable media attachments, and should either request descriptions or withhold approval.
 kind: claim
 topics: [[technical]]
 ---
 
 # text-only-gatekeeping-cannot-verify-media-dependent-content
 
-Two observations show the same failure mode: the judge approved a vague post whose value rested on an unseen image, and the assistant could not verify a private-repo claim without run URLs or read access. In both cases the correct behavior was either requesting verifiable evidence or declining judgment rather than issuing a verdict based on assumption. Claims and reviews that depend on external artifacts require an explicit evidence-collection step before evaluation.
+On 2026-09-20 the nostr-judge approved a vague, context-free post with a media attachment it couldn't verify, revealing that approval was granted on faith rather than evidence. When a post's claim depends on unseen images, a text-only judge should either request a text description of the media or flag the post as unverifiable rather than passing it through. This pairs with the related friction where unverifiable private repositories required asking for direct evidence instead of assuming correctness.
 
 ## Related Claims
-[[evidence-over-assumption-in-verification]], [[role-gates-should-not-fire-on-incomplete-inputs]]
+[[verification-requires-accessible-evidence]], [[content-hash-dedup-is-brittle]]
