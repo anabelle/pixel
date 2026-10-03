@@ -18,8 +18,7 @@ Watch, verify, and act through **documented access paths only**:
 | 4 | **Deploy pipeline** | `develop` → verify staging → PR → `main` → GitHub Actions FTP deploy |
 | 5 | **Watchdog** | `developero/repos/tallerubens/bin/site-watchdog.sh`, cron daily 3:35, alerts Syntropy mailbox **on regression only** |
 
-**SSH is NOT an access path.** User `talleru` was removed server-side
-(consolidated into `eightser`, verified 2026-09-21). `servers.json` tallerubens
+**The historical `talleru` SSH path is obsolete and must not be used.** Coordinate server-side operations through developero; public HTTP checks do not prove current hosting-account capabilities. `servers.json` tallerubens
 entry carries `capabilities: ["wp"]` only — no ssh.
 
 ## Verification (on demand)
@@ -30,7 +29,7 @@ v2/scripts/verify-tallerubens-duty.sh
 
 Read-only, stateless, prints no secrets. Checks: prod 200 + WP marker,
 staging 200 + auth, WP-REST app-password auth + admin scope, deploy sync
-(local main == origin/main), watchdog freshness (<36h). Exit 0 = all green.
+(local checkout HEAD == remote main), watchdog freshness (<36h). Exit 0 means these limited probes passed, NOT that live production matches GitHub. Real deploy verification requires the real docroot sync-state/file read-back; purchase/login/mobile flows remain untested.
 This complements — never replaces — the daily stateful watchdog.
 
 ## Duties
@@ -41,9 +40,7 @@ This complements — never replaces — the daily stateful watchdog.
 2. **Deploy discipline** — all code changes flow `develop` → staging verify →
    PR → `main`. Never push to `main` directly. Never FTP manually when the
    Actions pipeline is healthy.
-3. **DB sync policy** — staging refresh (`sync-staging.sh`) before any work
-   touching DB settings/flows; mandatory if stale >7 days. **NEVER sync
-   staging DB → production.**
+3. **DB sync safety** — NEVER run the historical `sync-staging.sh` or `talleru` SSH recipes. They contain pre-consolidation paths and destructive sync behavior. A staging refresh requires a separately reviewed, backed-up procedure through developero. **NEVER sync staging DB → production.**
 4. **Prod changes via WP-REST only** — content/publishing tasks for jorge use
    the app password. Plugin/core updates on prod require: staging
    verification + owner (Ana) approval. Direct-on-prod file changes get
@@ -57,7 +54,7 @@ This complements — never replaces — the daily stateful watchdog.
   cPanel/hosting.com). Ours: keep flagging in watchdog state; do not attempt
   workarounds on prod.
 - **Staging is disposable; prod DB is the only source of truth.**
-- Ana is project lead. jorge owns the site. We are co-admins, not owners.
+- Jorge directs this team; existing project-owner approval boundaries remain unchanged. We are co-admins, not owners.
 
 ## Forbidden under this duty
 

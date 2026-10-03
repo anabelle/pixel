@@ -65,14 +65,14 @@ else
   bad "tallerubens .env.local missing at $ENV_LOCAL"
 fi
 
-# ── 4. deploy pipeline: local main == origin/main ────────────
+# ── 4. checkout alignment only; NOT real production deploy proof ──
 if [ -d "$REPO_DIR/.git" ]; then
-  LOCAL_MAIN=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null)
+  LOCAL_MAIN=$(git -C "$REPO_DIR" rev-parse --short=8 HEAD 2>/dev/null)
   ORIGIN_MAIN=$(git -C "$REPO_DIR" ls-remote origin main 2>/dev/null | cut -c1-8)
   if [ -n "$LOCAL_MAIN" ] && [ "$LOCAL_MAIN" = "$ORIGIN_MAIN" ]; then
-    ok "deploy in sync (main $LOCAL_MAIN == origin/main)"
+    ok "checkout aligned (HEAD $LOCAL_MAIN == remote main; live deploy not checked)"
   else
-    bad "deploy drift (local $LOCAL_MAIN vs origin $ORIGIN_MAIN)"
+    bad "checkout drift (HEAD $LOCAL_MAIN vs remote main $ORIGIN_MAIN)"
   fi
 else
   bad "tallerubens repo missing at $REPO_DIR"
