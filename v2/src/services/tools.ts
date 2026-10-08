@@ -2055,7 +2055,7 @@ const listServersSchema = Type.Object({});
 export const listServersTool: AgentTool<typeof listServersSchema> = {
   name: "list_servers",
   label: "List Servers",
-  description: "List registered servers and capabilities. ambienteniwa uses a restricted NIWA broker: status, approved WP commands and relative file operations; no shell or connection overrides.",
+  description: "List registered servers and capabilities. ambienteniwa uses a restricted NIWA broker: status, approved WP commands, theme/upload assets, media upload, backup and receipt restore; no shell or connection overrides.",
   parameters: listServersSchema,
   execute: async () => {
     const servers = listRegisteredServers();
@@ -2063,7 +2063,7 @@ export const listServersTool: AgentTool<typeof listServersSchema> = {
       return { content: [{ type: "text" as const, text: "No servers registered. Use raw host/user/key params with ssh tool, or add servers to servers.json." }] };
     }
     const lines = servers.map(s =>
-      `• ${s.name} — ${s.label}\n  host: ${s.host}, user: ${s.user}, capabilities: [${s.capabilities.join(", ")}]${s.wp_path ? `, wp_path: ${s.wp_path}` : ""}${s.name === "ambienteniwa" ? "\n  Restricted broker only: ssh status or v:1 file.read/file.list/file.write JSON; wp tokenized commands; no shell or overrides." : ""}`
+      `• ${s.name} — ${s.label}\n  host: ${s.host}, user: ${s.user}, capabilities: [${s.capabilities.join(", ")}]${s.wp_path ? `, wp_path: ${s.wp_path}` : ""}${s.name === "ambienteniwa" ? "\n  Restricted broker only: ssh status or v:1 JSON for assets, receipt restore, media upload or backup; wp tokenized commands; no shell or overrides. wp_path is display-only." : ""}`
     );
     return { content: [{ type: "text" as const, text: `Registered servers:\n\n${lines.join("\n\n")}` }] };
   },
@@ -2102,7 +2102,7 @@ function decodeSshKey(maybeKey: string): string {
 export const sshTool: AgentTool<typeof sshSchema> = {
   name: "ssh",
   label: "SSH Execute",
-  description: "Execute SSH commands on registered servers. ambienteniwa is broker-only: command 'status', 'niwa status', or v:1 JSON with op file.read/file.list and relative path, or file.write with path, content_b64, expected_sha256 (null=create; hash=update). request_id UUID optional (generated). No shell or connection overrides. Run list_servers first.",
+  description: "Execute SSH commands on registered servers. ambienteniwa is broker-only: status/niwa status, or v:1 JSON. Ops: status/backup (no extra fields; backup returns opaque receipt only); file.read/list {path}; file.write {path,content_b64,expected_sha256:null=create or lowercase hash=update}; file.restore {receipt:32 lowercase hex}; media.upload {filename,mime,content_b64}, PNG/JPEG/WebP only. Assets only in wp-content/themes/<slug> or uploads; content <=180KiB, JSON <=256KiB. UUID request_id generated if omitted. No shell/connection overrides or automatic mutation retries.",
   parameters: sshSchema,
   execute: async (_id, params) => {
     if (params.server === "ambienteniwa") return executeNIWABroker("ssh", params, getToolContext());
@@ -2225,7 +2225,7 @@ const wpCliSchema = Type.Object({
 export const wpCliTool: AgentTool<typeof wpCliSchema> = {
   name: "wp",
   label: "WP-CLI",
-  description: "Run WordPress commands via WP-CLI on registered servers. ambienteniwa uses a restricted broker: pass command such as 'plugin list' or 'post update 123 --post_title=\"Title\"', without wp prefix (one prefix accepted). Quotes/escapes become argv, never shell. No host/user/port/path/key overrides, routing/code-loading flags, eval or shell. Broker revalidates permitted commands.",
+  description: "Run WordPress commands on registered servers. ambienteniwa broker grammar: core version/check-update; plugin/theme list/get/status and installed-slug update --version=X.Y.Z (exact pin, broker verifies provenance); post/page list/get/create/update with guarded fields; option get home/siteurl/blogname/blogdescription. Use --key=value flags, e.g. post update 123 --post_title=\"Title\". No wp prefix needed (one accepted). Quotes become argv, never shell. No connection overrides, routing/code-loading flags, eval or shell. Broker revalidates commands; no automatic mutation retries.",
   parameters: wpCliSchema,
   execute: async (_id, params) => {
     if (params.server === "ambienteniwa") return executeNIWABroker("wp", params, getToolContext());

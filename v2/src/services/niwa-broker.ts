@@ -2,9 +2,17 @@ import { randomUUID } from "node:crypto";
 import { isNIWABrokerAuthorized, resolveServer } from "./server-registry.js";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_CONTENT_BYTES = 180 * 1024;
 const KEY_FILE = "/app/data/keys/niwa-broker_ed25519";
 const KNOWN_HOSTS_FILE = "/app/data/keys/niwa-broker_known_hosts";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const RECEIPT = /^[a-f0-9]{32}$/;
+const FORBIDDEN_SUFFIX = /\.(?:phtml|phar|inc|cgi|shtml|html|svg|json|env|ini|conf|config|sql|bak|log|ya?ml)(?:\.|$)/i;
+
+// JS $ can match before a final newline; Python re.fullmatch cannot.
+function fullMatch(pattern: RegExp, value: string): boolean {
+  return pattern.exec(value)?.[0] === value;
+}
 
 export interface NIWAContext { userId?: string; authUserId?: string }
 export interface NIWAParams {
@@ -14,10 +22,12 @@ export interface NIWAParams {
 }
 
 export type NIWARequest = { v: 1; request_id: string } & (
-  | { op: "status" }
+  | { op: "status" | "backup" }
   | { op: "wp"; argv: string[] }
   | { op: "file.read" | "file.list"; path: string }
   | { op: "file.write"; path: string; content_b64: string; expected_sha256: string | null }
+  | { op: "file.restore"; receipt: string }
+  | { op: "media.upload"; filename: string; mime: "image/png" | "image/jpeg" | "image/webp"; content_b64: string }
 );
 
 /** Tokenize without evaluating a shell. Metacharacters are data only inside quotes. */
@@ -51,8 +61,8 @@ export function tokenizeNIWAWP(command: string): string[] {
 }
 
 function validateWPArgv(argv: unknown): asserts argv is string[] {
-  if (!Array.isArray(argv) || argv.length === 0 || argv.length > 128 || argv.some(a => typeof a !== "string" || a.length > 65536 || /[\0\r\n]/.test(a))) {
-    throw new Error("NIWA WP argv must contain 1–128 bounded strings.");
+  if (!Array.isArray(argv) || argv.length < 2 || argv.length > 128 || argv.some(a => typeof a !== "string" || Buffer.byteLength(a) > 65536 || /[\0\r\n]/.test(a))) {
+    throw new Error("NIWA WP argv must contain 2–128 bounded UTF-8 strings.");
   }
   if (!/^[a-z][a-z0-9-]*$/.test(argv[0]) || ["wp", "eval", "eval-file", "shell", "cli"].includes(argv[0])) throw new Error("NIWA WP command is restricted.");
   for (const arg of argv) {
@@ -62,32 +72,66 @@ function validateWPArgv(argv: unknown): asserts argv is string[] {
   }
 }
 
-function validatePath(path: unknown): asserts path is string {
-  if (typeof path !== "string" || path.length === 0 || path.length > 4096 || /[\x00-\x1f\x7f\\]/.test(path) || path.startsWith("/") || path.split("/").some(p => p === ".." || p === "")) {
-    throw new Error("NIWA file path must be relative and contain no traversal.");
+function validatePath(path: unknown, listing = false): asserts path is string {
+  if (typeof path !== "string" || path.length === 0 || path.length > 240) throw new Error("NIWA asset path is invalid.");
+  const parts = path.split("/");
+  if (parts.some(p => !fullMatch(/^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}$/, p) || p.includes("..") || p.toLowerCase().includes(".php") || FORBIDDEN_SUFFIX.test(p))) {
+    throw new Error("NIWA asset path contains a forbidden component.");
   }
+  const theme = parts.length >= 3 && parts[0] === "wp-content" && parts[1] === "themes";
+  const upload = parts.length >= 2 && parts[0] === "wp-content" && parts[1] === "uploads";
+  if ((!theme && !upload) || (theme && !fullMatch(/^[a-z0-9][a-z0-9_-]{0,79}$/, parts[2]))) throw new Error("NIWA files are restricted to theme and upload assets.");
+  if (!listing) {
+    const ext = parts.at(-1)!.split(".").at(-1)!.toLowerCase();
+    if (parts.length < (theme ? 4 : 3) || !(theme ? ["css", "js", "txt"] : ["png", "jpg", "jpeg", "webp", "txt"]).includes(ext)) throw new Error("NIWA asset extension is forbidden.");
+  }
+}
+
+function validateContent(content: unknown): Buffer {
+  if (typeof content !== "string" || content.length > Math.ceil(MAX_CONTENT_BYTES / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content)) throw new Error("NIWA content must be base64 and at most 180KiB decoded.");
+  const decoded = Buffer.from(content, "base64");
+  if (decoded.length > MAX_CONTENT_BYTES || decoded.toString("base64") !== content) throw new Error("NIWA content must be canonical base64 and at most 180KiB decoded.");
+  return decoded;
 }
 
 /** Validate and copy only protocol fields; unknown fields and operations fail closed. */
 export function validateNIWARequest(input: unknown): NIWARequest {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("NIWA request must be a JSON object.");
-  const r = input as Record<string, unknown>;
+  const source = input as Record<string, unknown>;
+  const r: Record<string, unknown> = { ...source, request_id: source.request_id === undefined ? randomUUID() : source.request_id };
   if (r.v !== 1) throw new Error("NIWA protocol version must be 1.");
   const fields = ["v", "op", "request_id"];
   switch (r.op) {
-    case "status": break;
+    case "status": case "backup": break;
     case "wp": fields.push("argv"); validateWPArgv(r.argv); break;
-    case "file.read": case "file.list": fields.push("path"); validatePath(r.path); break;
+    case "file.read": case "file.list": fields.push("path"); validatePath(r.path, r.op === "file.list"); break;
     case "file.write":
       fields.push("path", "content_b64", "expected_sha256"); validatePath(r.path);
-      if (typeof r.content_b64 !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(r.content_b64)) throw new Error("NIWA file content must be base64.");
-      if (r.expected_sha256 !== null && (typeof r.expected_sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(r.expected_sha256))) throw new Error("NIWA write requires expected_sha256: null for creation, or the existing SHA256.");
+      const content = validateContent(r.content_b64);
+      if (/\.(css|js|txt)$/i.test(r.path)) {
+        let text: string;
+        try { text = new TextDecoder("utf-8", { fatal: true }).decode(content); } catch { throw new Error("NIWA text assets must be UTF-8."); }
+        if (/<\?|<\s*(?:script|html|svg)|\0/i.test(text)) throw new Error("NIWA text assets contain forbidden markup or binary data.");
+      }
+      if (r.expected_sha256 !== null && (typeof r.expected_sha256 !== "string" || !fullMatch(/^[0-9a-f]{64}$/, r.expected_sha256))) throw new Error("NIWA write requires expected_sha256: null for creation, or the existing lowercase SHA256.");
+      break;
+    case "file.restore":
+      fields.push("receipt");
+      if (typeof r.receipt !== "string" || !fullMatch(RECEIPT, r.receipt)) throw new Error("NIWA restore requires a 32-character lowercase hex receipt.");
+      break;
+    case "media.upload":
+      fields.push("filename", "mime", "content_b64");
+      if (typeof r.filename !== "string" || !fullMatch(/^[A-Za-z0-9_-]{1,80}\.(?:png|jpg|jpeg|webp)$/, r.filename)) throw new Error("NIWA media filename must be a bounded PNG, JPEG or WebP basename.");
+      const mimes: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+      if (r.mime !== mimes[r.filename.split(".").at(-1)!]) throw new Error("NIWA media MIME must match the filename extension.");
+      validateContent(r.content_b64);
       break;
     default: throw new Error("NIWA operation is unsupported.");
   }
   if (Object.keys(r).some(k => !fields.includes(k))) throw new Error("NIWA request contains unsupported fields.");
-  if (r.request_id !== undefined && (typeof r.request_id !== "string" || !UUID.test(r.request_id))) throw new Error("NIWA request_id must be a UUID.");
-  const request = { ...r, request_id: r.request_id ?? randomUUID() } as NIWARequest;
+  if (fields.some(k => !Object.hasOwn(r, k))) throw new Error("NIWA request is missing required fields.");
+  if (typeof r.request_id !== "string" || !fullMatch(UUID, r.request_id)) throw new Error("NIWA request_id must be a canonical lowercase UUID.");
+  const request = r as NIWARequest;
   if (Buffer.byteLength(JSON.stringify(request)) > MAX_REQUEST_BYTES) throw new Error("NIWA request exceeds 256KB.");
   return request;
 }
@@ -104,7 +148,7 @@ export function parseNIWARequest(tool: "ssh" | "wp", command: string): NIWAReque
 /** Mandatory NIWA branch: never resolves or reads the legacy SSH key. */
 export async function executeNIWABroker(tool: "ssh" | "wp", params: NIWAParams, ctx: NIWAContext) {
   if (params.server !== "ambienteniwa" || !isNIWABrokerAuthorized(ctx.authUserId ?? ctx.userId)) throw new Error("Access denied: NIWA broker requires an explicitly authorized sender.");
-  if (Object.keys(params).some(k => !["server", "command"].includes(k))) throw new Error("NIWA connection overrides are forbidden.");
+  if (Object.entries(params).some(([k, value]) => value !== undefined && !["server", "command"].includes(k))) throw new Error("NIWA connection overrides are forbidden.");
   const entry = resolveServer("ambienteniwa");
   if (!entry || entry.transport !== "niwa-broker-v1" || entry.host !== "172.18.0.1" || entry.user !== "pixel" || entry.port !== 22 || entry.key_file !== KEY_FILE || entry.known_hosts_file !== KNOWN_HOSTS_FILE) {
     throw new Error("NIWA broker connection is not configured. Legacy SSH is disabled.");
@@ -127,8 +171,17 @@ export async function executeNIWABroker(tool: "ssh" | "wp", params: NIWAParams, 
     if (timedOut) throw new Error("NIWA broker timed out after 120 seconds.");
     // Do not surface SSH diagnostics, connection configuration, or request bodies.
     if (exitCode !== 0) throw new Error(`NIWA broker failed (exit ${exitCode}).`);
+    let output = stdout;
+    if (request.op === "backup") {
+      let response: unknown;
+      try { response = JSON.parse(stdout); } catch { throw new Error("NIWA backup returned an invalid receipt."); }
+      const backup = response as { ok?: unknown; receipt?: unknown } | null;
+      if (!backup || backup.ok !== true || typeof backup.receipt !== "string" || !fullMatch(RECEIPT, backup.receipt)) throw new Error("NIWA backup returned an invalid receipt.");
+      // Backups expose only an opaque receipt, never SQL or private locations.
+      output = JSON.stringify({ ok: true, result: null, receipt: backup.receipt });
+    }
     return {
-      content: [{ type: "text" as const, text: stdout.length > 30_000 ? stdout.slice(0, 30_000) + "\n[... truncated]" : stdout || "NIWA broker request completed." }],
+      content: [{ type: "text" as const, text: output.length > 30_000 ? output.slice(0, 30_000) + "\n[... truncated]" : output || "NIWA broker request completed." }],
       details: { server: "ambienteniwa", transport: "niwa-broker-v1", exitCode, request_id: request.request_id },
     };
   } finally { clearTimeout(timer); }

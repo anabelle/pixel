@@ -115,13 +115,16 @@
       "key_file": "/app/data/keys/niwa-broker_ed25519",
       "known_hosts_file": "/app/data/keys/niwa-broker_known_hosts",
       "key_env": "AMBIENTENIWA_SSH_KEY",
-      "wp_path": null,
+      "wp_path": "/home/eightser/public_html/niwa_20261007",
       "capabilities": [
         "niwa-status",
         "wp",
         "file.read",
         "file.list",
-        "file.write"
+        "file.write",
+        "file.restore",
+        "media.upload",
+        "backup"
       ],
       "authorized_users": [
         "tg-892935151",
