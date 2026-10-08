@@ -30,6 +30,10 @@ export interface ServerEntry {
   host: string;
   user: string;
   key_env: string;
+  transport?: "ssh" | "niwa-broker-v1";
+  port?: number;
+  key_file?: string;
+  known_hosts_file?: string;
   wp_path: string | null;
   capabilities: string[];
   authorized_users: string[];
@@ -104,10 +108,17 @@ export function listServers(): Array<{ name: string; label: string; host: string
 
 /** Resolve the SSH private key for a server entry */
 export function resolveServerKey(entry: ServerEntry): string | undefined {
+  if (entry.transport === "niwa-broker-v1") return undefined;
   return process.env[entry.key_env];
 }
 
 // ─── Authorization ────────────────────────────────────────────
+
+/** NIWA is restricted to explicitly listed owner identities and developero. */
+export function isNIWABrokerAuthorized(userId: string | undefined): boolean {
+  if (!userId) return false;
+  return resolveServer("ambienteniwa")?.authorized_users.includes(userId) ?? false;
+}
 
 /** Check if a userId is a global admin (full access to everything) */
 export function isGlobalAdmin(userId: string | undefined): boolean {
@@ -118,6 +129,7 @@ export function isGlobalAdmin(userId: string | undefined): boolean {
 
 /** Check if a userId is authorized to access a specific server */
 export function isServerAuthorized(serverName: string, userId: string | undefined): boolean {
+  if (serverName === "ambienteniwa") return isNIWABrokerAuthorized(userId);
   if (!userId) return false;
 
   // Global admins can access all servers

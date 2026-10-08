@@ -2048,13 +2048,14 @@ export const gitCommitTool: AgentTool<typeof gitCommitSchema> = {
 
 import { resolveServer, resolveServerKey, listServers as listRegisteredServers, isCommandBlocked, isCommandGloballyBlocked, isServerAuthorized, isGlobalAdmin, getPermittedTools } from "./server-registry.js";
 import { isForbiddenFetchTarget } from "./fetch-guard.js";
+import { executeNIWABroker, type NIWAContext } from "./niwa-broker.js";
 
 const listServersSchema = Type.Object({});
 
 export const listServersTool: AgentTool<typeof listServersSchema> = {
   name: "list_servers",
   label: "List Servers",
-  description: "List all registered servers I can SSH into. Shows server names, labels, hosts, users, and capabilities. Use this to know which servers are available before running ssh or wp commands.",
+  description: "List registered servers and capabilities. ambienteniwa uses a restricted NIWA broker: status, approved WP commands and relative file operations; no shell or connection overrides.",
   parameters: listServersSchema,
   execute: async () => {
     const servers = listRegisteredServers();
@@ -2062,7 +2063,7 @@ export const listServersTool: AgentTool<typeof listServersSchema> = {
       return { content: [{ type: "text" as const, text: "No servers registered. Use raw host/user/key params with ssh tool, or add servers to servers.json." }] };
     }
     const lines = servers.map(s =>
-      `• ${s.name} — ${s.label}\n  host: ${s.host}, user: ${s.user}, capabilities: [${s.capabilities.join(", ")}]${s.wp_path ? `, wp_path: ${s.wp_path}` : ""}`
+      `• ${s.name} — ${s.label}\n  host: ${s.host}, user: ${s.user}, capabilities: [${s.capabilities.join(", ")}]${s.wp_path ? `, wp_path: ${s.wp_path}` : ""}${s.name === "ambienteniwa" ? "\n  Restricted broker only: ssh status or v:1 file.read/file.list/file.write JSON; wp tokenized commands; no shell or overrides." : ""}`
     );
     return { content: [{ type: "text" as const, text: `Registered servers:\n\n${lines.join("\n\n")}` }] };
   },
@@ -2071,11 +2072,11 @@ export const listServersTool: AgentTool<typeof listServersSchema> = {
 // ─── SSH EXECUTE ───────────────────────────────────────────────
 
 const sshSchema = Type.Object({
-  server: Type.Optional(Type.String({ description: "Registered server name (e.g. 'tallerubens', 'ambienteniwa'). Use list_servers to see available servers. If provided, host/user/key are resolved automatically." })),
+  server: Type.Optional(Type.String({ description: "Registered server name. ambienteniwa uses a fixed restricted broker; omit all connection parameters. Use list_servers for capabilities." })),
   host: Type.Optional(Type.String({ description: "SSH host (IP or hostname). Only needed if not using a registered server name." })),
   user: Type.Optional(Type.String({ description: "SSH user. Only needed if not using a registered server name. Default: root" })),
   port: Type.Optional(Type.Number({ description: "SSH port (default: 22)" })),
-  command: Type.String({ description: "Command to execute on remote server" }),
+  command: Type.String({ description: "Remote command; ambienteniwa accepts status, niwa status, or a v:1 broker JSON request only (no shell)." }),
   key: Type.Optional(Type.String({ description: "Private SSH key (raw OpenSSH/PEM) or base64-encoded. Only needed if not using a registered server name." })),
 });
 
@@ -2101,9 +2102,11 @@ function decodeSshKey(maybeKey: string): string {
 export const sshTool: AgentTool<typeof sshSchema> = {
   name: "ssh",
   label: "SSH Execute",
-  description: "Execute commands on a remote server via SSH. Use 'server' param with a registered name (e.g. 'tallerubens', 'ambienteniwa') for known servers, or provide raw host/user/key for ad-hoc connections. Run list_servers first to see available servers.",
+  description: "Execute SSH commands on registered servers. ambienteniwa is broker-only: command 'status', 'niwa status', or v:1 JSON with op file.read/file.list and relative path, or file.write with path, content_b64, expected_sha256 (null=create; hash=update). request_id UUID optional (generated). No shell or connection overrides. Run list_servers first.",
   parameters: sshSchema,
-  execute: async (_id, { server, host, user, port, command, key }) => {
+  execute: async (_id, params) => {
+    if (params.server === "ambienteniwa") return executeNIWABroker("ssh", params, getToolContext());
+    const { server, host, user, port, command, key } = params;
     let effectiveHost: string | undefined;
     let effectiveUser: string;
     let effectiveKey: string | undefined;
@@ -2211,7 +2214,7 @@ export const sshTool: AgentTool<typeof sshSchema> = {
 // ─── WP-CLI ───────────────────────────────────────────────────
 
 const wpCliSchema = Type.Object({
-  server: Type.Optional(Type.String({ description: "Registered server name (e.g. 'tallerubens', 'ambienteniwa'). Resolves host/user/key/wp_path automatically." })),
+  server: Type.Optional(Type.String({ description: "Registered server name. ambienteniwa uses broker-approved WP argv; omit all connection parameters." })),
   command: Type.String({ description: "WP-CLI command to run (e.g., 'plugin list', 'post list --limit=10')" }),
   host: Type.Optional(Type.String({ description: "SSH host for remote execution. Only needed without 'server' param." })),
   user: Type.Optional(Type.String({ description: "SSH user. Only needed without 'server' param." })),
@@ -2222,9 +2225,11 @@ const wpCliSchema = Type.Object({
 export const wpCliTool: AgentTool<typeof wpCliSchema> = {
   name: "wp",
   label: "WP-CLI",
-  description: "Run WordPress commands via WP-CLI on remote servers. Use 'server' param with a registered name (e.g. 'tallerubens', 'ambienteniwa') for known WordPress sites. Run list_servers to see available servers and their wp_path.",
+  description: "Run WordPress commands via WP-CLI on registered servers. ambienteniwa uses a restricted broker: pass command such as 'plugin list' or 'post update 123 --post_title=\"Title\"', without wp prefix (one prefix accepted). Quotes/escapes become argv, never shell. No host/user/port/path/key overrides, routing/code-loading flags, eval or shell. Broker revalidates permitted commands.",
   parameters: wpCliSchema,
-  execute: async (_id, { server, command, host, user, path, key }) => {
+  execute: async (_id, params) => {
+    if (params.server === "ambienteniwa") return executeNIWABroker("wp", params, getToolContext());
+    const { server, command, host, user, path, key } = params;
     let effectiveHost: string | undefined;
     let effectivePath: string | undefined;
     let effectiveUser: string;
@@ -2354,10 +2359,11 @@ export const wpCliTool: AgentTool<typeof wpCliSchema> = {
 
 // Tool execution context — per-request via AsyncLocalStorage
 // Prevents cross-talk between concurrent chats (e.g., WA + HTTP at once)
-const toolContext = new AsyncLocalStorage<{ userId?: string; platform?: string; chatId?: string }>();
+type ToolContext = NIWAContext & { platform?: string; chatId?: string };
+const toolContext = new AsyncLocalStorage<ToolContext>();
 
 /** Set the current tool execution context (called from agent.ts before prompt) */
-export function setToolContext(ctx: { userId?: string; platform?: string; chatId?: string }): void {
+export function setToolContext(ctx: ToolContext): void {
   toolContext.enterWith(ctx);
 }
 
@@ -2367,7 +2373,7 @@ export function clearToolContext(): void {
 }
 
 /** Get current tool context (used by research_task to determine callback chat) */
-function getToolContext(): { userId?: string; platform?: string; chatId?: string } {
+function getToolContext(): ToolContext {
   return toolContext.getStore() ?? {};
 }
 

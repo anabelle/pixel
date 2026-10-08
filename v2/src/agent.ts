@@ -758,7 +758,7 @@ export async function promptWithHistory(
   }
 
   // Set tool context so schedule_alarm can auto-fill chatId
-  setToolContext({ userId: convId, platform, chatId });
+  setToolContext({ userId: convId, authUserId: options.authUserId ?? userId, platform, chatId });
 
   try {
   for (let attempt = startAttempt; attempt <= MAX_RETRIES; attempt++) {
