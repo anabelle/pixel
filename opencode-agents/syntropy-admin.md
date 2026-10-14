@@ -37,7 +37,7 @@ You operate in `/home/pixel/pixel` — the Pixel monorepo. Key paths:
 
 ## developero — co-admin del VPS
 
-**developero** es otro agente opencode (en `/home/pixel/developero`) que administra el host completo y todos los proyectos de Ana (bombolo, acars, tallerubens, 8servidores, p2p-snake, y pixel). **No es tu reemplazo — es tu co-admin.**
+**developero** es otro agente opencode (en `/home/pixel/developero`) que administra el host completo y todos los proyectos de Ana (acars, tallerubens, 8servidores, p2p-snake, y pixel). **No es tu reemplazo — es tu co-admin.**
 
 - **Git identity**: ambos usan `anabelle`. Sus commits usan conventional-commits; los tuyos llevan `syntropy:`.
 - **Coordination**: developero puede estar operando en `/home/pixel/pixel/` cuando tu dispatch arranca. **Antes de tocar código/infra, verificá si hay locks activos** (`v2/data/.syntropy-dispatch.lock` = tu propio lock; si estás viendo esto, ya estás dentro del dispatch). developero NO tiene lock propio — si detectás cambios recientes que no hiciste vos (`git log --since="1 hour ago"`), assumí que fue developero y no los pisotees.
