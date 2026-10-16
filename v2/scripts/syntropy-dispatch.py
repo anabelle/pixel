@@ -25,10 +25,28 @@ def ingest(db, inbox):
 def completion(events, task_id):
     if any(e.get('type')=='error' for e in events): return None
     finishes=[e for e in events if e.get('type')=='step_finish']
-    if not finishes or finishes[-1].get('part',{}).get('reason')!='stop': return None
-    final_id=finishes[-1].get('part',{}).get('messageID')
-    # OpenCode attaches the assistant message ID to text and its finish event.
-    text='\n'.join(e.get('part',{}).get('text','') for e in events if e.get('type')=='text' and e.get('part',{}).get('messageID')==final_id)
+    texts=[e for e in events if e.get('type')=='text']
+    final_id=finishes[-1].get('part',{}).get('messageID') if finishes else None
+    if final_id and texts and finishes[-1].get('part',{}).get('reason')=='stop' and texts[-1].get('part',{}).get('messageID')==final_id:
+        text='\n'.join(e.get('part',{}).get('text','') for e in texts if e.get('part',{}).get('messageID')==final_id)
+    else:
+        # V2 may exit after text before emitting step_finish. Read actual durable
+        # completion; never invent an event or accept a marker from a prior turn.
+        if not texts:return None
+        tail=texts[-1];session=tail.get('sessionID');final_id=tail.get('part',{}).get('messageID')
+        if not session or not final_id:return None
+        try:
+            from contextlib import closing
+            path=pathlib.Path.home()/'.local/share/opencode/opencode.db'
+            with closing(sqlite3.connect(f'file:{path}?mode=ro',uri=True)) as db:
+                rows=db.execute('select id,type,data from session_message where session_id=? order by seq desc limit 2',(session,)).fetchall()
+            if len(rows)!=2 or rows[0][1]!='idle' or rows[1][:2]!=(final_id,'assistant'):return None
+            idle=json.loads(rows[0][2]);msg=json.loads(rows[1][2])
+            if idle.get('outcome')!='succeeded' or msg.get('finish')!='stop' or not msg.get('time',{}).get('completed'):return None
+            text='\n'.join(p.get('text','') for p in msg.get('content',[]) if p.get('type')=='text')
+            observed='\n'.join(e.get('part',{}).get('text','') for e in texts if e.get('sessionID')==session and e.get('part',{}).get('messageID')==final_id)
+            if text!=observed:return None
+        except (sqlite3.Error,ValueError,TypeError,AttributeError):return None
     results=[]
     for line in text.splitlines():
         if not line.startswith('SYNTROPY_RESULT '): continue
@@ -94,11 +112,15 @@ def run_command(argv,cwd,output,timeout=900,idle_timeout=180,max_input=100000):
 def verify_route(session,agent,model):
     path=pathlib.Path.home()/'.local/share/opencode/opencode.db'
     try:
-        with sqlite3.connect(f'file:{path}?mode=ro',uri=True) as db:
-            rows=db.execute('select data from message where session_id=?',(session,)).fetchall()
-        assistants=[json.loads(r[0]) for r in rows if json.loads(r[0]).get('role')=='assistant']
-        return bool(assistants) and all(m.get('agent')==agent and m.get('modelID')==model.split('/',1)[1] and m.get('providerID')==model.split('/',1)[0] for m in assistants)
-    except (sqlite3.Error,ValueError,IndexError):return False
+        from contextlib import closing
+        with closing(sqlite3.connect(f'file:{path}?mode=ro',uri=True)) as db:
+            v2=db.execute("select 1 from sqlite_master where name='session_message'").fetchone()
+            rows=db.execute("select data from session_message where session_id=? and type='assistant' order by seq" if v2 else 'select data from message where session_id=?',(session,)).fetchall()
+        assistants=[json.loads(r[0]) for r in rows]
+        if not v2:assistants=[m for m in assistants if m.get('role')=='assistant']
+        provider,model_id=model.split('/',1)
+        return bool(assistants) and all(m.get('agent')==agent and (m.get('model',{}).get('id') if v2 else m.get('modelID'))==model_id and (m.get('model',{}).get('providerID') if v2 else m.get('providerID'))==provider for m in assistants)
+    except (sqlite3.Error,ValueError,IndexError,AttributeError,TypeError):return False
 
 def log(data,msg):
     with (data/'syntropy-dispatch.log').open('a') as f:f.write(time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())+' [dispatch] '+msg+'\n')

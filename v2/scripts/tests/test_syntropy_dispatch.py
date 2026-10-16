@@ -16,7 +16,7 @@ class QueueTests(unittest.TestCase):
    self.assertTrue(box.read_text().startswith(old))
  def test_completion_requires_terminal_marker_and_correct_agent(self):
   task='abc';marker={'taskId':task,'status':'completed','outcome':'verified'}
-  events=[{'type':'text','part':{'text':'SYNTROPY_RESULT '+json.dumps(marker)}},{'type':'step_finish','sessionID':'ses_test','part':{'reason':'tool-calls'}}]
+  events=[{'type':'text','part':{'messageID':'m','text':'SYNTROPY_RESULT '+json.dumps(marker)}},{'type':'step_finish','sessionID':'ses_test','part':{'messageID':'m','reason':'tool-calls'}}]
   self.assertIsNone(d.completion(events,task))
   events[-1]['part']['reason']='stop'
   self.assertEqual(d.completion(events,task)['outcome'],'verified')
@@ -71,7 +71,7 @@ class QueueTests(unittest.TestCase):
    def runner(argv,cwd,out,**kw):
     calls.append((argv,cwd));task=json.loads(argv[-1].split('TASK_RECORD\n')[1].split('\nEND_TASK_RECORD')[0])['taskId']
     with box.open('a') as f:f.write(json.dumps({'timestamp':'b','message':'second arrival'})+'\n')
-    return {'code':0,'failure':None,'text':'','events':[{'type':'text','part':{'text':'SYNTROPY_RESULT '+json.dumps({'taskId':task,'status':'completed','outcome':'real evidence'})}},{'type':'step_finish','sessionID':'ses_fixture','part':{'reason':'stop'}}]}
+    return {'code':0,'failure':None,'text':'','events':[{'type':'text','part':{'messageID':'m','text':'SYNTROPY_RESULT '+json.dumps({'taskId':task,'status':'completed','outcome':'real evidence'})}},{'type':'step_finish','sessionID':'ses_fixture','part':{'messageID':'m','reason':'stop'}}]}
    self.assertEqual(d.dispatch_once(root,data,runner=runner,verify=lambda *a:True),0)
    self.assertEqual(len(calls),1);self.assertEqual(calls[0][1],root)
    self.assertFalse(any(x.startswith('--session') for x in calls[0][0]))
@@ -86,4 +86,50 @@ class QueueTests(unittest.TestCase):
    d.dispatch_once(root,data,runner=runner,verify=lambda *a:True)
    db=d.open_db(data/'syntropy-dispatch-state.db');self.assertEqual(db.execute('select status from tasks').fetchone()[0],'held')
    self.assertEqual(box.read_text(),'{"message":"task"}\n')
+class V2RouteTests(unittest.TestCase):
+ def test_v2_persisted_assistant_route_and_rejections(self):
+  import sqlite3
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as tmp:
+   home=pathlib.Path(tmp); db=home/'.local/share/opencode/opencode.db';db.parent.mkdir(parents=True)
+   with sqlite3.connect(db) as c:
+    c.execute('create table session_message (id text, session_id text, type text, seq integer, data text)')
+    msg={'agent':'developero','model':{'providerID':'zai-coding-plan','id':'glm-5.3'},'finish':'stop','time':{'completed':1}}
+    c.execute('insert into session_message values (?,?,?,?,?)',('m','s','assistant',1,json.dumps(msg)))
+   with patch.object(pathlib.Path,'home',return_value=home):
+    self.assertTrue(d.verify_route('s','developero','zai-coding-plan/glm-5.3'))
+    self.assertFalse(d.verify_route('s','build','zai-coding-plan/glm-5.3'))
+    self.assertFalse(d.verify_route('s','developero','zai/glm-5.3'))
+    self.assertFalse(d.verify_route('missing','developero','zai-coding-plan/glm-5.3'))
+class V2CompletionTests(unittest.TestCase):
+ def test_missing_message_ids_cannot_reuse_a_prior_marker(self):
+  marker='SYNTROPY_RESULT '+json.dumps({'taskId':'task','status':'completed','outcome':'old'})
+  events=[{'type':'text','part':{'text':marker}}, {'type':'step_finish','part':{'reason':'tool-calls'}}, {'type':'text','part':{'text':'still working'}}, {'type':'step_finish','part':{'reason':'stop'}}]
+  self.assertIsNone(d.completion(events,'task'))
+ def test_missing_finish_requires_matching_persisted_completed_and_idle_turn(self):
+  import sqlite3
+  from contextlib import closing
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as tmp:
+   home=pathlib.Path(tmp);db=home/'.local/share/opencode/opencode.db';db.parent.mkdir(parents=True)
+   marker='SYNTROPY_RESULT '+json.dumps({'taskId':'task','status':'completed','outcome':'actual probe'})
+   msg={'agent':'developero','model':{'id':'glm-5.3','providerID':'zai-coding-plan'},'time':{'completed':1},'finish':'stop','content':[{'type':'text','text':marker}]}
+   events=[{'type':'text','sessionID':'s','part':{'messageID':'m','text':marker}}]
+   with closing(sqlite3.connect(db)) as c:
+    c.execute('create table session_message (id text, session_id text, type text, seq integer, data text)')
+    c.execute('insert into session_message values (?,?,?,?,?)',('m','s','assistant',1,json.dumps(msg)))
+    c.execute('insert into session_message values (?,?,?,?,?)',('idle','s','idle',2,json.dumps({'outcome':'succeeded'})));c.commit()
+    with patch.object(pathlib.Path,'home',return_value=home):
+     self.assertIsNotNone(d.completion(events,'task'))
+     self.assertEqual(d.completion(events,'task')['outcome'],'actual probe')
+     self.assertIsNone(d.completion(events+[{'type':'error'}],'task'))
+     self.assertIsNone(d.completion([{'type':'text','sessionID':'s','part':{'messageID':'stale','text':marker}}],'task'))
+     for field,value in [('finish','tool-calls'),('time',{}),('content',[{'type':'text','text':'still working'}])]:
+      changed=dict(msg);changed[field]=value;c.execute('update session_message set data=? where id=?',(json.dumps(changed),'m'));c.commit()
+      self.assertIsNone(d.completion(events,'task'))
+     c.execute('update session_message set data=? where id=?',(json.dumps(msg),'m'))
+     c.execute('update session_message set data=? where id=?',(json.dumps({'outcome':'failed'}),'idle'));c.commit()
+     self.assertIsNone(d.completion(events,'task'))
+     c.execute('delete from session_message where id=?',('idle',));c.commit()
+     self.assertIsNone(d.completion(events,'task'))
 if __name__=='__main__':unittest.main()
