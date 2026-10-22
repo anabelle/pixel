@@ -38,9 +38,12 @@ FROM oven/bun:1-alpine
 # bash for agent's bash tool, curl for healthcheck/web fetch, docker-cli for Clawstr tool, git for git tools, openssh-client for SSH
 # su-exec for entrypoint to drop privileges (alpine equivalent of gosu)
 # ffmpeg for audio format conversion (MP3→OGG/Opus for Telegram voice replies)
-# nodejs/npm for pi-compatible extension tooling and self-learning setup
 # python3 + libstdc++ for OpenViking runtime server
-RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg nodejs npm python3 libstdc++ cairo
+# 2026-10-22: Node pinned 22.23.4 from official musl image (Oct-2026 security fixes:
+# Brotli RCE, TLS/DNS, eMudhra CA block). Replaces floating `apk add nodejs npm`
+# which resolved to 24.18.1 (< 24.22.1 fix) on the 2026-10-22 rebuild.
+RUN apk add --no-cache bash curl docker-cli git openssh-client su-exec ffmpeg python3 libstdc++ cairo
+COPY --from=node:22.23.4-alpine /usr/local /usr/local
 
 WORKDIR /app
 
