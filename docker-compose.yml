@@ -157,7 +157,7 @@ services:
 
   # Nginx Reverse Proxy
   nginx:
-    image: nginx:alpine
+    image: nginx:1.30.6-alpine  # pinned by Marvin 2026-10-22 (security fixes); rollback: nginx:pixel-rollback-1.29.4
     command: [ "nginx", "-g", "daemon off; error_log /dev/null emerg;" ]
     logging:
       driver: "none"
