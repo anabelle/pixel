@@ -158,6 +158,7 @@ services:
   # Nginx Reverse Proxy
   nginx:
     image: nginx:1.30.6-alpine  # pinned by Marvin 2026-10-22 (security fixes); rollback: nginx:pixel-rollback-1.29.4
+    cap_drop: [NET_RAW]  # Marvin 2026-10-23: CVE-2026-80841 mitigation
     command: [ "nginx", "-g", "daemon off; error_log /dev/null emerg;" ]
     logging:
       driver: "none"
