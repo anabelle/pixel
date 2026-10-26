@@ -17,6 +17,7 @@ export interface SelfLearningConfig {
   git: {
     enabled: boolean;
     autoCommit: boolean;
+    commitIntervalMinutes: number;
   };
   context: {
     enabled: boolean;
@@ -68,6 +69,7 @@ const DEFAULT_CONFIG: SelfLearningConfig = {
   git: {
     enabled: true,
     autoCommit: true,
+    commitIntervalMinutes: 30,
   },
   context: {
     enabled: true,
@@ -497,11 +499,33 @@ function renderMonthlySummary(root: string, index: CoreIndex, date: Date): strin
   return filePath;
 }
 
-function commitMemoryFiles(root: string, files: string[], config: SelfLearningConfig): void {
+// Keep git's background repack well under the container memory limit
+// (long-term-memory.md is multi-MB and rewritten on every reflection).
+const GIT_MEMORY_SETTINGS: Array<[string, string]> = [
+  ["pack.threads", "1"],
+  ["pack.windowMemory", "64m"],
+  ["pack.deltaCacheSize", "16m"],
+];
+
+const configuredGitRoots = new Set<string>();
+const lastCommitAt = new Map<string, number>();
+
+function ensureGitMemorySettings(root: string): void {
+  if (configuredGitRoots.has(root)) return;
+  for (const [key, value] of GIT_MEMORY_SETTINGS) {
+    runGit(root, ["config", key, value]);
+  }
+  configuredGitRoots.add(root);
+}
+
+function commitMemoryFiles(root: string, config: SelfLearningConfig): void {
   if (!config.git.enabled || !config.git.autoCommit) return;
-  const relativeFiles = files.map((file) => relative(root, file)).filter((file) => file && !file.startsWith(".."));
-  if (relativeFiles.length === 0) return;
-  runGit(root, ["add", ...relativeFiles]);
+  // Batch commits: files are written to disk every turn, but snapshotted at most once per interval.
+  const intervalMs = Math.max(0, config.git.commitIntervalMinutes) * 60_000;
+  const last = lastCommitAt.get(root);
+  if (last !== undefined && Date.now() - last < intervalMs) return;
+  lastCommitAt.set(root, Date.now());
+  runGit(root, ["add", "-A"]);
   const status = runGit(root, ["status", "--porcelain"]);
   if (!status.ok || !status.stdout.trim()) return;
   runGit(root, ["commit", "-m", "chore(memory): update self-learning memory"]);
@@ -511,8 +535,9 @@ export function ensureSelfLearningInstalled(config = getSelfLearningConfig()): {
   const root = getSelfLearningRoot(config);
   migrateLegacyProjectSelfLearningRoot(root);
   ensureMemoryFiles(root);
-  if (config.git.enabled && !existsSync(join(root, ".git"))) {
-    runGit(root, ["init"]);
+  if (config.git.enabled) {
+    if (!existsSync(join(root, ".git"))) runGit(root, ["init"]);
+    ensureGitMemorySettings(root);
   }
   return { root };
 }
@@ -544,8 +569,8 @@ export function recordSelfLearningReflection(
   const renderedCore = renderCore(root, index, config.maxCoreItems);
   const renderedLongTerm = renderLongTermMemory(root, index);
   const renderedMonthly = renderMonthlySummary(root, index, now);
-  const renderedIndex = writeCoreIndex(root, index);
-  commitMemoryFiles(root, [dailyFile, renderedCore, renderedLongTerm, renderedMonthly, renderedIndex], config);
+  writeCoreIndex(root, index);
+  commitMemoryFiles(root, config);
 
   return {
     root,
