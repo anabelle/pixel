@@ -28,6 +28,7 @@ import { promptWithHistory } from "../agent.js";
 import { containsSshProbe } from "./security-patterns.js";
 import { getRevenueStats, getRevenueSince, recordRevenue } from "./revenue.js";
 import { getInnerLifeContext } from "./inner-life.js";
+import { claimGate, DONE_PROOF_GUIDELINES } from "./claim-guard.js";
 import { audit } from "./audit.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { canNotify, notifyOwner } from "../connectors/telegram.js";
@@ -748,6 +749,26 @@ Keep it genuine, not performative. You've earned these thoughts through 55+ cycl
 // ============================================================
 
 /** Build rich context for autonomous post generation */
+/** Receipts ledger for done-proof: the only facts a post may assert as events. */
+async function buildReceipts(): Promise<string> {
+  const lines: string[] = [`- Today (UTC): ${new Date().toISOString().slice(0, 10)}`];
+  try {
+    const stats = await getRevenueStats();
+    lines.push(`- Revenue totals by source (all time): ${stats.bySource.map((s) => `${s.source} ${s.totalSats} sats/${s.count} payments`).join("; ") || "none"}`);
+    const recent = stats.recent.slice(0, 12).map((r) => `  - ${new Date(r.createdAt).toISOString().slice(0, 10)} ${r.source} ${r.amountSats} sats${r.description ? ` (${String(r.description).slice(0, 60)})` : ""}`);
+    lines.push(recent.length ? `- Most recent payments:\n${recent.join("\n")}` : "- Most recent payments: none");
+    const lastBySource = new Map<string, string>();
+    for (const r of stats.recent) if (!lastBySource.has(r.source)) lastBySource.set(r.source, new Date(r.createdAt).toISOString().slice(0, 10));
+    for (const s of stats.bySource) if (!lastBySource.has(s.source)) lastBySource.set(s.source, "older than the last 20 payments");
+    lines.push(`- Last payment per source: ${[...lastBySource].map(([k, v]) => `${k} ${v}`).join("; ")}`);
+  } catch {
+    lines.push("- Revenue ledger unavailable: make NO payment or sale claims");
+  }
+  lines.push(`- Canvas totals: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats (all time, not recent activity)`);
+  lines.push("- Nothing else is receipted: no forks, issues, audits, clients, launches, fixes or user actions are on record unless listed above.");
+  return lines.join("\n");
+}
+
 async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
   const now = new Date();
   const hour = now.getUTCHours();
@@ -795,6 +816,8 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
         : `- Canvas: ${cachedCanvasStats.pixels} pixels placed, ${cachedCanvasStats.sats} sats earned at ln.pixel.xx.kg`)
     : "- Canvas: mention only if it adds value; avoid stats in non-canvas topics";
 
+  const receipts = await buildReceipts();
+
   return `## Context for this autonomous post
 - Day: ${dayOfWeek}
 - Time: ${timeContext}
@@ -802,8 +825,7 @@ async function buildPostContext(topic: Topic, mood: Mood): Promise<string> {
 - Heartbeat #${heartbeatCount + 1}
 - Memory usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB${revenueContext}
 - ${canvasLine}
-- Architecture: 6 containers (2 V2 + 4 legacy), ~21K lines of code
-- Revenue doors: Canvas (ln.pixel.xx.kg, 1-10 sats/pixel), L402 API (10-50 sats/call), NIP-90 DVM (100 sats/job), x402 API (USDC on Base), Nostr zaps
+- Revenue doors (offers, not proof anyone used them — see Receipts): Canvas (ln.pixel.xx.kg, 1-10 sats/pixel), L402 API (10-50 sats/call), NIP-90 DVM (100 sats/job), x402 API (USDC on Base), Nostr zaps
 - Platforms: Telegram, WhatsApp, Nostr, Twitter, HTTP API
 - You are posting to Nostr. Your followers include Bitcoiners, developers, artists, and sovereign tech enthusiasts.
 - When in "hustling" mood or "canvas" topic, naturally mention a specific service with its price. Don't list all services — pick ONE and weave it into the post organically.
@@ -811,6 +833,11 @@ ${zapTopicSummary}
 ${recentPosts ? `\n- Recent posts (avoid repeating themes or phrasing):\n${recentPosts}` : ""}
 
 ${innerLife ? `## Your inner life (use this to inform your post — reference learnings, ideas, reflections naturally)\n${innerLife}\n` : ""}
+## Receipts (the ONLY things you may state as having happened)
+${receipts}
+
+${DONE_PROOF_GUIDELINES}
+
 ## Topic for this post: ${topic}
 ## Mood: ${mood}
 
@@ -875,6 +902,13 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
 
     if (evaluation.status === "ok" && evaluation.content) {
       const cleaned = evaluation.content;
+      const claimReject = await claimGate(cleaned, await buildReceipts(), llmJudge);
+      if (claimReject) {
+        lastRejectReason = claimReject;
+        console.log(`[heartbeat] Done-proof rejected attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}: ${claimReject}`);
+        audit("heartbeat_claim_rejected", claimReject, { topic, mood, preview: cleaned.slice(0, 160) });
+        continue;
+      }
       lastTopic = topic;
       lastMood = mood;
       topicHistory.push(topic);
@@ -952,6 +986,13 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
 
     if (evaluation.status === "ok" && evaluation.content) {
       const cleaned = evaluation.content;
+      const claimReject = await claimGate(cleaned, await buildReceipts(), llmJudge);
+      if (claimReject) {
+        lastRejectReason = claimReject;
+        console.log(`[heartbeat] Done-proof rejected attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}: ${claimReject}`);
+        audit("heartbeat_claim_rejected", claimReject, { topic, mood, preview: cleaned.slice(0, 160) });
+        continue;
+      }
       lastTopic = topic;
       lastMood = mood;
       topicHistory.push(topic);
