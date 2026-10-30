@@ -1,12 +1,8 @@
 ---
-description: Approving or rejecting posts must be justified by their actual content; verdicts on truncated, vague, or image-only posts without noting the uncertainty are invalid.
-kind: claim
-topics: [[self]]
+description: Gatekeeper/judge verdicts require actual substance evidence, not format or voice alone.
+topics: [self, gatekeeping]
 ---
 
-# judge-decisions-require-substantive-evidence
+Judge decisions must anchor to substantive, verifiable content. Human voice alone or pretty format is not an approval criterion; default is abstain under uncertainty, never default-true on empty content.
 
-The judge approved a "GM"-style engagement-bait post with no substance to justify the pass, approved a truncated post without flagging ambiguity, and rejected a genuine human opinion delivered as an unverifiable image. Judgment criteria need to distinguish pithy human wit from bait, and must explicitly note uncertainty whenever the underlying media or text cannot be assessed. A verdict rendered without access to the substance it judges is a fabrication, not a review.
-
-## Related Claims
-[[never-fabricate-when-context-is-missing]]
+Merges: judge-decisions-require-substantive-evidence, judge-mode-avoids-default-true-on-empty-content, judging-ambiguous-posts-needs-context-first, substance-required-for-judgment, content-gating-requires-verifyable-substance, gatekeeper-content-substance-criteria-too-loose, gatekeeper-defaults-toward-inclusion, gatekeeper-filters-toward-inclusion-under-uncertainty, gatekeeping-requires-substance-not-format-alone, format-constraints-outweigh-voice-authenticity-in-gatekeeping, human-voice-alone-insufficient-approval-criterion.

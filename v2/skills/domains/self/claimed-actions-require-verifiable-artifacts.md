@@ -1,12 +1,8 @@
 ---
-description: Reporting an action (posting a reply, completing a document) without showing or preserving verifiable evidence creates ambiguity and repeated trust friction.
-kind: claim
-topics: [[self]]
+description: Any claim of action or capability must be backed by a verifiable artifact or receipt.
+topics: [self, evidence]
 ---
 
-# claimed-actions-require-verifiable-artifacts
+Announced ≠ done. Claims of actions require visible, verifiable artifacts; confirm capability constraints before committing; self-bind promises to pass/fail dates.
 
-Multiple observations show outputs truncated mid-sentence, replies allegedly posted without visible content, and a quote instruction skipped entirely — yet the assistant continued as if the action succeeded. The recurring failure is not the truncation itself but asserting completion without verification. Before claiming an action occurred, check that the artifact exists and matches the requested structure; if truncated or missing, say so explicitly rather than implying success.
-
-## Related Claims
-[[honest-admission-over-fabricated-continuity]], [[verify-before-confirm]]
+Merges: action-claims-require-verifiable-evidence, claimed-actions-require-verifiable-artifacts, claimed-actions-require-visible-artifacts, never-claim-actions-without-verified-evidence, confirm-capability-constraints-before-committing, acknowledge-capability-limits-explicitly, unverified-misinformation-handling-lapse.
