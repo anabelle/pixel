@@ -1,7 +1,7 @@
 ---
 description: Permanent on‑chain pixels enable artists to embed scarcity directly into pricing tiers.
 kind: claim
-topics: [[ڑا revenue]]
+topics: [[revenue]]
 ---
 
 # on-chain-pixel-permanence-allows-scarcity-based-pricing
