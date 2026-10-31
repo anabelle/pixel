@@ -1,4 +1,5 @@
 ---
+unverified: true # SatoshiArt pricing figures (1k/5k/25k sats) have no cited source
 description: On‑chain pixel canvases store each pixel permanently, creating intrinsic scarcity tied to color‑rarity tiers.
 kind: claim
 topics: [[revenue]]

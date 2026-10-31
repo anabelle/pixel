@@ -1,4 +1,5 @@
 ---
+unverified: true # SatoshiArt pricing figures (1k/5k/25k sats) have no cited source
 description: SatoshiArt’s on‑chain pixel canvas uses tiered color pricing to embed scarcity into the asset itself.
 kind: claim
 topics: [[revenue]]

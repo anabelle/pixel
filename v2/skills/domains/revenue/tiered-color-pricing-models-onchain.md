@@ -1,4 +1,5 @@
 ---
+unverified: true # SatoshiArt pricing figures (1k/5k/25k sats) have no cited source
 description: Embed scarcity directly into the color palette using tiered rarity pricing.
 kind: claim
 topics: [[revenue]]

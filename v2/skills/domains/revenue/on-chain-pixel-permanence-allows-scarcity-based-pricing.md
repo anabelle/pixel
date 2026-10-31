@@ -1,4 +1,5 @@
 ---
+unverified: true # SatoshiArt pricing figures (1k/5k/25k sats) have no cited source
 description: Permanent on‑chain pixels enable artists to embed scarcity directly into pricing tiers.
 kind: claim
 topics: [[revenue]]
