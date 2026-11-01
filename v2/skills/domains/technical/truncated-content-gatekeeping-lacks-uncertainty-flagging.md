@@ -10,3 +10,5 @@ Multiple observations show the gatekeeper approving posts cut off mid-sentence (
 
 ## Related Claims
 [[truncation-stems-from-upstream-infrastructure]], [[ground-replies-in-project-scope]]
+
+<!-- merged 2026-11-01: also absorbs truncation-requires-flagging-not-approval (pre-guard dup, restored by mirror sync) — framing: mark truncated submissions *indeterminate* rather than confidently pass/fail; same law the orphaned-reply context guard inherits. -->
