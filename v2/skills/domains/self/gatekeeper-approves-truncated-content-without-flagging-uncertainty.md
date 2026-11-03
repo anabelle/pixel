@@ -10,3 +10,5 @@ On multiple occasions (Oct 26, Oct 28, Oct 29), the gatekeeper role approved pos
 
 ## Related Claims
 [[truncation-is-upstream-infrastructure]], [[incomplete-instructions-require-clarification-before-judgment]]
+
+<!-- merged 2026-11-03: absorbs gatekeeper-should-flag-truncated-content-not-approve (4th copy of truncation-flagging lesson) — approvals of incomplete content must state what was unverifiable. -->

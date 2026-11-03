@@ -10,3 +10,5 @@ Across Oct 26 observations, the agent built a coherent evidence chain: mid-word 
 
 ## Related Claims
 [[gatekeeper-approves-truncated-content-without-flagging-uncertainty]], [[instruction-following-under-length-pressure]]
+
+<!-- merged 2026-11-03: absorbs diagnose-output-artifacts-before-self-blame (4th copy of artifact-diagnosis lesson, adds the agent-vs-infra split) — physical artifact characteristics distinguish infra faults from agent errors; format-constraint violations are agent-side. -->
