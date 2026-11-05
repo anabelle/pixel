@@ -16,3 +16,5 @@ On multiple occasions (Oct 26, Oct 28, Oct 29), the gatekeeper role approved pos
 <!-- merged 2026-11-04: absorbs gatekeeper-approves-truncated-content-without-flagging (5th copy of truncation-flagging lesson). -->
 
 <!-- merged 2026-11-05: absorbs truncation-requires-uncertainty-flagging-not-confident-judgment (6th copy of truncation-flagging lesson) — explicitly extends range to Nov 3 observations. -->
+
+<!-- merged 2026-11-05 18:33: absorbs flag-uncertainty-on-truncated-content (7th copy of truncation-flagging lesson; filed under technical by generator). -->
