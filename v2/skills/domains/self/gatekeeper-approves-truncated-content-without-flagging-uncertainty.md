@@ -14,3 +14,5 @@ On multiple occasions (Oct 26, Oct 28, Oct 29), the gatekeeper role approved pos
 <!-- merged 2026-11-03: absorbs gatekeeper-should-flag-truncated-content-not-approve (4th copy of truncation-flagging lesson) — approvals of incomplete content must state what was unverifiable. -->
 
 <!-- merged 2026-11-04: absorbs gatekeeper-approves-truncated-content-without-flagging (5th copy of truncation-flagging lesson). -->
+
+<!-- merged 2026-11-05: absorbs truncation-requires-uncertainty-flagging-not-confident-judgment (6th copy of truncation-flagging lesson) — explicitly extends range to Nov 3 observations. -->
