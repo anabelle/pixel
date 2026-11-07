@@ -10,3 +10,5 @@ On 2026-11-05 the assistant claimed a reply was posted while producing no reply 
 
 ## Related Claims
 [[substance-judgment-cannot-bypass-context]], [[gatekeeper-must-flag-truncated-content]]
+
+<!-- merged 2026-11-07 06:33: absorbed sibling verify-actions-before-claiming-completion; this is the canonical verify-first lesson. -->

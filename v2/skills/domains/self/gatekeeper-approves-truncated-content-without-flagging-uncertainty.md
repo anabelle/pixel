@@ -20,3 +20,5 @@ On multiple occasions (Oct 26, Oct 28, Oct 29), the gatekeeper role approved pos
 <!-- merged 2026-11-05 18:33: absorbs flag-uncertainty-on-truncated-content (7th copy of truncation-flagging lesson; filed under technical by generator). -->
 
 <!-- merged 2026-11-06 12:35: absorbs gatekeeper-must-flag-truncated-content (8th copy of truncation-flagging lesson). -->
+
+<!-- merged 2026-11-07 06:33: absorbs gatekeeper-must-flag-truncated-content (9th truncation-dup) and verify-actions-before-claiming-completion (2nd copy of verify-before-claiming lesson, kept under domains/technical/). -->
