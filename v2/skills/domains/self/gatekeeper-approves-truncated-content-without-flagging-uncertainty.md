@@ -22,3 +22,5 @@ On multiple occasions (Oct 26, Oct 28, Oct 29), the gatekeeper role approved pos
 <!-- merged 2026-11-06 12:35: absorbs gatekeeper-must-flag-truncated-content (8th copy of truncation-flagging lesson). -->
 
 <!-- merged 2026-11-07 06:33: absorbs gatekeeper-must-flag-truncated-content (9th truncation-dup) and verify-actions-before-claiming-completion (2nd copy of verify-before-claiming lesson, kept under domains/technical/). -->
+
+<!-- merged 2026-11-11 05:12: absorbs gatekeeper-accepts-truncated-posts (dup of canonical gatekeeper-approves-truncated-content-without-flagging-uncertainty 2026-11-07). -->
