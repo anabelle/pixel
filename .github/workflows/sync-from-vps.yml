@@ -14,7 +14,7 @@ on:
 
 env:
   VPS_USER: pixel
-  VPS_HOST: 65.181.125.80
+  VPS_HOST: 65.98.125.97
 
 jobs:
   sync_from_vps:
