@@ -545,6 +545,8 @@ export function getTwitterStatus(): {
 async function pollMentions(): Promise<void> {
   if (apiV2DegradedReason) return;
   if (!hasApiV2Creds || !twitterUserId) return;
+  // Every returned mention is a paid read: when we can't answer anyway, don't fetch.
+  if (POST_ENABLED && !canReply().ok) return;
 
   try {
     const params: Record<string, string> = {
@@ -600,8 +602,10 @@ async function pollMentions(): Promise<void> {
     if (toProcess.length > 0) console.log(`[twitter] Found ${toProcess.length} new mention(s) via API v2${heldBack.length ? ` (+${heldBack.length} held for next cycle)` : ""}`);
 
     for (const tweet of toProcess) {
-      const handled = await handleMention(tweet);
-      if (!handled) {
+      const outcome = await handleMention(tweet);
+      if (outcome === "defer") {
+        heldBack.push(tweet.id); // budget/lockout: wait, don't burn an attempt
+      } else if (outcome === "fail") {
         const n = (mentionFailures.get(tweet.id) ?? 0) + 1;
         mentionFailures.set(tweet.id, n);
         if (n >= MAX_REPLY_ATTEMPTS) {
@@ -631,7 +635,15 @@ async function pollMentions(): Promise<void> {
 }
 
 /** Generate and post one mention reply. Returns true when the mention is settled (posted, silent, or read-only logged). */
-async function handleMention(tweet: { id: string; text: string; username: string; authorId: string; parent?: { text: string; author: string; own: boolean } }): Promise<boolean> {
+async function handleMention(tweet: { id: string; text: string; username: string; authorId: string; parent?: { text: string; author: string; own: boolean } }): Promise<"ok" | "fail" | "defer"> {
+  // Check the reply budget BEFORE spending an LLM call; over budget = try again next cycle.
+  if (POST_ENABLED) {
+    const budget = canReply();
+    if (!budget.ok) {
+      console.log(`[twitter] Deferring mention ${tweet.id}: ${budget.reason}`);
+      return "defer";
+    }
+  }
   try {
     const userId = `twitter-${tweet.authorId}`;
     let mentionText = `[Twitter mention from @${tweet.username}]: ${tweet.text}`;
@@ -651,7 +663,7 @@ async function handleMention(tweet: { id: string; text: string; username: string
     if (!response || response.includes("[SILENT]")) {
       if (POST_ENABLED) repliedTweetIds.add(tweet.id);
       else readOnlySeenTweetIds.add(tweet.id);
-      return true;
+      return "ok";
     }
 
     // Never cut a reply: ask for a shorter rewrite instead.
@@ -665,18 +677,18 @@ async function handleMention(tweet: { id: string; text: string; username: string
     const replyText = (response ?? "").trim();
     if (!replyText || replyText.includes("[SILENT]")) {
       repliedTweetIds.add(tweet.id);
-      return true;
+      return "ok";
     }
     if (!fitsTweet(replyText)) {
       audit("twitter_error", `Reply to ${tweet.id} still too long after rewrites (${tweetLength(replyText)}) — not posted`);
-      return false;
+      return "fail";
     }
 
     if (!POST_ENABLED) {
       appendToLog(userId, mentionText, `[NOT POSTED — read-only mode] ${replyText}`, "twitter");
       console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
       readOnlySeenTweetIds.add(tweet.id);
-      return true;
+      return "ok";
     }
 
     const result = await postTweet(replyText, tweet.id);
@@ -684,16 +696,16 @@ async function handleMention(tweet: { id: string; text: string; username: string
       appendToLog(userId, mentionText, replyText, "twitter");
       console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
       repliedTweetIds.add(tweet.id);
-      return true;
+      return "ok";
     }
     // Make the failure visible in his own memory so he doesn't believe he answered.
     appendToLog(userId, mentionText, `[REPLY NOT POSTED — ${result.error}] ${replyText}`, "twitter");
     console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
     audit("twitter_error", `Reply to @${tweet.username} (${tweet.id}) not posted: ${result.error}`);
-    return false;
+    return "fail";
   } catch (err: any) {
     console.error(`[twitter] Error processing mention ${tweet.id}:`, err.message, err.stack?.split("\n").slice(0, 3).join(" | "));
-    return false;
+    return "fail";
   }
 }
 
