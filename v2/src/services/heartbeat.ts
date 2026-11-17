@@ -21,7 +21,7 @@
 
 import NDK, { NDKEvent, NDKFilter } from "@nostr-dev-kit/ndk";
 import { getNostrInstance, hasRepliedTo, markReplied, isMuted, isBotLoop, getThreadRootId, isThreadHandled, markThreadHandled, publishNostrEvent, onNostrFetchTimeout, onNostrFetchSuccess, isNostrCircuitOpen, rawFetchEvents } from "../connectors/nostr.js";
-import { postTweet, canPostTweet } from "../connectors/twitter.js";
+import { postTweet, canPostTweet, tweetLength, getXSelfViewSummary } from "../connectors/twitter.js";
 import { loadCharacter, extractText } from "../agent.js";
 import { backgroundLlmCall } from "../agent.js";
 import { promptWithHistory } from "../agent.js";
@@ -603,8 +603,10 @@ function evaluateGeneratedPostCandidate(
   let cleaned = cleanPostContent(responseText);
   if (!cleaned) return { status: "retry", reason: "empty after cleanup" };
 
-  if (cleaned.length > maxLength) {
-    cleaned = cleaned.slice(0, maxLength - 3) + "...";
+  // Never truncate: an over-length draft goes back for a shorter rewrite.
+  const len = maxLength <= 280 ? tweetLength(cleaned) : cleaned.length;
+  if (len > maxLength) {
+    return { status: "retry", reason: `too long: ${len} characters, hard limit ${maxLength}` };
   }
 
   const rejectReason = getPostContentRejectReason(cleaned);
@@ -618,6 +620,13 @@ function evaluateGeneratedPostCandidate(
   }
 
   return { status: "ok", content: cleaned };
+}
+
+function retryHint(reason: string, maxLength: number): string {
+  if (reason.startsWith("too long")) {
+    return `Previous draft was rejected because it was ${reason.replace("too long: ", "")}. Keep the strongest single idea and say it in under ${Math.floor(maxLength * 0.85)} characters. Nothing will be trimmed for you.`;
+  }
+  return `Previous draft was rejected because: ${reason}\nWrite a completely different post. Avoid status updates, prompt metadata, and recycled phrasing.`;
 }
 
 function isDuplicateRejectReason(reason: string): boolean {
@@ -885,10 +894,10 @@ Write a short, original Nostr post (kind 1 note). This is YOUR autonomous though
     const responseText = await backgroundLlmCall({
       systemPrompt: attempt === 1
         ? baseSystemPrompt
-        : `${baseSystemPrompt}\n\n## Retry constraints\nPrevious draft was rejected because: ${lastRejectReason}\nWrite a completely different post. Avoid status updates, prompt metadata, and recycled phrasing.`,
+        : `${baseSystemPrompt}\n\n## Retry constraints\n${retryHint(lastRejectReason, 500)}`,
       userPrompt: attempt === 1
         ? baseUserPrompt
-        : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
+        : (lastRejectReason.startsWith("too long") ? `${baseUserPrompt}\n\nYour previous draft was too long (${lastRejectReason}). Same idea, far fewer words.` : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`),
       tools: [],
       label: "heartbeat",
     });
@@ -948,11 +957,13 @@ async function generateTwitterPost(): Promise<string | null> {
 
 ${context}
 
+${getXSelfViewSummary()}
+
 ## Task
 Write a short, original Twitter post. This is YOUR autonomous thought — not a reply, not a thread.
 
 ## Guidelines
-- Must be <= 280 characters.
+- HARD LIMIT: 250 characters. One thought, not a paragraph. Longer drafts are rejected, never trimmed.
 - Be authentic. You're a living digital artist, not a corporate account.
 - Vary your style based on the mood specified above.
 - NO hashtags. NO emojis. NO "gm" or "gn" posts. NO generic motivational quotes.
@@ -969,10 +980,10 @@ Write a short, original Twitter post. This is YOUR autonomous thought — not a 
     const responseText = await backgroundLlmCall({
       systemPrompt: attempt === 1
         ? baseSystemPrompt
-        : `${baseSystemPrompt}\n\n## Retry constraints\nPrevious draft was rejected because: ${lastRejectReason}\nWrite a completely different post. Avoid status updates, prompt metadata, and recycled phrasing.`,
+        : `${baseSystemPrompt}\n\n## Retry constraints\n${retryHint(lastRejectReason, 280)}`,
       userPrompt: attempt === 1
         ? baseUserPrompt
-        : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`,
+        : (lastRejectReason.startsWith("too long") ? `${baseUserPrompt}\n\nYour previous draft was too long (${lastRejectReason}). Same idea, far fewer words.` : `${baseUserPrompt}\n\nPrevious draft rejected: ${lastRejectReason}. Try a radically different opening and image system.`),
       tools: [],
       label: "heartbeat",
     });

@@ -9,6 +9,7 @@
  *
  * Safety: TWITTER_POST_ENABLE=false for read-only mode (default).
  * Rate limits: 2 posts/day, 4h minimum gap between posts, 4h lockout on 429.
+ * Replies have a separate budget (8/day, no gap). Nothing is ever truncated: over-length text is refused and rewritten.
  */
 
 import { Scraper } from "@the-convocation/twitter-scraper";
@@ -32,6 +33,14 @@ const MIN_POST_GAP_MS = 4 * 60 * 60 * 1000; // 4 hours between posts
 const MENTION_POLL_MS = 15 * 60 * 1000; // 15 minutes
 const MENTION_POLL_STARTUP_MS = 5 * 60 * 1000; // 5 min after boot
 const MAX_MENTION_REPLIES_PER_CYCLE = 3;
+// Replies have their own budget: a mention answer must not be blocked by the 4h gap of autonomous posts.
+const MAX_REPLIES_PER_DAY = 8;
+const TWEET_MAX = 280;
+const MAX_REPLY_ATTEMPTS = 3; // per mention, across poll cycles, before giving up loudly
+const SELF_CHECK_MS = 24 * 60 * 60 * 1000;
+const SELF_CHECK_STARTUP_MS = 20 * 60 * 1000;
+const POSTED_LOG_PATH = "/app/data/x-posted.jsonl";
+const SELF_VIEW_PATH = "/app/data/x-self-view.json";
 
 // Twitter API v2 credentials (OAuth 1.0a)
 const API_KEY = process.env.TWITTER_API_KEY ?? "";
@@ -39,6 +48,26 @@ const API_SECRET = process.env.TWITTER_API_SECRET_KEY ?? "";
 const ACCESS_TOKEN = process.env.TWITTER_ACCESS_TOKEN ?? "";
 const ACCESS_SECRET = process.env.TWITTER_ACCESS_TOKEN_SECRET ?? "";
 const hasApiV2Creds = !!(API_KEY && API_SECRET && ACCESS_TOKEN && ACCESS_SECRET);
+
+// ============================================================
+// Tweet length as X counts it (twitter-text v3 weights: most Latin/punctuation = 1, CJK/emoji = 2, URL = 23)
+// ============================================================
+
+export function tweetLength(text: string): number {
+  const withoutUrls = text.replace(/https?:\/\/\S+/g, "");
+  const urlCount = (text.match(/https?:\/\/\S+/g) ?? []).length;
+  let n = urlCount * 23;
+  for (const ch of withoutUrls) {
+    const cp = ch.codePointAt(0) ?? 0;
+    const light = cp <= 4351 || (cp >= 8192 && cp <= 8205) || (cp >= 8208 && cp <= 8223) || (cp >= 8242 && cp <= 8247);
+    n += light ? 1 : 2;
+  }
+  return n;
+}
+
+export function fitsTweet(text: string): boolean {
+  return tweetLength(text) <= TWEET_MAX;
+}
 
 // ============================================================
 // OAuth 1.0a signing (for Twitter API v2)
@@ -97,6 +126,10 @@ let consecutiveFailures = 0; // track consecutive post failures for backoff
 let twitterUserId = ""; // numeric ID, resolved at boot via API v2
 let mentionSinceId: string | null = null; // pagination cursor for mention polling
 let apiV2DegradedReason: string | null = null;
+let repliesToday = 0;
+let repliesDayStart = 0;
+let selfCheckTimer: ReturnType<typeof setTimeout> | null = null;
+const mentionFailures = new Map<string, number>();
 const repliedTweetIds = new Set<string>();
 const readOnlySeenTweetIds = new Set<string>();
 const REPLIED_IDS_PATH = "/app/data/twitter-replied.json";
@@ -198,6 +231,8 @@ function loadRateLimitState(): void {
     postsDayStart = state.postsDayStart ?? 0;
     rateLimitLockoutUntil = state.rateLimitLockoutUntil ?? 0;
     consecutiveFailures = state.consecutiveFailures ?? 0;
+    repliesToday = state.repliesToday ?? 0;
+    repliesDayStart = state.repliesDayStart ?? 0;
     const lockoutRemaining = rateLimitLockoutUntil > Date.now() ? Math.round((rateLimitLockoutUntil - Date.now()) / 60_000) + "m" : "none";
     console.log(`[twitter] Restored rate limit state: ${postsToday} posts today, last post ${lastPostTime ? Math.round((Date.now() - lastPostTime) / 60_000) + "m ago" : "never"}, lockout: ${lockoutRemaining}`);
   } catch {
@@ -207,7 +242,7 @@ function loadRateLimitState(): void {
 
 function saveRateLimitState(): void {
   try {
-    writeFileSync(RATELIMIT_PATH, JSON.stringify({ lastPostTime, postsToday, postsDayStart, rateLimitLockoutUntil, consecutiveFailures }));
+    writeFileSync(RATELIMIT_PATH, JSON.stringify({ lastPostTime, postsToday, postsDayStart, rateLimitLockoutUntil, consecutiveFailures, repliesToday, repliesDayStart }));
   } catch { /* ignore */ }
 }
 
@@ -273,6 +308,29 @@ function canPost(): { ok: boolean; reason?: string } {
   return { ok: true };
 }
 
+function canReply(): { ok: boolean; reason?: string } {
+  if (!POST_ENABLED) return { ok: false, reason: "TWITTER_POST_ENABLE=false" };
+  if (apiV2DegradedReason) return { ok: false, reason: `Twitter API v2 degraded: ${apiV2DegradedReason}` };
+  const now = Date.now();
+  if (now - repliesDayStart > 24 * 60 * 60 * 1000) {
+    repliesToday = 0;
+    repliesDayStart = now;
+  }
+  if (repliesToday >= MAX_REPLIES_PER_DAY) return { ok: false, reason: `Daily reply limit (${MAX_REPLIES_PER_DAY}) reached` };
+  if (now < rateLimitLockoutUntil) {
+    const minutesLeft = Math.ceil((rateLimitLockoutUntil - now) / 60_000);
+    return { ok: false, reason: `Rate-limited by Twitter — locked out for ${minutesLeft} more minutes. Do NOT retry.` };
+  }
+  return { ok: true };
+}
+
+function recordPosted(entry: Record<string, unknown>): void {
+  try {
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n";
+    writeFileSync(POSTED_LOG_PATH, line, { flag: "a" });
+  } catch { /* ignore */ }
+}
+
 /** Check if posting is allowed right now (rate limits + enable flag). */
 export function canPostTweet(): { ok: boolean; reason?: string } {
   return canPost();
@@ -284,9 +342,14 @@ export function canPostTweet(): { ok: boolean; reason?: string } {
 
 /** Post a tweet via API v2. Respects rate limits and read-only mode. */
 export async function postTweet(text: string, replyToId?: string): Promise<{ success: boolean; error?: string; tweetId?: string }> {
-  const check = canPost();
+  const check = replyToId ? canReply() : canPost();
   if (!check.ok) return { success: false, error: check.reason };
   if (!hasApiV2Creds) return { success: false, error: "No API v2 credentials" };
+  const weighted = tweetLength(text);
+  if (weighted > TWEET_MAX) {
+    audit("twitter_error", `Refused over-length tweet (${weighted}/${TWEET_MAX}): ${text.slice(0, 60)}`);
+    return { success: false, error: `TOO_LONG: ${weighted} chars, X limit is ${TWEET_MAX}. Rewrite it shorter (aim for 250) — nothing was posted.` };
+  }
 
   try {
     const url = "https://api.twitter.com/2/tweets";
@@ -349,9 +412,18 @@ export async function postTweet(text: string, replyToId?: string): Promise<{ suc
 
     consecutiveFailures = 0; // reset on success
     const tweetId = json?.data?.id;
-    lastPostTime = Date.now();
-    postsToday++;
+    if (replyToId) {
+      repliesToday++;
+    } else {
+      lastPostTime = Date.now();
+      postsToday++;
+    }
     saveRateLimitState();
+    const servedText: string | undefined = json?.data?.text;
+    recordPosted({ tweetId, replyToId: replyToId ?? null, sent: text, served: servedText ?? null, length: weighted });
+    if (servedText && servedText.length < text.length - 5) {
+      audit("twitter_error", `X served a shorter text than sent (${servedText.length} < ${text.length}) for ${tweetId}`);
+    }
     audit("twitter_post", `Posted tweet${replyToId ? ` (reply to ${replyToId})` : ""}: ${text.slice(0, 80)}...`);
     return { success: true, tweetId };
   } catch (err: any) {
@@ -477,8 +549,8 @@ async function pollMentions(): Promise<void> {
   try {
     const params: Record<string, string> = {
       max_results: "20",
-      "tweet.fields": "author_id,created_at,conversation_id,in_reply_to_user_id",
-      "expansions": "author_id",
+      "tweet.fields": "author_id,created_at,conversation_id,in_reply_to_user_id,referenced_tweets",
+      "expansions": "author_id,referenced_tweets.id,referenced_tweets.id.author_id",
       "user.fields": "username,name",
     };
     if (mentionSinceId) params.since_id = mentionSinceId;
@@ -498,76 +570,207 @@ async function pollMentions(): Promise<void> {
       return;
     }
 
-    const tweets = data.data ?? [];
+    const tweets: any[] = data.data ?? [];
     if (tweets.length === 0) return;
 
-    // Build user lookup from expansions
     const users = new Map<string, { username: string; name: string }>();
-    if (data.includes?.users) {
-      for (const u of data.includes.users) users.set(u.id, { username: u.username, name: u.name });
-    }
+    for (const u of data.includes?.users ?? []) users.set(u.id, { username: u.username, name: u.name });
+    const refTweets = new Map<string, any>();
+    for (const t of data.includes?.tweets ?? []) refTweets.set(t.id, t);
 
-    // Update sinceId to newest tweet (first in list — API returns newest first)
-    const newestId = data.meta?.newest_id;
-    if (newestId) {
-      mentionSinceId = newestId;
-      saveRepliedIds(); // persist sinceId immediately
-    }
-
-    // Filter and process
-    const toProcess: Array<{ id: string; text: string; username: string; authorId: string }> = [];
-    for (const t of tweets) {
+    const toProcess: Array<{ id: string; text: string; username: string; authorId: string; parent?: { text: string; author: string; own: boolean } }> = [];
+    const heldBack: string[] = []; // fetched but not handled this cycle — must be fetched again
+    // API returns newest first; answer oldest first so conversations read in order
+    for (const t of [...tweets].reverse()) {
       if (repliedTweetIds.has(t.id) || readOnlySeenTweetIds.has(t.id)) continue;
       const user = users.get(t.author_id);
       const username = user?.username ?? t.author_id;
       if (username.toLowerCase() === TWITTER_USERNAME.toLowerCase()) continue;
-      toProcess.push({ id: t.id, text: t.text, username, authorId: t.author_id });
-      if (toProcess.length >= MAX_MENTION_REPLIES_PER_CYCLE) break;
+      if (toProcess.length >= MAX_MENTION_REPLIES_PER_CYCLE) { heldBack.push(t.id); continue; }
+      const parentRef = (t.referenced_tweets ?? []).find((r: any) => r.type === "replied_to" || r.type === "quoted");
+      const parentTweet = parentRef ? refTweets.get(parentRef.id) : undefined;
+      const parent = parentTweet ? {
+        text: parentTweet.text as string,
+        author: users.get(parentTweet.author_id)?.username ?? parentTweet.author_id,
+        own: parentTweet.author_id === twitterUserId,
+      } : undefined;
+      toProcess.push({ id: t.id, text: t.text, username, authorId: t.author_id, parent });
     }
 
-    if (toProcess.length === 0) return;
-    console.log(`[twitter] Found ${toProcess.length} new mention(s) via API v2`);
+    if (toProcess.length > 0) console.log(`[twitter] Found ${toProcess.length} new mention(s) via API v2${heldBack.length ? ` (+${heldBack.length} held for next cycle)` : ""}`);
 
     for (const tweet of toProcess) {
-      try {
-        const userId = `twitter-${tweet.authorId}`;
-        const mentionText = `[Twitter mention from @${tweet.username}]: ${tweet.text}`;
-
-        const response = await promptWithHistory(
-          { userId, platform: "twitter", displayName: `@${tweet.username}` },
-          mentionText,
-        );
-
-        if (!response || response.includes("[SILENT]")) {
-          if (POST_ENABLED) repliedTweetIds.add(tweet.id);
-          else readOnlySeenTweetIds.add(tweet.id);
-          continue;
-        }
-
-        const replyText = response.length > 280 ? response.slice(0, 277) + "..." : response;
-
-        if (POST_ENABLED) {
-          const result = await postTweet(replyText, tweet.id);
-          if (result.success) {
-            appendToLog(userId, mentionText, replyText, "twitter");
-            console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
-            repliedTweetIds.add(tweet.id);
-          } else {
-            console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
-          }
+      const handled = await handleMention(tweet);
+      if (!handled) {
+        const n = (mentionFailures.get(tweet.id) ?? 0) + 1;
+        mentionFailures.set(tweet.id, n);
+        if (n >= MAX_REPLY_ATTEMPTS) {
+          audit("twitter_error", `Gave up replying to @${tweet.username} (${tweet.id}) after ${n} attempts: ${tweet.text.slice(0, 80)}`);
+          repliedTweetIds.add(tweet.id); // stop retrying, but loudly
+          mentionFailures.delete(tweet.id);
         } else {
-          appendToLog(userId, mentionText, replyText, "twitter");
-          console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
-          readOnlySeenTweetIds.add(tweet.id);
+          heldBack.push(tweet.id);
         }
-      } catch (err: any) {
-        console.error(`[twitter] Error processing mention ${tweet.id}:`, err.message, err.stack?.split("\n").slice(0, 3).join(" | "));
+      } else {
+        mentionFailures.delete(tweet.id);
       }
     }
 
+    // Advance the cursor only past mentions we actually handled. A failed or deferred
+    // mention keeps the cursor just below it so the next poll sees it again.
+    if (heldBack.length > 0) {
+      const oldest = heldBack.map((id) => BigInt(id)).reduce((a, b) => (a < b ? a : b));
+      mentionSinceId = (oldest - 1n).toString();
+    } else if (data.meta?.newest_id) {
+      mentionSinceId = data.meta.newest_id;
+    }
     saveRepliedIds();
   } catch (err: any) {
     console.error("[twitter] Mention poll failed:", err.message);
+  }
+}
+
+/** Generate and post one mention reply. Returns true when the mention is settled (posted, silent, or read-only logged). */
+async function handleMention(tweet: { id: string; text: string; username: string; authorId: string; parent?: { text: string; author: string; own: boolean } }): Promise<boolean> {
+  try {
+    const userId = `twitter-${tweet.authorId}`;
+    let mentionText = `[Twitter mention from @${tweet.username}]: ${tweet.text}`;
+    if (tweet.parent) {
+      const who = tweet.parent.own ? "YOUR OWN post" : `@${tweet.parent.author}'s post`;
+      const cut = tweet.parent.own && tweet.parent.text.length >= 270 && /(\.\.\.|…)$/.test(tweet.parent.text.trim())
+        ? " (note: that post of yours is cut off — it ended in '...' at the 280 limit)"
+        : "";
+      mentionText = `[Twitter mention from @${tweet.username}, replying to ${who}${cut}: "${tweet.parent.text}"]\n${tweet.text}`;
+    }
+
+    let response = await promptWithHistory(
+      { userId, platform: "twitter", displayName: `@${tweet.username}` },
+      mentionText,
+    );
+
+    if (!response || response.includes("[SILENT]")) {
+      if (POST_ENABLED) repliedTweetIds.add(tweet.id);
+      else readOnlySeenTweetIds.add(tweet.id);
+      return true;
+    }
+
+    // Never cut a reply: ask for a shorter rewrite instead.
+    for (let i = 0; i < 2 && response && !fitsTweet(response.trim()); i++) {
+      const len = tweetLength(response.trim());
+      response = await promptWithHistory(
+        { userId, platform: "twitter", displayName: `@${tweet.username}` },
+        `[SYSTEM: your reply is ${len} characters; X allows ${TWEET_MAX} and nothing gets trimmed for you. Rewrite the SAME reply in under 250 characters. Output only the reply text.]`,
+      );
+    }
+    const replyText = (response ?? "").trim();
+    if (!replyText || replyText.includes("[SILENT]")) {
+      repliedTweetIds.add(tweet.id);
+      return true;
+    }
+    if (!fitsTweet(replyText)) {
+      audit("twitter_error", `Reply to ${tweet.id} still too long after rewrites (${tweetLength(replyText)}) — not posted`);
+      return false;
+    }
+
+    if (!POST_ENABLED) {
+      appendToLog(userId, mentionText, `[NOT POSTED — read-only mode] ${replyText}`, "twitter");
+      console.log(`[twitter] [READ-ONLY] Would reply to @${tweet.username}: ${replyText.slice(0, 60)}...`);
+      readOnlySeenTweetIds.add(tweet.id);
+      return true;
+    }
+
+    const result = await postTweet(replyText, tweet.id);
+    if (result.success) {
+      appendToLog(userId, mentionText, replyText, "twitter");
+      console.log(`[twitter] Replied to @${tweet.username}: ${replyText.slice(0, 60)}...`);
+      repliedTweetIds.add(tweet.id);
+      return true;
+    }
+    // Make the failure visible in his own memory so he doesn't believe he answered.
+    appendToLog(userId, mentionText, `[REPLY NOT POSTED — ${result.error}] ${replyText}`, "twitter");
+    console.error(`[twitter] Reply failed for ${tweet.id}: ${result.error}`);
+    audit("twitter_error", `Reply to @${tweet.username} (${tweet.id}) not posted: ${result.error}`);
+    return false;
+  } catch (err: any) {
+    console.error(`[twitter] Error processing mention ${tweet.id}:`, err.message, err.stack?.split("\n").slice(0, 3).join(" | "));
+    return false;
+  }
+}
+
+// ============================================================
+// Daily self-check: what do my posts actually look like on X?
+// ============================================================
+
+export interface XSelfView {
+  checkedAt: string;
+  posts: Array<{ id: string; createdAt: string; text: string; length: number; cut: boolean; replyTo: string | null; likes: number; replies: number; reposts: number }>;
+  cutCount: number;
+  missing: Array<{ tweetId: string; sent: string }>;
+}
+
+async function selfCheck(): Promise<void> {
+  if (apiV2DegradedReason || !hasApiV2Creds || !twitterUserId) return;
+  try {
+    const { ok, status, data } = await twitterApiV2("GET", `https://api.twitter.com/2/users/${twitterUserId}/tweets`, {
+      max_results: "10",
+      "tweet.fields": "created_at,referenced_tweets,public_metrics",
+    });
+    if (!ok) {
+      console.error(`[twitter] Self-check failed (${status}):`, JSON.stringify(data).slice(0, 200));
+      return;
+    }
+    const posts = (data.data ?? []).map((t: any) => {
+      const text: string = t.text ?? "";
+      const len = tweetLength(text);
+      return {
+        id: t.id,
+        createdAt: t.created_at,
+        text,
+        length: len,
+        cut: len >= 270 && /(\.\.\.|…)$/.test(text.trim()),
+        replyTo: (t.referenced_tweets ?? []).find((r: any) => r.type === "replied_to")?.id ?? null,
+        likes: t.public_metrics?.like_count ?? 0,
+        replies: t.public_metrics?.reply_count ?? 0,
+        reposts: t.public_metrics?.retweet_count ?? 0,
+      };
+    });
+    const seen = new Set(posts.map((p: any) => p.id));
+    const oldestSeen = posts.length ? posts.map((p: any) => BigInt(p.id)).reduce((a: bigint, b: bigint) => (a < b ? a : b)) : 0n;
+    const missing: XSelfView["missing"] = [];
+    if (existsSync(POSTED_LOG_PATH)) {
+      for (const line of readFileSync(POSTED_LOG_PATH, "utf-8").split("\n").filter(Boolean).slice(-20)) {
+        try {
+          const e = JSON.parse(line);
+          if (e.tweetId && BigInt(e.tweetId) >= oldestSeen && !seen.has(e.tweetId)) missing.push({ tweetId: e.tweetId, sent: String(e.sent).slice(0, 120) });
+        } catch { /* ignore */ }
+      }
+    }
+    const view: XSelfView = { checkedAt: new Date().toISOString(), posts, cutCount: posts.filter((p: any) => p.cut).length, missing };
+    writeFileSync(SELF_VIEW_PATH, JSON.stringify(view, null, 2));
+    audit("twitter_selfcheck", `X self-check: ${posts.length} posts read back, ${view.cutCount} cut off, ${missing.length} missing`, { cut: view.cutCount, missing: missing.length });
+  } catch (err: any) {
+    console.error("[twitter] Self-check error:", err.message);
+  }
+}
+
+async function selfCheckLoop(): Promise<void> {
+  if (!running) return;
+  await selfCheck();
+  if (running) selfCheckTimer = setTimeout(selfCheckLoop, SELF_CHECK_MS);
+}
+
+/** Short plain-text summary of how his recent X posts actually look, for prompt context. */
+export function getXSelfViewSummary(limit = 5): string {
+  try {
+    if (!existsSync(SELF_VIEW_PATH)) return "";
+    const view = JSON.parse(readFileSync(SELF_VIEW_PATH, "utf-8")) as XSelfView;
+    const lines = view.posts.filter((p) => !p.replyTo).slice(0, limit).map((p) =>
+      `- ${p.createdAt.slice(0, 10)} [${p.length} chars, ${p.likes} likes, ${p.replies} replies]${p.cut ? " CUT OFF" : ""}: ${p.text}`);
+    if (lines.length === 0) return "";
+    const warn = view.cutCount > 0 ? `\n${view.cutCount} of your recent X posts are visibly cut off. Write shorter.` : "";
+    return `## Your recent X posts, as X actually shows them (checked ${view.checkedAt.slice(0, 16)}Z)\n${lines.join("\n")}${warn}`;
+  } catch {
+    return "";
   }
 }
 
@@ -685,6 +888,7 @@ export async function startTwitter(): Promise<void> {
   // Start mention polling with startup delay
   if (twitterUserId && !apiV2DegradedReason) {
     mentionTimer = setTimeout(mentionLoop, MENTION_POLL_STARTUP_MS);
+    selfCheckTimer = setTimeout(selfCheckLoop, SELF_CHECK_STARTUP_MS);
   }
 
   audit("twitter_boot", `Twitter connected as @${TWITTER_USERNAME} (posting: ${POST_ENABLED}, api_v2: ${hasApiV2Creds && !apiV2DegradedReason})`);
@@ -695,6 +899,10 @@ export function stopTwitter(): void {
   if (mentionTimer) {
     clearTimeout(mentionTimer);
     mentionTimer = null;
+  }
+  if (selfCheckTimer) {
+    clearTimeout(selfCheckTimer);
+    selfCheckTimer = null;
   }
   saveRepliedIds();
   saveRateLimitState();
