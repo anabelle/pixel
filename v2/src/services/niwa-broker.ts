@@ -145,6 +145,81 @@ export function parseNIWARequest(tool: "ssh" | "wp", command: string): NIWAReque
   return validateNIWARequest(input);
 }
 
+const INBOX_ROOT = "/app/data/inbox/";
+
+/** Raw broker call used by client-side conveniences (read-before-append). */
+async function brokerCall(request: NIWARequest): Promise<any> {
+  const proc = Bun.spawn([
+    "ssh", "-F", "/dev/null", "-T", "-i", KEY_FILE,
+    "-o", "StrictHostKeyChecking=yes", "-o", `UserKnownHostsFile=${KNOWN_HOSTS_FILE}`,
+    "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+    "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
+    "-p", "22", "pixel@172.18.0.1", "niwa-broker-v1",
+  ], { stdin: new Blob([JSON.stringify(request)]), stdout: "pipe", stderr: "pipe" });
+  const timer = setTimeout(() => proc.kill("SIGKILL"), 60_000);
+  try {
+    const [stdout, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    if (code !== 0) throw new Error(`NIWA broker failed (exit ${code}).`);
+    return JSON.parse(stdout);
+  } finally { clearTimeout(timer); }
+}
+
+/** Shrink a local image to a JPEG within the broker's 180KiB limit (ffmpeg, no shell). */
+async function imageToBrokerJPEG(path: string): Promise<Buffer> {
+  const { realpathSync, readFileSync, unlinkSync, statSync } = await import("node:fs");
+  const real = realpathSync(path);
+  if (!real.startsWith(INBOX_ROOT) || !statSync(real).isFile()) throw new Error(`NIWA content_path must be a saved image under ${INBOX_ROOT}`);
+  const out = `/tmp/niwa-upload-${randomUUID()}.jpg`;
+  try {
+    for (const width of [1600, 1280, 1024, 800]) {
+      for (const q of [3, 5, 8, 12, 18]) {
+        const p = Bun.spawn(["ffmpeg", "-y", "-v", "error", "-i", real, "-vf", `scale='min(${width},iw)':-2`, "-frames:v", "1", "-q:v", String(q), out], { stdout: "ignore", stderr: "pipe" });
+        if ((await p.exited) !== 0) throw new Error("Could not convert the image (ffmpeg failed).");
+        const buf = readFileSync(out);
+        if (buf.length <= MAX_CONTENT_BYTES) return buf;
+      }
+    }
+    throw new Error("Image could not be reduced under 180KiB.");
+  } finally { try { unlinkSync(out); } catch {} }
+}
+
+/**
+ * Client-side conveniences that turn LLM-friendly fields into protocol fields
+ * BEFORE validation (the broker revalidates everything server-side):
+ *  - media.upload {content_path} -> JPEG <=180KiB, content_b64, mime, filename
+ *  - file.write {content_text}   -> content_b64
+ *  - file.write {append_text}    -> reads current file, appends, sets expected_sha256;
+ *    a theme style.css also gets its "Version:" header bumped (Cloudflare caches ?ver= for days).
+ */
+export async function expandNIWAConveniences(command: string): Promise<string> {
+  let input: any;
+  try { input = JSON.parse(command); } catch { return command; }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return command;
+  if (input.op === "media.upload" && typeof input.content_path === "string") {
+    const buf = await imageToBrokerJPEG(input.content_path);
+    const base = String(input.filename ?? input.content_path.split("/").at(-1) ?? "imagen").replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 70) || "imagen";
+    delete input.content_path;
+    Object.assign(input, { filename: `${base}.jpg`, mime: "image/jpeg", content_b64: buf.toString("base64") });
+  }
+  if (input.op === "file.write" && typeof input.content_text === "string") {
+    input.content_b64 = Buffer.from(input.content_text, "utf8").toString("base64");
+    delete input.content_text;
+  }
+  if (input.op === "file.write" && typeof input.append_text === "string") {
+    const read = await brokerCall(validateNIWARequest({ v: 1, op: "file.read", path: input.path }));
+    if (!read?.ok || typeof read.result?.content_b64 !== "string") throw new Error(`NIWA could not read ${input.path} before appending (${read?.error ?? "unknown"}).`);
+    let text = Buffer.from(read.result.content_b64, "base64").toString("utf8");
+    if (/\/themes\/[^/]+\/style\.css$/.test(input.path)) {
+      text = text.replace(/^(\s*Version:\s*)([0-9.]*?)(\d+)(\s*)$/m, (_m: string, a: string, b: string, n: string, c: string) => `${a}${b}${Number(n) + 1}${c}`);
+    }
+    text = text.replace(/\s*$/, "\n") + "\n" + input.append_text.replace(/\s*$/, "\n");
+    input.content_b64 = Buffer.from(text, "utf8").toString("base64");
+    input.expected_sha256 = read.result.sha256;
+    delete input.append_text;
+  }
+  return JSON.stringify(input);
+}
+
 /** Mandatory NIWA branch: never resolves or reads the legacy SSH key. */
 export async function executeNIWABroker(tool: "ssh" | "wp", params: NIWAParams, ctx: NIWAContext) {
   if (params.server !== "ambienteniwa" || !isNIWABrokerAuthorized(ctx.authUserId ?? ctx.userId)) throw new Error("Access denied: NIWA broker requires an explicitly authorized sender.");
@@ -153,7 +228,8 @@ export async function executeNIWABroker(tool: "ssh" | "wp", params: NIWAParams, 
   if (!entry || entry.transport !== "niwa-broker-v1" || entry.host !== "172.18.0.1" || entry.user !== "pixel" || entry.port !== 22 || entry.key_file !== KEY_FILE || entry.known_hosts_file !== KNOWN_HOSTS_FILE) {
     throw new Error("NIWA broker connection is not configured. Legacy SSH is disabled.");
   }
-  const request = parseNIWARequest(tool, params.command);
+  const command = tool === "ssh" ? await expandNIWAConveniences(params.command) : params.command;
+  const request = parseNIWARequest(tool, command);
   const payload = JSON.stringify(request);
   const proc = Bun.spawn([
     "ssh", "-F", "/dev/null", "-T", "-i", KEY_FILE,

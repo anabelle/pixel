@@ -9,7 +9,7 @@
  */
 
 import { Bot, InputFile } from "grammy";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { promptWithHistory, captureGroupMemberMemory } from "../agent.js";
 import { appendToLog, loadContext, saveContext } from "../conversations.js";
 import { transcribeAudio } from "../services/audio.js";
@@ -361,19 +361,22 @@ export async function startTelegram(): Promise<void> {
   });
 
   // Handle photo messages (image vision)
-  bot.on("message:photo", async (ctx) => {
+  // Photos and images sent as files (uncompressed). Saved to /app/data/inbox so tools can use them later.
+  bot.on(["message:photo", "message:document"], async (ctx) => {
     const chatType = ctx.chat?.type;
     const isGroupChat = chatType === "group" || chatType === "supergroup";
     const conversationId = isGroupChat ? `tg-group-${ctx.chat.id}` : `tg-${ctx.from.id}`;
     const photos = ctx.message.photo;
-    const photo = photos?.[photos.length - 1];
+    const doc = ctx.message.document;
+    if (!photos && !(doc && /^image\/(jpeg|png|webp)$/.test(doc.mime_type ?? ""))) return;
+    const photo = photos ? photos[photos.length - 1] : doc!;
     if (!photo) return;
 
     const senderName = ctx.from.username
       ? `@${ctx.from.username}`
       : [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || `user-${ctx.from.id}`;
     const caption = ctx.message.caption?.trim();
-    const formatted = isGroupChat
+    const formattedBase = isGroupChat
       ? `${senderName}${caption ? `: ${caption}` : " sent an image"}`
       : caption ?? "[image]";
 
@@ -381,7 +384,7 @@ export async function startTelegram(): Promise<void> {
       groupActivity.set(ctx.chat.id, { lastActivity: Date.now(), lastPing: groupActivity.get(ctx.chat.id)?.lastPing ?? null });
     }
 
-    appendToLog(conversationId, formatted, "", "telegram");
+    let formatted = formattedBase;
 
     try {
       await ctx.replyWithChatAction("typing");
@@ -401,7 +404,18 @@ export async function startTelegram(): Promise<void> {
       const buffer = Buffer.from(await res.arrayBuffer());
       const base64 = buffer.toString("base64");
       const lower = file.file_path.toLowerCase();
-      const mimeType = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+      const mimeType = lower.endsWith(".png") ? "image/png" : lower.endsWith(".webp") ? "image/webp" : "image/jpeg";
+      try {
+        const inboxDir = join("/app/data/inbox", conversationId);
+        mkdirSync(inboxDir, { recursive: true });
+        const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+        const savedPath = join(inboxDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${photo.file_unique_id}.${ext}`);
+        writeFileSync(savedPath, buffer);
+        formatted = `${formattedBase}\n[image saved: ${savedPath} (${buffer.length} bytes). To publish it on a website use the file path, e.g. ambienteniwa media.upload {"content_path": "${savedPath}"}. You have the actual file.]`;
+      } catch (e: any) {
+        console.error(`[telegram] could not save image for ${conversationId}:`, e.message);
+      }
+      appendToLog(conversationId, formatted, "", "telegram");
 
       const chatTitle = isGroupChat
         ? (ctx.chat as any).title ?? undefined
