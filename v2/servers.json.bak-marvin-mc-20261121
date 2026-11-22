@@ -1,0 +1,149 @@
+{
+  "global_admins": [
+    "tg-892935151",
+    "wa-573108077316",
+    "wa-224343506325521",
+    "nostr-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+    "nostr-dm-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+    "syntropy-admin",
+    "syntropy",
+    "developero",
+    "pixel-self"
+  ],
+  "tool_tiers": {
+    "public": [
+      "check_health",
+      "web_fetch",
+      "web_search",
+      "list_servers",
+      "generate_image",
+      "send_voice",
+      "research_task",
+      "begin_identity_claim",
+      "redeem_identity_claim",
+      "introspect",
+      "clawstr_feed",
+      "clawstr_post",
+      "clawstr_reply",
+      "clawstr_notifications",
+      "clawstr_upvote",
+      "clawstr_search",
+      "update_missions",
+      "update_monologue",
+    "post_tweet",
+    "search_tweets",
+    "read_tweet",
+    "twitter_status",
+    "create_invoice",
+    "verify_payment",
+    "get_wallet_info",
+    "post_canvas_showcase"
+  ],
+    "server_admin": [
+      "ssh",
+      "wp",
+      "bash",
+      "write_file",
+      "edit_file"
+    ]
+  },
+  "servers": {
+    "pixelvps": {
+      "label": "Pixel VPS — developero relay (forced-command)",
+      "host": "172.18.0.1",
+      "user": "pixel",
+      "key_env": "PIXELVPS_SSH_KEY",
+      "wp_path": null,
+      "capabilities": [
+        "ssh"
+      ],
+      "authorized_users": [
+        "wa-573108077316",
+        "wa-224343506325521",
+        "tg-892935151",
+        "developero",
+        "syntropy-admin"
+      ],
+      "authorized_groups": [],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/",
+        "mkfs",
+        "dd\\s+if=",
+        "shutdown",
+        "reboot",
+        "systemctl",
+        "docker\\s+restart",
+        "docker\\s+rm",
+        "docker\\s+stop"
+      ]
+    },
+    "tallerubens": {
+      "label": "Taller Rubens (WordPress) — co-admin duty since 2026-09-30",
+      "host": "68.66.224.4",
+      "user": "talleru",
+      "key_env": "TALLERUBENS_SSH_KEY",
+      "wp_path": "~/public_html/tallerubens.com",
+      "notes": "SSH user talleru was removed server-side (verified 2026-09-21; account consolidated into 'eightser'). Operational access today: (a) WP REST via App Password (repo .env.local WP_APP_PASS), (b) git repo deploy pipeline — develop->PR->main triggers GitHub Actions FTP deploy, (c) staging dev.tallerubens.com basic-auth (see repo AGENTS.md). Duty watchdog: developero/repos/tallerubens/bin/site-watchdog.sh (daily 3:35, alerts via Syntropy mailbox). Standing CRITICAL: prod PHP 7.4.33 EOL — host-panel fix only (owner action).",
+      "capabilities": [
+        "wp"
+      ],
+      "authorized_users": [
+        "wa-573153353120",
+        "wa-573214100915",
+        "wa-86505003417712",
+        "wa-8465481265353"
+      ],
+      "authorized_groups": [
+        "tg-group--4839030836"
+      ],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/(?!tmp|home/talleru)",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        "shutdown",
+        "reboot",
+        "init\\s+[06]"
+      ]
+    },
+    "ambienteniwa": {
+      "label": "Ambiente Niwa (restricted broker; no shell)",
+      "transport": "niwa-broker-v1",
+      "host": "172.18.0.1",
+      "user": "pixel",
+      "port": 22,
+      "key_file": "/app/data/keys/niwa-broker_ed25519",
+      "known_hosts_file": "/app/data/keys/niwa-broker_known_hosts",
+      "key_env": "AMBIENTENIWA_SSH_KEY",
+      "wp_path": "/home/eightser/public_html/niwa_20261007",
+      "capabilities": [
+        "niwa-status",
+        "wp",
+        "file.read",
+        "file.list",
+        "file.write",
+        "file.restore",
+        "media.upload",
+        "backup"
+      ],
+      "authorized_users": [
+        "tg-892935151",
+        "wa-573108077316",
+        "wa-224343506325521",
+        "nostr-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+        "nostr-dm-dc6e65cf5de0a496bb86ae0221844b3b48bd3da2643cddbce34e60754ac5b997",
+        "developero"
+      ],
+      "authorized_groups": [],
+      "blocked_patterns": [
+        "rm\\s+-rf\\s+/(?!tmp|home/niwa)",
+        "mkfs",
+        "dd\\s+if=",
+        ">\\s*/dev/sd",
+        "shutdown",
+        "reboot",
+        "init\\s+[06]"
+      ]
+    }
+  }
+}
