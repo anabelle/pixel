@@ -295,6 +295,27 @@ function makeZaiModel(modelId: string, reasoning: boolean = false) {
   } as any;
 }
 
+/** Marvin 2026-11-23: OpenCode Go (OpenAI-compatible, GLM-5.3) — fallback when Z.AI's
+ * weekly quota is exhausted (code 1310). Shared subscription with Marvin/developero, so it is
+ * offered only to priority users (owner, authorized users, siblings) — not pixel-self loops,
+ * public chatter or background calls. Go requires the x-opencode-session header. */
+function makeGoModel(modelId: string = "glm-5.3") {
+  return {
+    id: modelId,
+    name: `GO-${modelId.toUpperCase()}`,
+    api: "openai-completions" as const,
+    provider: "opencode-go",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    reasoning: true,
+    input: ["text"] as const,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, // flat-rate subscription
+    contextWindow: 204800,
+    maxTokens: 32768,
+    headers: { "x-opencode-session": "pixel", "User-Agent": "pixel/2" },
+    compat: { thinkingFormat: "openai" as const, supportsReasoningEffort: true },
+  } as any;
+}
+
 /** Construct an OpenRouter model object (OpenAI-compatible) */
 function makeOpenRouterModel(modelId: string) {
   return {
@@ -355,6 +376,8 @@ export function resolveApiKey(provider?: string): string {
       return process.env.ZAI_API_KEY ?? "";
     case "openrouter":
       return process.env.OPENROUTER_API_KEY ?? "";
+    case "opencode-go":
+      return process.env.OPENCODE_GO_API_KEY ?? "";
     case "google":
       return resolveGoogleApiKey();
     case "anthropic":
@@ -762,6 +785,14 @@ export async function promptWithHistory(
     console.log(`[agent] Z.AI primary rate-limited — skipping to fallback for ${userId}`);
   }
 
+  // Marvin 2026-11-23: priority users get OpenCode Go GLM-5.3 as the first fallback
+  // (Z.AI weekly quota exhaustion left Pixel mute; Gemini keys were also 429).
+  const fallbackSubject = options.authUserId ?? userId;
+  const goEligible = !hasImages && !!process.env.OPENCODE_GO_API_KEY
+    && fallbackSubject !== "pixel-self" && isPriorityUser(fallbackSubject);
+  const fallbackFor = (level: number) =>
+    goEligible ? (level === 1 ? makeGoModel("glm-5.3") : getFallbackModel(level - 1)) : getFallbackModel(level);
+
   // Set tool context so schedule_alarm can auto-fill chatId
   setToolContext({ userId: convId, authUserId: options.authUserId ?? userId, platform, chatId });
 
@@ -772,7 +803,7 @@ export async function promptWithHistory(
 
     // On retry, cascade through fallback models
     const isRetryWithFallback = attempt > 0;
-    const retryModel = isRetryWithFallback ? getFallbackModel(attempt) : selectedModel;
+    const retryModel = isRetryWithFallback ? fallbackFor(attempt) : selectedModel;
 
     // Fresh agent for retries (pi-agent-core doesn't support re-prompting after error)
     const attemptAgent = attempt === 0 ? agent : new Agent({
@@ -874,9 +905,9 @@ export async function promptWithHistory(
         setZaiRateLimit();
       }
       console.log(`[agent] Error from model (attempt ${attempt + 1}) for ${userId}: ${errorStr.substring(0, 150)} — cascading to fallback`);
-      const nextModel = getFallbackModel(attempt + 1);
+      const nextModel = fallbackFor(attempt + 1);
       costMonitor.recordError(
-        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : getFallbackModel(attempt).id,
+        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : fallbackFor(attempt).id,
         errorStr,
         'conversation',
         nextModel.id
@@ -891,7 +922,7 @@ export async function promptWithHistory(
     if (errorStr) {
       console.error(`[agent] LLM error for ${userId} (attempt ${attempt + 1}): ${errorStr.substring(0, 200)}`);
       costMonitor.recordError(
-        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : getFallbackModel(attempt).id,
+        attempt === 0 ? (process.env.AI_MODEL ?? 'gemini-3-flash-preview') : fallbackFor(attempt).id,
         errorStr,
         'conversation'
       );
