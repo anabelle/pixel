@@ -35,7 +35,9 @@ if ! git -c diff.ignoreSubmodules=all diff --quiet || ! git diff --cached --quie
     log "WARN: tree dirty but nothing safe to auto-commit; skipping update"
     exit 0
   fi
-  if git commit -m "syntropy: auto-commit local changes (clone discipline)" --no-verify >/dev/null 2>&1; then
+  # gc.auto=0 + maintenance.auto=false: commit spawns an orphan `gc --auto` child;
+  # a non-reaping PID 1 (bun in the v2 container) leaves [git] defunct (sib pixel-art 2026-11-23)
+  if git -c gc.auto=0 -c maintenance.auto=false commit -m "syntropy: auto-commit local changes (clone discipline)" --no-verify >/dev/null 2>&1; then
     log "OK: auto-committed local changes (clone discipline)"
   else
     log "WARN: auto-commit failed; skipping update"

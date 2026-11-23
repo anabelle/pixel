@@ -65,7 +65,9 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-if git commit -m "syntropy: sync arscontexta skills and observations" >/dev/null 2>&1; then
+# gc.auto=0 + maintenance.auto=false: commit spawns an orphan `gc --auto` child;
+# a non-reaping PID 1 (bun in the v2 container) leaves [git] defunct (sib pixel-art 2026-11-23)
+if git -c gc.auto=0 -c maintenance.auto=false commit -m "syntropy: sync arscontexta skills and observations" >/dev/null 2>&1; then
   log "OK: committed arscontexta sync"
 else
   log "WARN: git commit failed"

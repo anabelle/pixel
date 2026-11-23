@@ -505,6 +505,9 @@ const GIT_MEMORY_SETTINGS: Array<[string, string]> = [
   ["pack.threads", "1"],
   ["pack.windowMemory", "64m"],
   ["pack.deltaCacheSize", "16m"],
+  // PID 1 is Bun and never reaps orphaned git gc/maintenance children → [git] defunct zombies.
+  ["gc.auto", "0"],
+  ["maintenance.auto", "false"],
 ];
 
 const configuredGitRoots = new Set<string>();
