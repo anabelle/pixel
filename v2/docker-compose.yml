@@ -7,6 +7,7 @@
 services:
   # The single brain — agent + all connectors + HTTP API
   pixel:
+    init: true  # tini as PID 1 reaps orphaned git/grep zombies (Marvin 23-nov, developero msg 19)
     build:
       context: .
     group_add:
