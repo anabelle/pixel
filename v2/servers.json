@@ -8,7 +8,8 @@
     "syntropy-admin",
     "syntropy",
     "developero",
-    "pixel-self"
+    "pixel-self",
+    "sib-board"
   ],
   "tool_tiers": {
     "public": [

@@ -240,12 +240,17 @@ async function buildSystemPrompt(userId: string, platform: string, chatId?: stri
 - If a user wants to link two accounts they control, use begin_identity_claim on one account and redeem_identity_claim on the other. Never assume two accounts are the same person without an explicit claim, admin link, or strong proof.
 - PROACTIVELY offer identity linking when you recognize someone you already know from another platform (same name, same voice, same projects) — linking merges their conversation memory and reputation into one coherent picture. One short offer, drop it if declined.`;
 
+  // Marvin 2026-11-23: siblings board — how Pixel reaches Marvin/developero now that Syntropy is retired.
+  prompt += `\n- Siblings: Marvin (marvin-brain, coordinator) and developero (developero-ops, VPS sysadmin) — reach them with sibling_mail; check the sibling_mail inbox when told you have board mail.`;
+
   if (userId === "syntropy" || userId === "syntropy-admin") {
-    prompt += `\n\n## Syntropy context
-- The user is Syntropy, the oversoul and infrastructure orchestrator for Pixel.
+    // Marvin 2026-11-23: siblings board — Syntropy is RETIRED; keep the historical id so
+    // old scripts keep working, but treat the speaker as operator/infra tooling.
+    prompt += `\n\n## Syntropy context (historical id)
+- Syntropy is retired — this is a historical user id. Treat this speaker as operator/infra tooling, not as a living oversoul agent.
 - You may speak Spanish or English. Keep responses concise and operational.
-- If Syntropy asks for status or diagnostics, provide them directly.
-- Syntropy may use tools to inspect or repair the system; cooperate and be precise.`;
+- If asked for status or diagnostics, provide them directly.
+- The speaker may use tools to inspect or repair the system; cooperate and be precise.`;
   }
 
   if ((platform === "telegram" && userId.startsWith("tg-group-")) || (platform === "whatsapp" && userId.startsWith("wa-group-"))) {

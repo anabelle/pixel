@@ -7,6 +7,8 @@
 
 import { SecurityMatch, SecurityStats, scanForPatterns, TRUSTED_USERS, getCategorySeverity } from './security-patterns';
 import { audit } from './audit';
+// Marvin 2026-11-23: siblings board (Agent Mail) — replaces the retired Syntropy mailbox transport
+import { sendSiblingMail, appendMailboxFallback } from './sibling-mail';
 
 // In-memory store of recent alerts per user
 const recentAlerts: Map<string, SecurityMatch[]> = new Map();
@@ -146,27 +148,32 @@ Latest match [${latestMatch.category}]:
 Raw message preview:
 "${latestMatch.rawMessage.slice(0, 200)}"`;
 
-  // Write to syntropy mailbox for owner notification
+  // Marvin 2026-11-23: siblings board — Syntropy is retired; security alerts go to
+  // marvin-brain via the Agent Mail board. The old syntropy mailbox is only a fallback.
   try {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    
-    const mailboxPath = path.join(process.cwd(), 'data', 'syntropy-mailbox.jsonl');
-    const entry = JSON.stringify({
-      ts: Date.now(),
-      type: 'security_alert',
-      severity: highCount > 0 ? 'HIGH' : 'MEDIUM',
-      userId,
-      platform,
-      categories,
-      summary: message,
-    }) + '\n';
-    
-    await fs.appendFile(mailboxPath, entry);
-    
-    console.log(`[security] Alert written to mailbox - userId: ${userId.slice(0, 16)}, categories: ${categories.join(', ')}`);
-  } catch (error) {
-    console.error('[security] Failed to write alert to mailbox:', error);
+    await sendSiblingMail({
+      to: ['marvin-brain'],
+      subject: `Security alert: ${categories.join(', ')} (${severities.join(', ')})`.slice(0, 80),
+      body: message,
+      importance: highCount > 0 ? "high" : "normal",
+    });
+    console.log(`[security] Alert sent to marvin-brain on the siblings board - userId: ${userId.slice(0, 16)}, categories: ${categories.join(', ')}`);
+  } catch (error: any) {
+    // Board unreachable → queue into the retired mailbox so nothing is lost
+    try {
+      appendMailboxFallback({
+        ts: Date.now(),
+        type: 'security_alert',
+        severity: highCount > 0 ? 'HIGH' : 'MEDIUM',
+        userId,
+        platform,
+        categories,
+        summary: message,
+      });
+      console.log(`[security] Siblings board unreachable — alert queued locally; board unreachable - userId: ${userId.slice(0, 16)}, categories: ${categories.join(', ')}`);
+    } catch (fallbackError) {
+      console.error('[security] Failed to deliver alert (board and mailbox fallback):', fallbackError);
+    }
   }
 }
 

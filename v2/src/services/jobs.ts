@@ -300,7 +300,7 @@ async function wakeUpPixelWithResults(job: JobEntry): Promise<void> {
     `- Trigger follow-up research if something is interesting`,
     `- Update your skills or knowledge if relevant`,
     `- Use notify_owner to tell Ana if something is exciting or urgent`,
-    `- Use syntropy_notify to flag infrastructure/technical findings for Syntropy`,
+    `- Use sibling_mail to flag infrastructure/technical findings for your siblings Marvin (marvin-brain) and developero (developero-ops)`,
     `- Simply acknowledge and move on if the findings aren't actionable`,
     ``,
     `Respond naturally. If nothing actionable, reply with [SILENT].`,

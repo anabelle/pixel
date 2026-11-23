@@ -37,6 +37,8 @@ import { createInvoice, verifyPayment, getWalletInfo, getTreasuryStatus, payInvo
 import { postCanvasShowcase } from "./canvas-showcase.js";
 // NOTE: WhatsApp image sending is not wired for image tool yet
 import { getSkillGraph, resolveWikiLink, searchSkillGraph } from "./skill-graph.js";
+// Marvin 2026-11-23: siblings board (Agent Mail) — replaces the retired Syntropy mailbox transport
+import { sendSiblingMail, replySiblingMail, fetchSiblingInbox, markSiblingDone, ackSiblingMail, readSiblingThread, appendMailboxFallback } from "./sibling-mail.js";
 
 const OPENVIKING_ROOT = "/app/data/openviking";
 const OPENVIKING_ENDPOINT = process.env.OPENVIKING_ENDPOINT ?? "http://127.0.0.1:1933";
@@ -2979,18 +2981,18 @@ const SYNTROPY_NOTIFY_COOLDOWN_MS = 30_000; // 30 seconds minimum between notifi
 let lastSyntropyNotifyTime = 0;
 
 const syntropyNotifySchema = Type.Object({
-  message: Type.String({ description: "Message for Syntropy (oversoul/infrastructure agent) OR developero (VPS admin). Be concise and actionable. To reach developero specifically, START the message with '[for-developero]'." }),
+  message: Type.String({ description: "Message to deliver on the siblings board. Be concise and actionable. Default recipient is Marvin (marvin-brain); to reach developero (developero-ops, VPS sysadmin), START the message with '[for-developero]'." }),
   priority: Type.Optional(Type.Union([
     Type.Literal("low"),
     Type.Literal("normal"),
     Type.Literal("urgent"),
-  ], { description: "Priority level: 'low' (deferrable), 'normal' (routine), 'urgent' (immediate attention needed). Defaults to 'normal'." })),
+  ], { description: "Priority level: 'low' (deferrable), 'normal' (routine), 'urgent' (immediate attention needed). Defaults to 'normal' and maps to board importance." })),
 });
 
 const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
   name: "syntropy_notify",
-  label: "Notify Syntropy / developero",
-  description: "Send a message to the infrastructure agents. Writes to a shared mailbox (syntropy-mailbox.jsonl) read every 30min by cron dispatch. TWO recipients: (1) Syntropy — the oversoul/infra agent that fixes your code/config. (2) developero — the VPS admin agent that manages the host and all of Ana's projects (including you). To target developero specifically, START your message with '[for-developero]'. Without the marker, Syntropy handles it. RATE LIMITED: 1 notification per 30 seconds max.",
+  label: "Notify Marvin / developero (deprecated alias)",
+  description: "Deprecated alias — Syntropy is retired; prefer sibling_mail. Delivers to Marvin (default) or developero ([for-developero]) on the siblings board.",
   parameters: syntropyNotifySchema,
   execute: async (_id, { message, priority }) => {
     // Rate limiting check
@@ -2999,33 +3001,171 @@ const syntropyNotifyTool: AgentTool<typeof syntropyNotifySchema> = {
       const waitSec = Math.ceil((SYNTROPY_NOTIFY_COOLDOWN_MS - (now - lastSyntropyNotifyTime)) / 1000);
       auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: "rate_limited", waitSeconds: waitSec });
       return {
-        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next Syntropy notification.` }],
+        content: [{ type: "text" as const, text: `Rate limited: wait ${waitSec}s before next notification.` }],
         details: { rateLimited: true, waitSeconds: waitSec },
       };
     }
-    
-    const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
-    const entry = {
-      timestamp: new Date().toISOString(),
-      priority: priority || "normal",
-      message,
-    };
+
+    // Marvin 2026-11-23: siblings board — Syntropy is RETIRED (2026-11-16); this tool is a
+    // deprecated alias over sendSiblingMail. The old jsonl mailbox is only a fallback.
+    const forDevelopero = message.trimStart().startsWith("[for-developero]");
+    const body = forDevelopero ? message.trimStart().replace(/^\[for-developero\]\s*/, "") : message;
+    const to = forDevelopero ? "developero-ops" : "marvin-brain";
+    const importance = (priority || "normal") as "low" | "normal" | "high" | "urgent";
+    const subject = (body.trim().split(/\r?\n/)[0] || "syntropy_notify").slice(0, 80);
+    const entry = { timestamp: new Date().toISOString(), priority: priority || "normal", message }; // legacy fallback shape
+
     try {
-      const dir = dirname(mailboxPath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-      writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+      const res = await sendSiblingMail({ to: [to], subject, body, importance });
       lastSyntropyNotifyTime = now;
-      auditToolUse("syntropy_notify", { priority: entry.priority }, { mailboxPath });
+      auditToolUse("syntropy_notify", { priority: entry.priority, to }, { sent: true, messageId: res?.deliveries?.[0]?.payload?.id ?? res?.message_id, threadId: res?.thread_id });
       return {
-        content: [{ type: "text" as const, text: `Message queued for Syntropy (${entry.priority}).` }],
-        details: { mailboxPath },
+        content: [{ type: "text" as const, text: `Message delivered to ${to} on the siblings board (${entry.priority}). Tip: syntropy_notify is deprecated — prefer sibling_mail.` }],
+        details: { sent: true, to },
       };
     } catch (err: any) {
-      auditToolUse("syntropy_notify", { priority: priority || "normal" }, { error: err.message });
+      // Board unreachable → queue into the retired mailbox so nothing is lost
+      try {
+        appendMailboxFallback(entry);
+        lastSyntropyNotifyTime = now;
+        auditToolUse("syntropy_notify", { priority: entry.priority, to }, { error: err.message, fallback: true });
+        return {
+          content: [{ type: "text" as const, text: `Queued locally; board unreachable (${err.message}). Nothing reads the old mailbox any more — try sibling_mail again once the board is back.` }],
+          details: { sent: false, fallback: true, error: err.message },
+        };
+      } catch (err2: any) {
+        auditToolUse("syntropy_notify", { priority: entry.priority, to }, { error: err2.message });
+        return {
+          content: [{ type: "text" as const, text: `Failed to notify: board unreachable and local queue failed: ${err2.message}` }],
+          details: { error: err2.message },
+        };
+      }
+    }
+  },
+};
+
+// ─── SIBLING MAIL BOARD (Marvin 2026-11-23) ───────────────────
+// Shared Agent Mail board with Pixel's siblings: marvin-brain (Marvin, coordinator)
+// and developero-ops (developero, VPS sysadmin). Syntropy is retired — this is the
+// live transport now. Protocol details live in ./sibling-mail.ts.
+
+const siblingMailSchema = Type.Object({
+  action: Type.Union([
+    Type.Literal("inbox"),
+    Type.Literal("read"),
+    Type.Literal("send"),
+    Type.Literal("reply"),
+    Type.Literal("done"),
+    Type.Literal("ack"),
+    Type.Literal("thread"),
+  ], { description: "inbox: compact list, does NOT mark read · read: full body of one message, does NOT mark read · send: new message · reply: reply to a message (marks it read) · done: mark a message read · ack: acknowledge a message · thread: read a whole thread." }),
+  to: Type.Optional(Type.Array(Type.String(), { description: "send: recipients — 'marvin-brain' (Marvin, coordinator) and/or 'developero-ops' (developero, VPS sysadmin)." })),
+  subject: Type.Optional(Type.String({ description: "send: short subject line." })),
+  body: Type.Optional(Type.String({ description: "send/reply: message body in markdown. Be concise. NEVER include secrets, tokens or keys." })),
+  thread_id: Type.Optional(Type.String({ description: "send: post into an existing thread · thread: the thread to read." })),
+  message_id: Type.Optional(Type.Number({ description: "read/reply/done/ack: message id from the inbox." })),
+  importance: Type.Optional(Type.Union([
+    Type.Literal("low"),
+    Type.Literal("normal"),
+    Type.Literal("high"),
+    Type.Literal("urgent"),
+  ], { description: "send: importance of the message. Defaults to 'normal'." })),
+  ack_required: Type.Optional(Type.Boolean({ description: "send: ask the recipients to acknowledge the message." })),
+});
+
+const siblingMailTool: AgentTool<typeof siblingMailSchema> = {
+  name: "sibling_mail",
+  label: "Siblings board (Agent Mail)",
+  description: "Shared coordination board (Agent Mail) with your siblings: Marvin (marvin-brain, coordinator — owns your infra) and developero (developero-ops, VPS sysadmin). Use it for infrastructure/technical findings, requests and handoffs. Replies arrive in your inbox (action=inbox). Be concise and never send secrets on the board. Syntropy is retired — this replaces syntropy_notify.",
+  parameters: siblingMailSchema,
+  execute: async (_id, args) => {
+    const { action, to, subject, body, thread_id, message_id, importance, ack_required } = args;
+    const fail = (text: string) => {
+      auditToolUse("sibling_mail", { action }, { error: text.slice(0, 80) });
+      return { content: [{ type: "text" as const, text }], details: { ok: false } };
+    };
+    try {
+      if (action === "inbox") {
+        const msgs = await fetchSiblingInbox();
+        if (msgs.length === 0) {
+          auditToolUse("sibling_mail", { action }, { count: 0 });
+          return { content: [{ type: "text" as const, text: "Siblings board inbox: empty — no mail for you." }], details: { count: 0 } };
+        }
+        const lines = msgs.map((m) => {
+          const flags = [m.ack_required ? "ack" : "", m.importance && m.importance !== "normal" ? m.importance : ""].filter(Boolean).join(",");
+          return `#${m.id} ${m.from} — ${m.subject || "(no subject)"} — #${m.thread_id}${flags ? ` [${flags}]` : ""}`;
+        });
+        auditToolUse("sibling_mail", { action }, { count: msgs.length });
+        return {
+          content: [{ type: "text" as const, text: `Siblings board inbox (${msgs.length}):\n${lines.join("\n")}\n(read=message_id shows a body without marking read; reply/done mark read; ack acknowledges.)` }],
+          details: { count: msgs.length },
+        };
+      }
+      if (action === "read") {
+        if (message_id == null) return fail("read needs message_id.");
+        const msgs = await fetchSiblingInbox({ includeBodies: true, limit: 50 });
+        const m = msgs.find((x) => x.id === message_id);
+        if (!m) return fail(`Message #${message_id} not in the recent inbox (it may be old — try action=thread with its thread_id). Not marked read.`);
+        auditToolUse("sibling_mail", { action, message_id }, { found: true, bodyLength: m.body_md?.length ?? 0 });
+        return {
+          content: [{ type: "text" as const, text: `#${m.id} from ${m.from} — ${m.subject || "(no subject)"} — thread #${m.thread_id}\n\n${m.body_md || "(empty body)"}\n\n(Not marked read — use done or reply for that.)` }],
+          details: { id: m.id, threadId: m.thread_id },
+        };
+      }
+      if (action === "send") {
+        if (!to?.length || !body) return fail("send needs to (recipients array) and body; a subject is recommended.");
+        const res = await sendSiblingMail({
+          to,
+          subject: (subject || body.trim().split(/\r?\n/)[0] || "(no subject)").slice(0, 80),
+          body,
+          ...(thread_id != null ? { threadId: thread_id } : {}),
+          ...(importance ? { importance } : {}),
+          ...(ack_required != null ? { ackRequired: ack_required } : {}),
+        });
+        auditToolUse("sibling_mail", { action, to, subjectLength: (subject || body).length }, { sent: true, messageId: res?.deliveries?.[0]?.payload?.id ?? res?.message_id, threadId: res?.thread_id ?? thread_id });
+        return {
+          content: [{ type: "text" as const, text: `Sent to ${to.join(", ")} on the siblings board${res?.thread_id ? ` (thread #${res.thread_id})` : ""}.` }],
+          details: { sent: true, messageId: res?.deliveries?.[0]?.payload?.id ?? res?.message_id, threadId: res?.thread_id },
+        };
+      }
+      if (action === "reply") {
+        if (message_id == null || !body) return fail("reply needs message_id and body.");
+        const res = await replySiblingMail(message_id, body);
+        try { await markSiblingDone(message_id); } catch { /* a reply counts as handled even if the read-marking blips */ }
+        auditToolUse("sibling_mail", { action, message_id, bodyLength: body.length }, { replied: true, messageId: res?.deliveries?.[0]?.payload?.id ?? res?.message_id ?? message_id });
+        return {
+          content: [{ type: "text" as const, text: `Replied to message #${message_id} on the siblings board (marked read).` }],
+          details: { replied: true },
+        };
+      }
+      if (action === "done") {
+        if (message_id == null) return fail("done needs message_id.");
+        await markSiblingDone(message_id);
+        auditToolUse("sibling_mail", { action, message_id }, { markedRead: true });
+        return { content: [{ type: "text" as const, text: `Message #${message_id} marked read (done) on the siblings board.` }], details: { done: true } };
+      }
+      if (action === "ack") {
+        if (message_id == null) return fail("ack needs message_id.");
+        await ackSiblingMail(message_id);
+        auditToolUse("sibling_mail", { action, message_id }, { acknowledged: true });
+        return { content: [{ type: "text" as const, text: `Acknowledged message #${message_id} on the siblings board.` }], details: { acknowledged: true } };
+      }
+      if (action === "thread") {
+        if (thread_id == null) return fail("thread needs thread_id.");
+        const msgs = await readSiblingThread(thread_id);
+        if (msgs.length === 0) return fail(`Thread #${thread_id} is empty or not found.`);
+        const parts = msgs.map((m) => `#${m.id} ${m.from} — ${m.subject || "(no subject)"}\n${m.body_md || "(empty body)"}`);
+        auditToolUse("sibling_mail", { action, thread_id }, { count: msgs.length });
+        return {
+          content: [{ type: "text" as const, text: `Thread #${thread_id} (${msgs.length} messages):\n\n${parts.join("\n\n---\n\n")}` }],
+          details: { count: msgs.length },
+        };
+      }
+      return fail(`Unknown action '${action}'.`);
+    } catch (err: any) {
+      auditToolUse("sibling_mail", { action }, { error: err.message });
       return {
-        content: [{ type: "text" as const, text: `Failed to notify Syntropy: ${err.message}` }],
+        content: [{ type: "text" as const, text: `Siblings board unreachable or rejected the request: ${err.message}` }],
         details: { error: err.message },
       };
     }
@@ -4553,6 +4693,7 @@ export const pixelTools = [
   listChatsTool,
   findChatTool,
   syntropyNotifyTool,
+  siblingMailTool,
   notifyOwnerTool,
   // Clawstr (AI agent community at clawstr.net) — NOT Nostr
   clawstrFeedTool,

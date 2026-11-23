@@ -34,6 +34,8 @@ import { enqueueJob } from "./jobs.js";
 import { memorySave, consolidateMemories, distillMemoryBlobs, cleanupMemory } from "./memory.js";
 import { pixelTools } from "./tools.js";
 import { rebuildSkillGraph, invalidateSkillGraphCache } from "./skill-graph.js";
+// Marvin 2026-11-23: siblings board (Agent Mail) — replaces the retired Syntropy mailbox transport
+import { sendSiblingMail, appendMailboxFallback } from "./sibling-mail.js";
 
 /**
  * Memory reclamation pause between inner-life phases.
@@ -2015,17 +2017,35 @@ async function maybeDispatchToSyntropy(): Promise<void> {
     return;
   }
 
-  const message = `PROJECT_ID: ${project.id}\nPROJECT: ${project.title}\nWHY: ${project.why || "See projects.md"}\nNEXT: ${project.next || "Define and implement"}\n\nImplement this project. Commit working code. Verify by chatting with Pixel. When you finish, append ONE JSON line to /app/data/syntropy-results.jsonl with this shape: {"timestamp":"${new Date().toISOString()}","projectId":"${project.id}","title":"${project.title}","status":"completed|blocked|abandoned","outcome":"what happened and what remains"}`;
+  // Marvin 2026-11-23: siblings board — Syntropy is retired; project dispatch goes to
+  // marvin-brain via the Agent Mail board. The old jsonl mailbox is only a fallback.
+  const message = `PROJECT_ID: ${project.id}\nPROJECT: ${project.title}\nWHY: ${project.why || "See projects.md"}\nNEXT: ${project.next || "Define and implement"}\n\nImplement this project. Commit working code. Verify by chatting with Pixel. When you finish, reply to this message on the board with the outcome: status (completed|blocked|abandoned) and what happened and what remains.`;
 
-  const mailboxPath = "/app/data/syntropy-mailbox.jsonl";
   const entry = {
     timestamp: new Date().toISOString(),
     priority: "normal",
     message,
   };
 
+  let viaBoard = true;
   try {
-    writeFileSync(mailboxPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
+    await sendSiblingMail({
+      to: ["marvin-brain"],
+      subject: `Project dispatch: ${project.title}`.slice(0, 80),
+      body: message,
+    });
+  } catch (err: any) {
+    viaBoard = false;
+    try {
+      appendMailboxFallback(entry); // queued locally; board unreachable
+      console.log(`[inner-life] Siblings board unreachable — project queued locally in the old mailbox: ${err.message}`);
+    } catch (err2: any) {
+      console.error(`[inner-life] Failed to dispatch project '${project.title}': board and fallback both failed: ${err2.message}`);
+      return;
+    }
+  }
+
+  try {
     writeJson(metaPath, { lastDispatchAt: Date.now(), dispatchedProject: project.title });
     updateProjectRecord(project.id, (current) => ({
       ...current,
@@ -2034,10 +2054,12 @@ async function maybeDispatchToSyntropy(): Promise<void> {
       lastDispatchedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
-    audit("tool_use", `Project dispatched to Syntropy: ${project.title}`);
-    console.log(`[inner-life] Dispatched project to Syntropy: ${project.title}`);
+    audit("tool_use", viaBoard
+      ? `Project dispatched to Marvin on the siblings board: ${project.title}`
+      : `Project dispatched (queued locally; board unreachable): ${project.title}`);
+    console.log(`[inner-life] Dispatched project to ${viaBoard ? "Marvin (siblings board)" : "old mailbox fallback"}: ${project.title}`);
   } catch (err: any) {
-    console.error(`[inner-life] Failed to dispatch to Syntropy: ${err.message}`);
+    console.error(`[inner-life] Failed to finish project dispatch bookkeeping: ${err.message}`);
   }
 }
 
@@ -2066,10 +2088,11 @@ async function deriveClaims(): Promise<void> {
 
       for (const file of files) {
         const content = readFileSync(file.fullPath, "utf-8");
-        // FILTER: skip self-talk observations (syntropy-admin, pixel-self, developero).
-        // These are Pixel talking to its own sub-agents — not real-world signal.
-        // Deriving claims from them creates a closed introspective loop.
-        const isSelfTalk = /^user:\s*(syntropy-admin|syntropy|pixel-self|developero)/m.test(content);
+        // FILTER: skip self-talk observations (syntropy-admin, pixel-self, developero,
+        // sib-board). These are Pixel talking to its own sub-agents or trusted internal
+        // callers — not real-world signal. Deriving claims from them creates a closed
+        // introspective loop. (sib-board added Marvin 2026-11-23: siblings board waker.)
+        const isSelfTalk = /^user:\s*(syntropy-admin|syntropy|pixel-self|developero|sib-board)/m.test(content);
         if (isSelfTalk) continue;
         observations.push({ name: file.name, content, mtimeMs: file.mtimeMs });
       }

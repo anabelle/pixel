@@ -46,6 +46,9 @@ export const TRUSTED_USERS = [
   // Pixel's own security reports (~/.ssh, known_hosts tokens) tripped the
   // sshProbe scanner (2026-09-25). Threat model is external input, not owner.
   'tg-892935151',
+  // Marvin 2026-11-23: siblings board waker — the host-side script posts
+  // "you have board mail" via /api/chat as this id. Trusted code, not input.
+  'sib-board',
 ];
 
 // ─── SSH / path-traversal probe detection ─────────────────────────────────
