@@ -3,6 +3,8 @@
 > **Read this file FIRST in every session. Single source of truth.**
 > Last updated: 2026-09-02 | Doc-audit: claims re-verificados
 
+> **2026-11-23 (Marvin):** Syntropy is RETIRED (check-mailbox cron off since 2026-11-16). Every `syntropy` / `syntropy-mailbox` / `mailbox-check` mention below is HISTORICAL. Current sibling channel = Agent Mail board: tool `sibling_mail` (`src/services/sibling-mail.ts`, config `/app/data/sib-client.env`); `syntropy_notify` = deprecated alias to the board; wake via host cron `/home/pixel/marvin-watch/sib-wake-pixel.sh` (userId `sib-board`). Marvin's repo: ~/Code/colony-mail.
+
 ---
 
 ## 1. CURRENT STATUS
@@ -11,7 +13,7 @@
 **V2:** 2 containers (pixel, postgres-v2). 75 tools. Primary model: Z.AI GLM-5.3 → Gemini cascade on 429. Public tier: OpenRouter Z.AI GLM-4.5 Air (free, tool-capable). Background: Z.AI GLM-4.7 (reasoning) → Gemini cascade. Vision: Gemini 2.5 Flash. Fallback: Gemini 3 Flash→2.5 Pro→2.5 Flash (2.0 Flash decommissioned 2026-09-02).
 **Total containers:** 7 (+ strfry-relay Nostr :7777, crítico para acars.pub) — down from 18 at V1 peak
 **Disk:** ~39% (46GB free) | **RAM:** ~2.8GB / 3.8GB + 4GB swap
-**Cron:** auto-update (hourly; empuja submodules ff-only antes del parent — difiere el push si alguno diverge), host-health (daily 3:15am), mailbox-check (30 min)
+**Cron:** auto-update (hourly; empuja submodules ff-only antes del parent — difiere el push si alguno diverge), host-health (daily 3:15am), ~~mailbox-check (30 min)~~ retired 2026-11-16
 **External:** `https://pixel.xx.kg/v2/health`, `https://pixel.xx.kg/.well-known/agent-card.json`, `https://pixel.xx.kg/v2/api/*`
 
 | Component | Status |
