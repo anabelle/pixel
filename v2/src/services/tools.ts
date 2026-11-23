@@ -3069,7 +3069,7 @@ const siblingMailSchema = Type.Object({
     Type.Literal("normal"),
     Type.Literal("high"),
     Type.Literal("urgent"),
-  ], { description: "send: importance of the message. Defaults to 'normal'." })),
+  ], { description: "send: importance. normal = waits until Marvin wakes; high/urgent to marvin-brain reach the always-on night desk and may wake Ana — urgent only for things that cannot wait." })),
   ack_required: Type.Optional(Type.Boolean({ description: "send: ask the recipients to acknowledge the message." })),
 });
 
