@@ -223,6 +223,34 @@ function diskAlertGate(text: string): { suppress: boolean; reason: string } {
   return { suppress: false, reason: "" };
 }
 
+// ─── vps-desk (Marvin 2026-11-22, Jorge-authorized) ───────────────────────
+// Owner notifications go first to Marvin's night desk on the host
+// (urgent → Jorge, the rest → Marvin's queue or log). Fail-open: if the desk
+// is not configured or unreachable, the message goes straight to Telegram
+// exactly as before. Config: /app/data/vps-desk-client.env (DESK_URL, DESK_TOKEN).
+const DESK_CLIENT_PATH = "/app/data/vps-desk-client.env";
+
+async function offerToDesk(text: string): Promise<boolean> {
+  try {
+    if (!existsSync(DESK_CLIENT_PATH)) return false;
+    const env: Record<string, string> = {};
+    for (const line of readFileSync(DESK_CLIENT_PATH, "utf-8").split("\n")) {
+      const i = line.indexOf("=");
+      if (i > 0) env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    if (!env.DESK_URL || !env.DESK_TOKEN) return false;
+    const res = await fetch(env.DESK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.DESK_TOKEN}` },
+      body: JSON.stringify({ source: "pixel", kind: "notify_owner", text: text.slice(0, 3900), severity: "info" }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.status === 202;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Send a proactive message to the owner (human operator).
  * Convenience wrapper — uses OWNER_TELEGRAM_ID from env.
@@ -236,6 +264,10 @@ export async function notifyOwner(text: string, parseMode?: "Markdown" | "HTML")
   if (gate.suppress) {
     console.log(`[telegram] Disk alert suppressed (${gate.reason}) — level alert, not a change`);
     return true; // report success: the alert was handled (by suppression)
+  }
+  if (await offerToDesk(text)) {
+    console.log("[telegram] owner notification handed to vps-desk");
+    return true;
   }
   return sendTelegramMessage(OWNER_CHAT_ID, text, parseMode);
 }
