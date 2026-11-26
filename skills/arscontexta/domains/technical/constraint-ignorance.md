@@ -10,3 +10,13 @@ The assistant responded with a [SILENT] placeholder or generic metaphors despite
 
 ## Related Claims
 [[content-filtering-failure]]
+
+<!-- merged-in from constraint-ignorance.md (sim 0.27); unique content follows -->
+
+
+# constraint-ignorance
+
+Multiple instances show the assistant either providing overly verbose replies or omitting requested segments, indicating a failure to enforce user‑specified constraints. This undermines user trust and violates the instruction hierarchy.
+
+## Related Claims
+[[context-lacking]]
